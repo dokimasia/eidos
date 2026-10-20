@@ -5,6 +5,7 @@ package rules_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
@@ -63,6 +64,66 @@ const (
 	// member's value. The value has three digits, so its text is not the
 	// static string that Go returns for a conversion of one byte.
 	memberLiteralAllocs = 4
+)
+
+// The modules of scopeTree, the names of their declarations, and the
+// allocations of a name of the module and of a call that an import binds.
+// The call allocates the module path of the relative specifier of the
+// import, which path.Join builds in three allocations.
+const (
+	scopeFile          = "fx/scope.ts"
+	scopePkg           = "fx/scope"
+	seedPkg            = "fx/seed"
+	labellerName       = "Labeller"
+	applyName          = "apply"
+	topName            = "top"
+	currentName        = "current"
+	newTagName         = "newTag"
+	originName         = "origin"
+	seedName           = "seed"
+	scopedNameAllocs   = 0
+	importedCallAllocs = 3
+)
+
+// scopeTree is a tree whose module fx/scope declares a constant, a
+// variable, a function and an interface with the method apply. The module
+// imports a constant and a function of the module fx/seed.
+var scopeTree = fstest.MapFS{
+	scopeFile: {Data: []byte(`import { origin, seed } from "./seed";
+
+export const top = 9;
+export let current = 1;
+
+export function newTag(): string {
+  return "release";
+}
+
+export interface Labeller {
+  apply(tag: string): void;
+}
+`)},
+	"fx/seed.ts": {Data: []byte(`export const origin = 1;
+
+export function seed(): number {
+  return 7;
+}
+`)},
+}
+
+// The identities of the declarations of scopeTree that the cases refer to.
+// A function without parameters has the empty discriminator.
+var (
+	labellerID = symbol.Identity{
+		Lang:    typescript.Lang,
+		Package: scopePkg,
+		Name:    labellerName,
+		Kind:    symbol.KindInterface,
+	}
+	topID     = symbol.Identity{Lang: typescript.Lang, Package: scopePkg, Name: topName, Kind: symbol.KindConstant}
+	currentID = symbol.Identity{Lang: typescript.Lang, Package: scopePkg, Name: currentName, Kind: symbol.KindVariable}
+	newTagID  = symbol.Identity{Lang: typescript.Lang, Package: scopePkg, Name: newTagName, Kind: symbol.KindFunction}
+	seedID    = symbol.Identity{Lang: typescript.Lang, Package: seedPkg, Name: seedName, Kind: symbol.KindFunction}
+	originID  = symbol.Identity{Lang: typescript.Lang, Package: seedPkg, Name: originName, Kind: symbol.KindConstant}
 )
 
 // The identities of the fixture's declarations that the value cases
@@ -649,6 +710,16 @@ func TestValues(t *testing.T) {
 			sample, _ := tsrules.New().DeriveSamples(&node.TypeRef{Spelling: loadName, Target: fn.ID}, "", f.view)
 			assert.Equal(t, sample, rules.Refused(rules.RefusedNoLiteral), "a function is not a type")
 		})
+
+		t.Run("derives the samples of the global name for a declaration of a library", func(t *testing.T) {
+			t.Parallel()
+
+			r := tsrules.New()
+			sample, alternate := r.DeriveSamples(&node.TypeRef{Spelling: "Date", Target: libraryDate}, "", rules.View{})
+			wantSample, wantAlternate := r.DeriveSamples(&node.TypeRef{Spelling: "Date"}, "", rules.View{})
+			expect.Equal(t, sample, wantSample, "the sample of the Date of the library is the sample of Date")
+			expect.Equal(t, alternate, wantAlternate, "and so is its alternate")
+		})
 	})
 
 	t.Run("ZeroValue", func(t *testing.T) {
@@ -685,6 +756,17 @@ func TestValues(t *testing.T) {
 				assert.Equal(t, got, tt.want, "ZeroValue returns the zero of the type")
 			})
 		}
+
+		t.Run("returns an empty array for the Array of a library", func(t *testing.T) {
+			t.Parallel()
+
+			list := &node.TypeRef{
+				Spelling: typescript.TypeArray, Target: libraryArray, Args: []*node.TypeRef{{Spelling: numberName}},
+			}
+			got, ok := tsrules.New().ZeroValue(list, rules.View{})
+			assert.True(t, ok, "the Array of the library has a zero")
+			assert.Equal(t, got, emit.Composite(rules.EmitRef(list)), "the zero is the empty array")
+		})
 
 		optionals := []struct {
 			name     string
@@ -939,6 +1021,17 @@ func TestValues(t *testing.T) {
 				want: emit.Number(emit.LiteralFloat, "1", 64),
 			},
 		}
+		t.Run("lifts a literal for a declaration of a library as for its global name", func(t *testing.T) {
+			t.Parallel()
+
+			r := tsrules.New()
+			library := &node.TypeRef{Spelling: "Date", Target: libraryDate}
+			got, ok := r.LiteralFor(rules.Scope{}, library, `"2026-01-01"`, rules.View{})
+			want, wantOK := r.LiteralFor(rules.Scope{}, &node.TypeRef{Spelling: "Date"}, `"2026-01-01"`, rules.View{})
+			expect.Equal(t, ok, wantOK, "the Date of the library takes what Date takes")
+			expect.Equal(t, got, want, "the value of the literal is the value for Date")
+		})
+
 		for _, tt := range takes {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
@@ -1040,6 +1133,66 @@ func TestValues(t *testing.T) {
 			got, ok := tsrules.New().LiteralFor(rules.Scope{}, f.field(t, shapesName, "plain").Type, "3", f.view)
 			assert.True(t, ok, "Plain is an alias of number")
 			assert.Equal(t, got, emit.Number(emit.LiteralFloat, "3", 64), "LiteralFor returns the number")
+		})
+
+		number := &node.TypeRef{Spelling: numberName}
+		scoped := []struct {
+			name string
+			text string
+			want emit.Value
+		}{
+			{name: "lifts the name of a constant of the module as its name", text: topName, want: emit.Name(topID)},
+			{
+				name: "lifts the name of a variable of the module as its name",
+				text: currentName,
+				want: emit.Name(currentID),
+			},
+			{
+				name: "lifts a call of a function of the module as its call", text: newTagName + "()",
+				want: emit.Call(newTagID),
+			},
+			{name: "lifts the name of a constant that an import binds", text: originName, want: emit.Name(originID)},
+			{name: "lifts a call of a function that an import binds", text: seedName + "()", want: emit.Call(seedID)},
+		}
+		for _, tt := range scoped {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, scopeTree)
+				got, ok := tsrules.New().LiteralFor(f.view.ScopeOf(labellerID), number, tt.text, f.view)
+				assert.True(t, ok, "the text names a declaration in scope")
+				assert.Equal(t, got, tt.want, "LiteralFor returns the value of the declaration")
+			})
+		}
+
+		unscoped := []struct {
+			name string
+			text string
+		}{
+			{name: "reports false for a name that the scope does not declare", text: "absent"},
+			{name: "reports false for a call of a constant", text: topName + "()"},
+			{name: "reports false for the name of a function without a call", text: newTagName},
+			{name: "reports false for the name of an interface", text: labellerName},
+		}
+		for _, tt := range unscoped {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, scopeTree)
+				_, ok := tsrules.New().LiteralFor(f.view.ScopeOf(labellerID), number, tt.text, f.view)
+				assert.False(t, ok, "the text names no constant, variable or function in scope")
+			})
+		}
+
+		t.Run("reports false for a call of a method in the scope of a sibling method", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, scopeTree)
+			labeller, is := f.decl(t, scopePkg, labellerName, symbol.KindInterface).(*node.Interface)
+			assert.True(t, is, "Labeller is an interface")
+			apply := labeller.Methods[0].ID
+			_, ok := tsrules.New().LiteralFor(f.view.ScopeOf(apply), number, applyName+"()", f.view)
+			assert.False(t, ok, "a call without a receiver cannot call a method")
 		})
 
 		refusals := []struct {
@@ -1150,9 +1303,11 @@ func BenchmarkValues(b *testing.B) {
 
 // valuesCalls returns the measured calls of values.go. They derive a
 // pair, a zero and a literal of a builtin, of a list, of a collection
-// class and of an enum.
+// class and of an enum, and they lift a name and a call in scope.
 func valuesCalls(tb assert.TB) []allocCall {
 	f := loaded(tb)
+	scoped := loadedFrom(tb, scopeTree)
+	scope := scoped.view.ScopeOf(labellerID)
 	r := tsrules.New()
 	number := &node.TypeRef{Spelling: numberName}
 	str := &node.TypeRef{Spelling: stringName}
@@ -1228,6 +1383,16 @@ func valuesCalls(tb assert.TB) []allocCall {
 			name: "LiteralFor", caseName: "a member of an enum", allocs: memberLiteralAllocs,
 			call:  func() { value, _ = r.LiteralFor(rules.Scope{}, codes, "Codes.NotFound", f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Inner.Text, "404", "LiteralFor lifts the member") },
+		},
+		{
+			name: "LiteralFor", caseName: "a name of the module", allocs: scopedNameAllocs,
+			call:  func() { value, _ = r.LiteralFor(scope, number, topName, scoped.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, value, emit.Name(topID), "LiteralFor lifts the name") },
+		},
+		{
+			name: "LiteralFor", caseName: "a call that an import binds", allocs: importedCallAllocs,
+			call:  func() { value, _ = r.LiteralFor(scope, number, seedName+"()", scoped.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, value, emit.Call(seedID), "LiteralFor lifts the call") },
 		},
 	}
 }

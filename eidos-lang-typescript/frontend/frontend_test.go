@@ -4,6 +4,7 @@
 package frontend_test
 
 import (
+	"io/fs"
 	"testing"
 	"testing/fstest"
 
@@ -81,6 +82,23 @@ func TestFrontend(t *testing.T) {
 
 			_, exports := frontend.New().(plugin.Exporter)
 			assert.True(t, exports, "a TypeScript module publishes names it does not declare")
+		})
+
+		t.Run("returns a frontend in the dependent role", func(t *testing.T) {
+			t.Parallel()
+
+			_, depends := frontend.New().(plugin.Dependent)
+			assert.True(t, depends, "a dependency round places the library of each project")
+		})
+
+		t.Run("returns a frontend that locates the library store", func(t *testing.T) {
+			t.Parallel()
+
+			locator, locates := frontend.New().(plugin.StoreLocator)
+			assert.True(t, locates, "the frontend locates its stores")
+			stores, err := locator.Stores(nil)
+			assert.NoError(t, err, "the frontend reads no environment")
+			assert.Contains(t, stores, typescript.LibraryStore, "the stores have the library")
 		})
 
 		t.Run("returns a frontend whose language overloads", func(t *testing.T) {
@@ -230,10 +248,12 @@ func tsTree() fstest.MapFS {
 	}
 }
 
-// setup is the suite's entry over the whole-contract fixture.
+// setup is the suite's entry over the whole-contract fixture, beside the
+// fake library store of the default key.
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	return frontend.New(), &frontendtest.Fixture{
 		Sources:    tsTree(),
+		Stores:     map[string]fs.FS{typescript.LibraryStore: fakeLibrary()},
 		Empty:      fstest.MapFS{"empty/empty.ts": {Data: []byte("export {};\n")}},
 		Signatures: []string{depRoot},
 		Dropped: []symbol.Identity{

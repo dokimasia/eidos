@@ -19,8 +19,14 @@ import (
 // enumAllocs counts the projection of an enum of three members. The
 // projection allocates the list of members, the list of variants, the
 // reference to the enum, the conversion, and the decimal text of the
-// out-of-range number.
+// out-of-range number. The projection of a string enum with a member of
+// the empty text allocates the text of question marks in place of the
+// decimal text.
 const enumAllocs = 5
+
+// outsideText is the text outside a string enum whose longest text has
+// three bytes and which has a member with the empty text.
+const outsideText = "????"
 
 // TestEnum checks the form, the texts and the derived facts of the
 // projection of each kind of TypeScript enum.
@@ -101,10 +107,19 @@ func TestEnum(t *testing.T) {
 			t.Parallel()
 
 			info := tsrules.Rules{}.EnumOf(enumOf("Empty", `""`, "Full", `"x"`), rules.View{})
-			expect.Equal(t, info.Zero, "Empty", "the empty text is a string's zero")
-			expect.True(t, info.OutOfRange.IsZero(),
-				"a member has the empty text, so EnumOf derives no out-of-range text")
+			assert.Equal(t, info.Zero, "Empty", "the empty text is a string's zero")
 		})
+
+		t.Run("derives a text longer than every text of a string enum with a member of the empty text",
+			func(t *testing.T) {
+				t.Parallel()
+
+				info := tsrules.Rules{}.EnumOf(enumOf("Unset", `""`, "Full", `"xyz"`), rules.View{})
+				assert.Equal(t, info.OutOfRange.Kind, emit.ValueConversion,
+					"the out-of-range value is asserted to the enum")
+				expect.Equal(t, *info.OutOfRange.Inner, emit.Literal(emit.LiteralString, outsideText),
+					"the text has one byte more than the longest text, so no member has it")
+			})
 
 		t.Run("numbers a member without an initializer from the member before it", func(t *testing.T) {
 			t.Parallel()
@@ -172,19 +187,33 @@ func BenchmarkEnum(b *testing.B) {
 	benchCalls(b, enumCalls())
 }
 
-// enumCalls returns the measured call of enum.go. The call projects an
+// enumCalls returns the measured calls of enum.go. One call projects an
 // enum of three members whose largest value is above 99, so the decimal
-// text of the out-of-range number is not a constant string of strconv.
+// text of the out-of-range number is not a constant string of strconv. The
+// other projects a string enum with a member of the empty text.
 func enumCalls() []allocCall {
 	r := tsrules.Rules{}
-	e := enumOf("A", "100", "B", "", "C", "")
+	numbers := enumOf("A", "100", "B", "", "C", "")
+	texts := enumOf("Unset", `""`, "Full", `"xyz"`)
 	var info rules.EnumInfo
-	return []allocCall{{
-		name:   "EnumOf",
-		allocs: enumAllocs,
-		call:   func() { info = r.EnumOf(e, rules.View{}) },
-		check: func(tb assert.TB) {
-			assert.Equal(tb, info.OutOfRange.Inner.Text, "103", "EnumOf derives one more than the largest value")
+	return []allocCall{
+		{
+			name:     "EnumOf",
+			caseName: "an enum of numbers",
+			allocs:   enumAllocs,
+			call:     func() { info = r.EnumOf(numbers, rules.View{}) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, info.OutOfRange.Inner.Text, "103", "EnumOf derives one more than the largest value")
+			},
 		},
-	}}
+		{
+			name:     "EnumOf",
+			caseName: "a string enum with a member of the empty text",
+			allocs:   enumAllocs,
+			call:     func() { info = r.EnumOf(texts, rules.View{}) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, info.OutOfRange.Inner.Text, outsideText, "EnumOf derives a text that no member has")
+			},
+		},
+	}
 }

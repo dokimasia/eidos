@@ -219,6 +219,117 @@ func TestDecl(t *testing.T) {
 			assert.Length(t, decls, 1, "one interface")
 			assert.Length(t, decls[0].(*node.Interface).Fields, 2, "with both declarations' members")
 		})
+
+		t.Run("does not add a property of a name that the merged interface has", func(t *testing.T) {
+			t.Parallel()
+
+			decls := declsOf(t, "export interface A { a?: \"x\" | \"y\" }\n"+
+				"export interface A { a?: \"y\" | \"x\"; b: number }\n")
+			fields := decls[0].(*node.Interface).Fields
+			assert.Length(t, fields, 2, "the second declaration adds b alone")
+			assert.Equal(t, fields[0].Type.Spelling, `"x"|"y"`, "the first declaration of a keeps its type")
+		})
+
+		// mergedRun is the first declaration of the merge cases: one method run
+		// with a receiver, a type parameter with a bound and a default, a
+		// parameter, a rest parameter and a result.
+		const mergedRun = "export interface A { run<T extends string = \"a\">(this: Window, x: number, " +
+			"...rest: string[]): Promise<number> }\n"
+		merges := []struct {
+			name string
+			give string
+			want int
+		}{
+			{
+				name: "does not add a method of a signature that the merged interface has",
+				give: "run<T extends string = \"a\">(this: Window, x: number, ...rest: string[]): Promise<number>",
+				want: 1,
+			},
+			{
+				name: "adds a method of another type parameter",
+				give: "run<U extends string = \"a\">(this: Window, x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of another bound",
+				give: "run<T extends number = \"a\">(this: Window, x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of another default",
+				give: "run<T extends string = \"b\">(this: Window, x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of more type parameters",
+				give: "run<T extends string = \"a\", U = T>(this: Window, x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of another receiver",
+				give: "run<T extends string = \"a\">(this: Document, x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method without a receiver",
+				give: "run<T extends string = \"a\">(x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of an optional parameter",
+				give: "run<T extends string = \"a\">(this: Window, x?: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of a parameter that is not variadic",
+				give: "run<T extends string = \"a\">(this: Window, x: number, rest: string): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of another type of a parameter",
+				give: "run<T extends string = \"a\">(this: Window, x: string, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of a parameter without a type",
+				give: "run<T extends string = \"a\">(this: Window, x, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of fewer parameters",
+				give: "run<T extends string = \"a\">(this: Window, x: number): Promise<number>",
+				want: 2,
+			},
+			{
+				name: "adds a method of another type argument of its result",
+				give: "run<T extends string = \"a\">(this: Window, x: number, ...rest: string[]): Promise<string>",
+				want: 2,
+			},
+			{
+				name: "adds a method of another form of its result",
+				give: "run<T extends string = \"a\">(this: Window, x: number, ...rest: string[]): number[]",
+				want: 2,
+			},
+			{
+				name: "adds a method without a result",
+				give: "run<T extends string = \"a\">(this: Window, x: number, ...rest: string[]): void",
+				want: 2,
+			},
+			{
+				name: "adds an optional method",
+				give: "run?<T extends string = \"a\">(this: Window, x: number, ...rest: string[]): Promise<number>",
+				want: 2,
+			},
+			{name: "adds a getter of the name", give: "get run(): number", want: 2},
+		}
+		for _, tt := range merges {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				decls := declsOf(t, mergedRun+"export interface A { "+tt.give+" }\n")
+				assert.Length(t, decls[0].(*node.Interface).Methods, tt.want, "the methods of the merged interface")
+			})
+		}
 	})
 
 	t.Run("mark", func(t *testing.T) {
@@ -328,7 +439,7 @@ func TestDecl(t *testing.T) {
 			assert.True(t, functionOf(t, "(): Promise<void>").Async, "a promise is TypeScript's asynchronous result")
 		})
 
-		t.Run("leaves a function that returns no promise unmarked", func(t *testing.T) {
+		t.Run("leaves a function that does not return a promise unmarked", func(t *testing.T) {
 			t.Parallel()
 
 			assert.False(t, functionOf(t, "(): number").Async, "the result arrives synchronously")

@@ -56,10 +56,12 @@ var (
 
 // ErrorContract returns the contract of a class whose extends chain
 // reaches a global error class of TypeScript, such as Error or TypeError,
-// through classes that the view declares. Message and Cause are the
+// through classes that the view declares. A global error class is a name
+// without a target or the declaration of a library. Message and Cause are the
 // fields message and cause among the members of the class, which inherit
 // the fields of the classes of the chain. Each is nil where no class of
-// the chain declares it. TypeScript has no hooks, so Unwrap, Is and As
+// the chain declares it, also where the error class of a library declares
+// it, because the class then inherits it from the error of its language. TypeScript has no hooks, so Unwrap, Is and As
 // are nil. ErrorContract reports false for every other declaration, and
 // for a chain deeper than the kernel's default depth.
 //
@@ -76,8 +78,8 @@ func (r Rules) ErrorContract(decl symbol.Symbol, v rules.View) (rules.ErrorContr
 			return rules.ErrorContract{}, false
 		}
 		ext := base.Extends[0]
-		if ext.Target.IsZero() {
-			reached = ext.Package == "" && typescript.ErrorClass(ext.Spelling)
+		if ext.Target.IsZero() || typescript.Library(ext.Target.Package) {
+			reached = typescript.Global(ext.Target, ext.Package) && typescript.ErrorClass(ext.Spelling)
 			if !reached {
 				return rules.ErrorContract{}, false
 			}
@@ -98,7 +100,7 @@ func (r Rules) ErrorContract(decl symbol.Symbol, v rules.View) (rules.ErrorContr
 	for _, m := range set.Members {
 		f, isField := m.Symbol.(*node.Field)
 		switch {
-		case !isField:
+		case !isField || typescript.Library(m.Owner.Package):
 		case f.Name == messageField && c.Message == nil:
 			c.Message = f
 		case f.Name == causeField && c.Cause == nil:
@@ -233,7 +235,7 @@ func (r Rules) Constructors(s *node.Struct, v rules.View) []rules.Callable {
 		case len(s.Extends) == 0 || s.Extends[0] == nil:
 			return []rules.Callable{{Name: constructorName}}
 		}
-		if ext := s.Extends[0]; ext.Target.IsZero() && ext.Package == "" && typescript.ErrorClass(ext.Spelling) {
+		if ext := s.Extends[0]; typescript.Global(ext.Target, ext.Package) && typescript.ErrorClass(ext.Spelling) {
 			ctor := errorConstructor
 			if ext.Spelling == typescript.TypeAggregateError {
 				ctor = aggregateConstructor

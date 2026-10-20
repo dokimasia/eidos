@@ -14,6 +14,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/rules"
 )
 
+// probeMark is the character of the text outside a string enum that has a
+// member with the empty text.
+const probeMark = "?"
+
 // EnumOf projects a TypeScript enum. A string enum, in which every
 // member has a text, is value-formed, and the text of a member is its
 // value. Every other enum is identifier-formed, and the text of a member
@@ -30,7 +34,8 @@ import (
 //     repetition of a value.
 //   - OutOfRange is one more than the largest value, asserted to the
 //     enum's type. In a string enum, it is the empty text when no member
-//     has that text.
+//     has that text. Otherwise it is a text of question marks one byte
+//     longer than the longest text of a member, so no member has it.
 //   - Foreign is the sorted list of the packages other than the enum's
 //     own that declare a member.
 //
@@ -44,9 +49,10 @@ import (
 //
 // EnumOf allocates the list of members, the list of variants, and the
 // out-of-range value. The out-of-range value costs the reference to the
-// enum, the conversion and the decimal text of its number. A text with
-// an escape allocates its content, and a foreign package grows the list
-// of foreign packages.
+// enum, the conversion and the decimal text of its number, or the text of
+// question marks in a string enum with a member of the empty text. A text
+// with an escape allocates its content, and a foreign package grows the
+// list of foreign packages.
 func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 	info := rules.EnumInfo{Form: rules.EnumIdentifier}
 	if e == nil {
@@ -59,6 +65,7 @@ func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 	}
 	info.Variants = make([]rules.VariantText, 0, len(ms))
 	var largest float64
+	longest := 0
 	ranged, empty := false, false
 	for i, m := range ms {
 		text := m.name
@@ -78,6 +85,7 @@ func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 		}
 		switch {
 		case textual:
+			longest = max(longest, len(text))
 			if text == "" {
 				empty = true
 				info.Zero = cmp.Or(info.Zero, m.name)
@@ -104,6 +112,9 @@ func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 	switch {
 	case textual && !empty:
 		info.OutOfRange = emit.Conversion(rules.EmitRef(t), emit.Literal(emit.LiteralString, ""))
+	case textual:
+		info.OutOfRange = emit.Conversion(rules.EmitRef(t),
+			emit.Literal(emit.LiteralString, strings.Repeat(probeMark, longest+1)))
 	case !textual && ranged:
 		info.OutOfRange = emit.Conversion(rules.EmitRef(t),
 			emit.Number(emit.LiteralFloat, numeric.Decimal(largest+1, numberBits), numberBits))

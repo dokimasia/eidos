@@ -89,14 +89,34 @@ func (r resolution) substitute(p *pathPattern, star string) []string {
 	return out
 }
 
+// libraryOptions are the options of a tsconfig chain that select its
+// library: lib, target and noLib. Each is nil where no configuration of the
+// chain states it, and a configuration replaces an option of the
+// configurations that it extends where it states the option.
+type libraryOptions struct {
+	lib    *[]string
+	target *string
+	noLib  *bool
+}
+
+// settings is what a tsconfig chain states together: its module resolution
+// and the options of its library.
+type settings struct {
+	resolution resolution
+	library    libraryOptions
+}
+
 // tsconfig is the part of a tsconfig.json that the frontend reads: what it
-// extends, a path or a list of paths, and the options of module
-// resolution.
+// extends, a path or a list of paths, the options of module resolution, and
+// the options that select the library.
 type tsconfig struct {
 	Extends         json.RawMessage `json:"extends"`
 	CompilerOptions struct {
 		BaseURL *string             `json:"baseUrl"`
 		Paths   map[string][]string `json:"paths"`
+		Lib     *[]string           `json:"lib"`
+		Target  *string             `json:"target"`
+		NoLib   *bool               `json:"noLib"`
 	} `json:"compilerOptions"`
 }
 
@@ -106,16 +126,16 @@ type reader func(path string) ([]byte, error)
 
 // readChain reads a tsconfig.json and every configuration that its extends
 // names, depth first, and returns their paths in that order and the
-// resolution that they state together. A configuration overrides what it
+// settings that they state together. A configuration overrides what it
 // extends, and a later entry of an extends list overrides an earlier one.
 // readChain does not read a configuration twice, which stops a cycle. It
-// returns the paths read before an error, and the error of a configuration
-// that does not read or parse, or whose extends refers to no
-// configuration.
-func readChain(read reader, file string) ([]string, resolution, error) {
+// returns the paths read before an error and the settings of the
+// configurations that read, and the error of a configuration that does not
+// read or parse, or whose extends refers to no configuration.
+func readChain(read reader, file string) ([]string, settings, error) {
 	c := &chain{read: read, seen: map[string]bool{}}
-	res, err := c.visit(file)
-	return c.paths, res, err
+	s, err := c.visit(file)
+	return c.paths, s, err
 }
 
 // chain is the state of one read of a chain: the door, the paths read in
@@ -127,43 +147,49 @@ type chain struct {
 }
 
 // visit reads one configuration and what it extends, and returns the
-// resolution that the configuration states over the resolution of its
-// bases.
-func (c *chain) visit(file string) (resolution, error) {
+// settings that the configuration states over the settings of its bases.
+// Where a base faults, it returns the settings of the configuration over
+// the bases that read before the fault, with the error.
+func (c *chain) visit(file string) (settings, error) {
 	if c.seen[file] {
-		return resolution{}, nil
+		return settings{}, nil
 	}
 	c.seen[file] = true
 	c.paths = append(c.paths, file)
 	data, err := c.read(file)
 	if err != nil {
-		return resolution{}, err
+		return settings{}, err
 	}
 	standard, err := hujson.Standardize(data)
 	if err != nil {
-		return resolution{}, fmt.Errorf("frontend: %s: %w", file, err)
+		return settings{}, fmt.Errorf("frontend: %s: %w", file, err)
 	}
 	var cfg tsconfig
 	if decodeErr := json.Unmarshal(standard, &cfg); decodeErr != nil {
-		return resolution{}, fmt.Errorf("frontend: %s: %w", file, decodeErr)
+		return settings{}, fmt.Errorf("frontend: %s: %w", file, decodeErr)
 	}
 	bases, err := extendsOf(cfg.Extends)
 	if err != nil {
-		return resolution{}, fmt.Errorf("frontend: %s: %w", file, err)
+		return settings{}, fmt.Errorf("frontend: %s: %w", file, err)
 	}
-	var res resolution
+	var (
+		s     settings
+		fault error
+	)
 	for _, spec := range bases {
 		base, found := c.locate(file, spec)
 		if !found {
-			return res, fmt.Errorf("frontend: %s extends %s, which names no configuration", file, spec)
+			fault = fmt.Errorf("frontend: %s extends %s, which names no configuration", file, spec)
+			break
 		}
 		inherited, err := c.visit(base)
+		s = overlay(s, inherited)
 		if err != nil {
-			return res, err
+			fault = err
+			break
 		}
-		res = overlay(res, inherited)
 	}
-	return own(res, file, cfg), nil
+	return own(s, file, cfg), fault
 }
 
 // locate returns the configuration of an extends entry: a relative path
@@ -217,27 +243,38 @@ func extendsOf(raw json.RawMessage) ([]string, error) {
 	return many, nil
 }
 
-// overlay returns a base resolution with the options of a later base over
-// it: the baseUrl and the paths of the later base where it states them.
-func overlay(under, over resolution) resolution {
-	if over.baseURL != "" {
-		under.baseURL = over.baseURL
+// overlay returns the settings of a base with the options of a later base
+// over them: the baseUrl, the paths, lib, target and noLib of the later
+// base where it states them.
+func overlay(under, over settings) settings {
+	if over.resolution.baseURL != "" {
+		under.resolution.baseURL = over.resolution.baseURL
 	}
-	if over.patterns != nil {
-		under.patterns = over.patterns
-		under.pathsBase = over.pathsBase
+	if over.resolution.patterns != nil {
+		under.resolution.patterns = over.resolution.patterns
+		under.resolution.pathsBase = over.resolution.pathsBase
+	}
+	if over.library.lib != nil {
+		under.library.lib = over.library.lib
+	}
+	if over.library.target != nil {
+		under.library.target = over.library.target
+	}
+	if over.library.noLib != nil {
+		under.library.noLib = over.library.noLib
 	}
 	return under
 }
 
-// own returns the resolution that a configuration states over the
-// resolution of its bases. Its baseUrl is relative to its own directory.
-// Its paths are relative to the baseUrl in effect, and to its own
-// directory where none is. The paths that it inherits follow a baseUrl
-// that it sets.
-func own(res resolution, file string, cfg tsconfig) resolution {
+// own returns the settings that a configuration states over the settings
+// of its bases. Its baseUrl is relative to its own directory. Its paths are
+// relative to the baseUrl in effect, and to its own directory where none
+// is. The paths that it inherits follow a baseUrl that it sets. Its lib,
+// target and noLib replace those of its bases where it states them.
+func own(s settings, file string, cfg tsconfig) settings {
 	dir := path.Dir(file)
 	opts := cfg.CompilerOptions
+	res := &s.resolution
 	if opts.BaseURL != nil {
 		res.baseURL = path.Join(dir, *opts.BaseURL)
 		if res.patterns != nil {
@@ -251,7 +288,16 @@ func own(res resolution, file string, cfg tsconfig) resolution {
 			res.pathsBase = dir
 		}
 	}
-	return res
+	if opts.Lib != nil {
+		s.library.lib = opts.Lib
+	}
+	if opts.Target != nil {
+		s.library.target = opts.Target
+	}
+	if opts.NoLib != nil {
+		s.library.noLib = opts.NoLib
+	}
+	return s
 }
 
 // patternsOf returns the patterns of the paths option, sorted by key.

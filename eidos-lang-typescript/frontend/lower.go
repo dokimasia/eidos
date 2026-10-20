@@ -41,16 +41,30 @@ const wildcardName = "*"
 // publishes through an export clause or a default export, and the number
 // of inline object bodies around the member under lowering, whose members
 // have no identity.
+//
+// global is the package that a script and a declare global block declare
+// into: the empty path of the global package of the workspace for a source
+// file, and the package of its library for a file of a library, whose
+// syntax errors library leaves unreported. libraryImport is the import of
+// the library that the directives of a source file extend, and nil for none.
+// interfaces are the interfaces that the files of the unit declared so far,
+// by package and name, which a later declaration of one name merges into.
+// The lowering of a source file creates the map with its first interface,
+// and the files of a library share one map.
 type lowering struct {
-	u        *plugin.SourceUnit
-	v        *vocabulary
-	tree     *treesitter.Tree
-	path     string
-	module   *module
-	files    map[string]*node.File
-	comments treesitter.Comments
-	exported map[string]bool
-	inline   int
+	u             *plugin.SourceUnit
+	v             *vocabulary
+	tree          *treesitter.Tree
+	path          string
+	module        *module
+	files         map[string]*node.File
+	comments      treesitter.Comments
+	exported      map[string]bool
+	inline        int
+	global        string
+	library       bool
+	libraryImport *node.Import
+	interfaces    map[mergeKey]*node.Interface
 }
 
 // container is where the declarations of one statement list go: the File
@@ -72,14 +86,15 @@ type container struct {
 }
 
 // lower lowers one parsed file into the builder of the unit: the module
-// record, the carriers of the header of a module, every declaration into
-// its package, the mark of a generated file, the carriers that no
-// declaration took, and the syntax errors. The mark is the first comment
-// of the file where the comment contains [typescript.GeneratedMark].
+// record, the import of the library of the file, the carriers of the
+// header of a module, every declaration into its package, the mark of a
+// generated file, the carriers that no declaration took, and the syntax
+// errors of a source file. The mark is the first comment of the file where
+// the comment contains [typescript.GeneratedMark].
 func (l *lowering) lower(root treesitter.Node) {
 	moduleFile := l.isModule(root)
 	if !moduleFile {
-		l.module.pkg = ""
+		l.module.pkg = l.global
 	}
 	top := container{
 		pkg:     l.module.pkg,
@@ -88,6 +103,9 @@ func (l *lowering) lower(root treesitter.Node) {
 		ambient: typescript.DeclarationFile(l.path),
 	}
 	top.file = l.fileIn(top.pkg, nil, root.Pos())
+	if l.libraryImport != nil {
+		top.file.Imports = append(top.file.Imports, l.libraryImport)
+	}
 	if first := root.FirstOf(l.v.comment); first.PrevNamedSibling().IsZero() &&
 		bytes.Contains(first.Bytes(), []byte(typescript.GeneratedMark)) {
 
@@ -101,7 +119,7 @@ func (l *lowering) lower(root treesitter.Node) {
 	l.comments.Sweep(root, func(n treesitter.Node) {
 		l.u.RefuseCarriers(UnaddressedCarrier, l.u.Comment(n.Text(), n.Pos()).Carriers, unattached)
 	})
-	if problems := l.tree.Problems(); problems != nil {
+	if problems := l.tree.Problems(); problems != nil && !l.library {
 		l.u.ReportSyntax(UnparsedFile, problems)
 	}
 }
@@ -156,7 +174,7 @@ func (l *lowering) fileIn(pkg string, outer []string, at position.Pos) *node.Fil
 	}
 	gb := l.u.Graph()
 	p := gb.Package(pkg)
-	if pkg != "" {
+	if pkg != l.global {
 		p.Name = path.Base(pkg)
 	}
 	f := &node.File{Path: l.path, Pos: at}
@@ -405,14 +423,14 @@ func (l *lowering) exportStatement(stmt treesitter.Node, c container, overloaded
 }
 
 // ambient lowers a declare statement in an ambient context: a declare
-// global block into the global package, an ambient module or namespace,
-// whose members are public, or one ambient declaration.
+// global block into the global package of the file, an ambient module or
+// namespace, whose members are public, or one ambient declaration.
 func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	overloaded map[string]bool,
 ) {
 	if n.HasToken(keywordGlobal) {
 		block := n.FirstOf(l.v.statementBlock)
-		global := container{pkg: "", outer: []string{c.pkg}, public: true, ambient: true}
+		global := container{pkg: l.global, outer: []string{c.pkg}, public: true, ambient: true}
 		global.file = l.fileIn(global.pkg, global.outer, n.Pos())
 		l.statements(block, global)
 		return

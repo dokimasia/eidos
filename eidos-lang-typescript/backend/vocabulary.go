@@ -159,6 +159,8 @@ const refusalPrefix = string(typescript.Lang) + ": "
 //   - A reference without a target imports the specifier of its source.
 //
 // A reference to a declaration of the module of the file imports nothing.
+// A reference to a declaration of a library of TypeScript imports nothing
+// either, because a library declares globals.
 //
 // # Concurrency
 //
@@ -189,9 +191,11 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // brackets. A structural reference keeps its written spelling. Spell
 // returns an error where a type inside a structural reference imports
 // under another name, because the composite spelling of TypeScript does
-// not follow from its structure. Spell also returns an error for a
-// global type that a declaration of the file hides, because the spelling
-// would refer to that declaration.
+// not follow from its structure. Spell also returns an error where a
+// declaration of the file hides the global type that t names, because the
+// spelling would refer to that declaration. Every declaration of a
+// library of TypeScript is global. A reference without a module names a
+// global type where [typescript.GlobalType] reports true for its name.
 //
 // Spell allocates nothing for a name in its written form, a nil
 // reference and a structural reference. An imported declaration
@@ -510,17 +514,21 @@ func (s Speller) spell(t *emit.TypeRef, typeOnly bool) (string, error) {
 // qualify returns a function that writes a named reference through its
 // import. The first segment of a qualified spelling is the declaration
 // that the module exports, and the rest is a member of it. A reference
-// without a module and a reference into the module of the file import
-// nothing. The function returns an error for a global type that a
-// declaration of the file hides.
+// without a module, a reference into a library of TypeScript, whose
+// declarations are global, and a reference into the module of the file
+// import nothing. The function returns an error where a declaration of
+// the file hides the global that the first segment names. Every
+// declaration of a library is such a global. A reference without a module
+// names one where [typescript.GlobalType] reports true for the segment.
 func (s Speller) qualify(typeOnly bool) spellref.Qualify {
 	return func(t *emit.TypeRef) (string, error) {
 		head, rest, qualified := strings.Cut(t.Spelling, qualifierSep)
 		module := spellref.PackageOf(t, typescript.Lang)
+		library := typescript.Library(module)
 		switch {
-		case module == "" && typescript.GlobalType(head) && s.set.Reserved(head):
+		case (library || module == "" && typescript.GlobalType(head)) && s.set.Reserved(head):
 			return "", refuse("a declaration of the file hides the global type %s", head)
-		case module == "" || module == s.set.Home():
+		case library || module == "" || module == s.set.Home():
 			return t.Spelling, nil
 		}
 		local := s.set.BindItem(s.specifier(t, module), head, typeOnly)

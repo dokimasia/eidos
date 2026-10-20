@@ -16,14 +16,20 @@
 //     implements clause. A name that arrives more than once is kept as an
 //     overload. A member of the type's own declaration hides the
 //     inherited members of the same name.
-//   - A parameter of the type AbortSignal is the context, and every other
-//     parameter is an input. A return of an asynchronous stream is a
+//   - A global name is a name that no import binds and that has no target,
+//     or a reference to a declaration of a library of TypeScript. The
+//     rules read both alike.
+//   - A parameter of the global type AbortSignal is the context, and every
+//     other parameter is an input. A return of an asynchronous stream is a
 //     stream. A TypeScript signature does not declare its errors, so
 //     every callable has the error model of raised errors.
-//   - The builtin table classifies the global types by name when no
-//     import binds the name. The table has string, number, boolean, Date,
-//     Uint8Array, the arrays, the records and maps, and the asynchronous
-//     iterables.
+//   - The builtin table classifies the global types by name. The table has
+//     string, number, boolean, Date, Uint8Array, the arrays, the records
+//     and maps, and the asynchronous iterables. A declaration of a library
+//     that the table does not classify has the opaque shape.
+//   - The error contract and the constructors of a class read the error
+//     classes of a library as the global error classes. The fields that a
+//     library declares are not the message or the cause of an error.
 //   - A name in a directive resolves in TypeScript's scope order: the
 //     namespaces, the module and its imports, and then the global
 //     package.

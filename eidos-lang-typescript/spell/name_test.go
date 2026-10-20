@@ -94,6 +94,16 @@ func TestName(t *testing.T) {
 				host: symbol.KindStruct, kind: symbol.KindField, vis: symbol.VisibilityUnknown,
 				give: "string", want: "string",
 			},
+			{
+				name: "returns a method named after a reserved word unchanged",
+				host: symbol.KindInterface, kind: symbol.KindMethod, vis: symbol.VisibilityPublic,
+				give: "delete", want: "delete",
+			},
+			{
+				name: "returns a field named after a reserved word unchanged",
+				host: symbol.KindStruct, kind: symbol.KindField, vis: symbol.VisibilityPublic,
+				give: "default", want: "default",
+			},
 		}, len(memberKinds)+len(contextual))
 		for _, kind := range memberKinds {
 			tests = append(tests, spelling{
@@ -135,6 +145,7 @@ func TestName(t *testing.T) {
 				give: "delete",
 			},
 			{name: "returns an error for a variable named yield", kind: symbol.KindVariable, give: "yield"},
+			{name: "returns an error for a parameter named after a reserved word", kind: symbol.KindParam, give: "new"},
 			{
 				name: "returns an error for a type parameter named after a predefined type",
 				kind: symbol.KindTypeParam, give: "string",

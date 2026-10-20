@@ -4,6 +4,8 @@
 package frontend
 
 import (
+	"slices"
+
 	"go.dokimi.dev/eidos/lang/treesitter"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -155,10 +157,21 @@ func (l *lowering) typeList(clause treesitter.Node) []*node.TypeRef {
 	return out
 }
 
+// mergeKey is the package and the name of an interface, under which a later
+// declaration of the interface in the same unit merges into the first.
+type mergeKey struct {
+	pkg  string
+	name string
+}
+
 // iface lowers an interface: its type parameters, the interfaces it
 // extends, and its members. A second declaration of an interface in one
-// package of one file merges its members into the first, as TypeScript
-// merges them, and declares nothing of its own.
+// package of one unit merges its members into the first, in the order of
+// the files of the unit, as TypeScript merges them, and declares nothing of
+// its own. A merged property of a name that the first declaration has adds
+// nothing, because TypeScript requires both declarations of a property to
+// have one type. A merged method with the signature of a method of the
+// first declaration adds nothing, because the two are one overload.
 func (l *lowering) iface(n treesitter.Node, name string, vis symbol.Visibility, parts plugin.CommentParts,
 	comment string, c container,
 ) symbol.Symbol {
@@ -172,18 +185,72 @@ func (l *lowering) iface(n treesitter.Node, name string, vis symbol.Visibility, 
 		}
 	}
 	calls, _ := l.objectMembers(n.Child(l.v.fieldBody), &it.Fields, &it.Methods)
-	for _, prior := range c.file.Decls {
-		if first, merges := prior.(*node.Interface); merges && first.Name == name {
-			first.Fields = append(first.Fields, it.Fields...)
-			first.Methods = append(first.Methods, it.Methods...)
-			first.Extends = append(first.Extends, it.Extends...)
-			l.stampCalls(first, calls, n)
-			l.u.AttachCarriers(first, parts.Carriers, BadCarrier)
-			return nil
+	key := mergeKey{pkg: c.pkg, name: name}
+	first, merges := l.interfaces[key]
+	if !merges {
+		if l.interfaces == nil {
+			l.interfaces = map[mergeKey]*node.Interface{}
+		}
+		l.interfaces[key] = it
+		l.stampCalls(it, calls, n)
+		return it
+	}
+	for _, f := range it.Fields {
+		if !slices.ContainsFunc(first.Fields, func(prior *node.Field) bool { return prior.Name == f.Name }) {
+			first.Fields = append(first.Fields, f)
 		}
 	}
-	l.stampCalls(it, calls, n)
-	return it
+	for _, m := range it.Methods {
+		if !slices.ContainsFunc(first.Methods, func(prior *node.Method) bool { return sameSignature(prior, m) }) {
+			first.Methods = append(first.Methods, m)
+		}
+	}
+	first.Extends = append(first.Extends, it.Extends...)
+	l.stampCalls(first, calls, n)
+	l.u.AttachCarriers(first, parts.Carriers, BadCarrier)
+	return nil
+}
+
+// sameSignature reports whether two methods of an interface state one
+// signature: the same name, accessor and optional mark, and the same type
+// parameters, receiver, parameters and results, each type by [sameRef]. The
+// name of a method of an interface decides whether it constructs or
+// indexes, and an interface has no static member.
+func sameSignature(a, b *node.Method) bool {
+	if a.Name != b.Name || a.Accessor != b.Accessor || a.Optional != b.Optional ||
+		len(a.TypeParams) != len(b.TypeParams) || len(a.Params) != len(b.Params) || len(a.Returns) != len(b.Returns) {
+
+		return false
+	}
+	if (a.Receiver == nil) != (b.Receiver == nil) || a.Receiver != nil && !sameRef(a.Receiver.Type, b.Receiver.Type) {
+		return false
+	}
+	for i, tp := range a.TypeParams {
+		other := b.TypeParams[i]
+		if tp.Name != other.Name || !sameRef(tp.Default, other.Default) ||
+			!slices.EqualFunc(tp.Bounds, other.Bounds, sameRef) {
+
+			return false
+		}
+	}
+	for i, p := range a.Params {
+		other := b.Params[i]
+		if p.Optional != other.Optional || p.Variadic != other.Variadic || !sameRef(p.Type, other.Type) {
+			return false
+		}
+	}
+	return slices.EqualFunc(a.Returns, b.Returns, func(x, y *node.Return) bool { return sameRef(x.Type, y.Type) })
+}
+
+// sameRef reports whether two type references state one type: both nil, or
+// the same form and spelling with the same type arguments and children, in
+// order.
+func sameRef(a, b *node.TypeRef) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Form == b.Form && a.Spelling == b.Spelling &&
+		slices.EqualFunc(a.Args, b.Args, sameRef) && slices.EqualFunc(a.Elems, b.Elems, sameRef)
 }
 
 // stampCalls stamps the call signatures of a callable object type on

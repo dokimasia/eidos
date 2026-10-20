@@ -6,6 +6,7 @@ package frontend_test
 import (
 	"slices"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
@@ -151,6 +152,55 @@ func TestResolve(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, resolved(scopeIn(t, "export {};\n", aPackage), ""), "an empty spelling names nothing")
+		})
+
+		globals := []struct {
+			name     string
+			giveName string
+			want     plugin.Candidates
+		}{
+			{
+				name:     "probes the package of the library after the global package for a bare name",
+				giveName: probeName,
+				want: plugin.Candidates{
+					{id(aPackage, probeName)}, {id("", probeName)}, {id(defaultPackage, probeName)},
+				},
+			},
+			{
+				name:     "probes a namespace of the library after the global namespace for a qualified name",
+				giveName: "A." + probeName,
+				want: plugin.Candidates{
+					{id(outerPackage, probeName)}, {id("A", probeName)}, {id(defaultPackage+"/A", probeName)},
+				},
+			},
+			{
+				name:     "probes the global package and the library alone for a name that opens with globalThis",
+				giveName: "globalThis." + probeName,
+				want:     plugin.Candidates{{id("", probeName)}, {id(defaultPackage, probeName)}},
+			},
+			{
+				name:     "probes a namespace of the global scope alone for a qualified name after globalThis",
+				giveName: "globalThis.Intl." + probeName,
+				want:     plugin.Candidates{{id("Intl", probeName)}, {id(defaultPackage+"/Intl", probeName)}},
+			},
+		}
+		for _, tt := range globals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, _ := parsedWithLibrary(t, fstest.MapFS{aFile: {Data: []byte("export {};\n")}})
+				scope := scopeOfFile(t, gb, fileIn(t, gb, aPackage))
+				assert.Equal(t, resolved(scope, tt.giveName), tt.want, "the tiers of the spelling")
+			})
+		}
+
+		t.Run("probes the package of its library alone for a bare name of a file of the library", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedLibrary(t, withLibrary(fstest.MapFS{}), defaultDOM)
+			scope := scopeOfFile(t, gb, packageIn(t, gb, defaultPackage).Files[0])
+			assert.Equal(t, resolved(scope, eventName), plugin.Candidates{{id(defaultPackage, eventName)}},
+				"a script of the workspace hides no declaration of the library")
 		})
 	})
 

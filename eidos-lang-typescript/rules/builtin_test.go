@@ -5,10 +5,12 @@ package rules_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
+	"go.dokimi.dev/eidos/lang/typescript"
 	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -133,6 +135,18 @@ func TestBuiltin(t *testing.T) {
 				want: rules.TypeShape{Form: symbol.FormOpaque, Spelling: "string[]"},
 			},
 			{name: "classifies no reference as opaque", give: nil, want: rules.TypeShape{Form: symbol.FormOpaque}},
+			{
+				name: "classifies the Date of a library as the well-known timestamp",
+				give: &node.TypeRef{Spelling: "Date", Target: libraryDate},
+				want: rules.Reference("Date", rules.WellKnownTimestamp),
+			},
+			{
+				name: "classifies a declaration of the workspace as opaque",
+				give: &node.TypeRef{Spelling: "Date", Target: symbol.Identity{
+					Lang: typescript.Lang, Package: aPkg, Name: "Date", Kind: symbol.KindInterface,
+				}},
+				want: rules.TypeShape{Form: symbol.FormOpaque, Spelling: "Date"},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -175,6 +189,62 @@ func TestBuiltin(t *testing.T) {
 			assert.Equal(t, shape.Form, symbol.FormOpaque, "a Record takes two arguments")
 		})
 	})
+
+	t.Run("ShapeOf", func(t *testing.T) {
+		t.Parallel()
+
+		arg := &node.TypeRef{Spelling: numberName}
+		tests := []struct {
+			name      string
+			give      *node.TypeRef
+			wantShape rules.TypeShape
+			want      bool
+		}{
+			{
+				name: "returns the shape of Builtin for a declaration of a library",
+				give: &node.TypeRef{Spelling: typescript.TypeArray, Target: libraryArray, Args: []*node.TypeRef{arg}},
+				wantShape: rules.TypeShape{
+					Form: symbol.FormList, Spelling: typescript.TypeArray, Mutability: symbol.MutabilityMutable,
+				},
+				want: true,
+			},
+			{
+				name:      "returns opaque for a declaration of a library that the table does not classify",
+				give:      &node.TypeRef{Spelling: promiseName, Target: libraryProm, Args: []*node.TypeRef{arg}},
+				wantShape: rules.TypeShape{Form: symbol.FormOpaque, Spelling: promiseName},
+				want:      true,
+			},
+			{
+				name: "reports false for a declaration of the workspace",
+				give: &node.TypeRef{Spelling: rowName, Target: rowID},
+			},
+			{name: "reports false for no reference"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				shape, shaped := tsrules.Rules{}.ShapeOf(tt.give, nil, rules.View{})
+				expect.Equal(t, shaped, tt.want, "whether the rules shape the reference")
+				expect.Equal(t, shape, tt.wantShape, "the shape of the reference")
+			})
+		}
+
+		t.Run("folds a list of the library with its argument as the child", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{"rows.ts": {Data: []byte("export interface Rows {\n  ids: Array<number>;\n}\n")}}
+			f := loadedWithLibrary(t, tree)
+			rows, isInterface := f.decl(t, "rows", "Rows", symbol.KindInterface).(*node.Interface)
+			assert.True(t, isInterface, "Rows is an interface")
+			ids := rows.Fields[0].Type
+			assert.True(t, typescript.Library(ids.Target.Package), "Array resolves to the library")
+			shape := rules.NewBound(tsrules.New(), f.view, nil).TypeOf(ids)
+			assert.Equal(t, shape.Form, symbol.FormList, "the Array of the library is a list")
+			assert.Length(t, shape.Elems, 1, "a list has one child")
+			expect.Equal(t, shape.Elems[0].Form, symbol.FormScalar, "the child is the number")
+		})
+	})
 }
 
 // TestBuiltinAllocs checks that the builtin table classifies a spelling
@@ -191,13 +261,26 @@ func BenchmarkBuiltin(b *testing.B) {
 }
 
 // builtinCalls returns the measured calls of builtin.go. The calls
-// classify a scalar and a list, one from each half of the table.
+// classify a scalar and a list, one from each half of the table, and shape
+// a list of a library.
 func builtinCalls() []allocCall {
 	r := tsrules.New()
 	number := &node.TypeRef{Spelling: numberName}
 	list := &node.TypeRef{Spelling: "Array", Args: []*node.TypeRef{number}}
-	var shape rules.TypeShape
+	libraryList := &node.TypeRef{Spelling: "Array", Target: libraryArray, Args: []*node.TypeRef{number}}
+	var (
+		shape  rules.TypeShape
+		shaped bool
+	)
 	return []allocCall{
+		{
+			name: "ShapeOf", caseName: "a list of a library",
+			call: func() { shape, shaped = tsrules.Rules{}.ShapeOf(libraryList, nil, rules.View{}) },
+			check: func(tb assert.TB) {
+				assert.True(tb, shaped, "ShapeOf shapes the declaration of a library")
+				assert.Equal(tb, shape.Form, symbol.FormList, "ShapeOf classifies the array")
+			},
+		},
 		{
 			name: "Builtin", caseName: "a number",
 			call: func() { shape = r.Builtin(number, rules.View{}) },

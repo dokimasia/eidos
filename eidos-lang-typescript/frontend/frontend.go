@@ -82,6 +82,15 @@ var RelativeAugmentation = diag.MustRegister(typescript.CodePrefix, diag.CodeSpe
 	Meaning: "a module augmentation of a relative module loads nothing",
 })
 
+// UnknownLibrary reports an entry of the lib option, a target, or a lib
+// directive of a source file with a name that TypeScript 7.0.2 does not
+// know, at the configuration or at the directive. Severity is Warning. The
+// entry and the directive select no file, and the target is ES2025.
+var UnknownLibrary = diag.MustRegister(typescript.CodePrefix, diag.CodeSpec{
+	Number:  9,
+	Meaning: "a library or a target is unknown to the embedded release of TypeScript",
+})
+
 // nodeModules is the directory that a package manager installs packages
 // into, which the claim leaves out.
 const nodeModules = "node_modules"
@@ -90,7 +99,9 @@ const nodeModules = "node_modules"
 // extension of TypeScript, its ES module and CommonJS forms, and TSX,
 // which parses with the TSX grammar. It declares that the language
 // overloads and implements the exporter role, so a reference through a
-// re-export resolves to the declaration that it publishes. Its version
+// re-export resolves to the declaration that it publishes. It implements
+// the dependent role over the library store of [Stores], so a global name
+// resolves to the declaration of the library of its project. Its version
 // folds the version of the grammar, so an upgrade of the grammar re-keys
 // every unit. The kit stamps typescript.testFile on every test file, and
 // registers every typescript key as the key provider of the frontend.
@@ -117,6 +128,8 @@ func New() plugin.Frontend {
 		Classify(frontend.TestFiles(typescript.TestFileKey, testFile)).
 		Resolve(resolve).
 		Exports(exports).
+		Dependencies(dependencies).
+		Stores(Stores).
 		Keys(typescript.Keys).
 		Build()
 }

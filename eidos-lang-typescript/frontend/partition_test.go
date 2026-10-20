@@ -4,11 +4,13 @@
 package frontend_test
 
 import (
+	"io/fs"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
@@ -83,8 +85,79 @@ func TestPartition(t *testing.T) {
 			assert.NoError(t, err, "the tree partitions")
 			assert.Equal(t, r.reads[srcConfig], 1, "the second probe stops at the directory the first visited")
 		})
+
+		libraries := []struct {
+			name     string
+			giveTree fstest.MapFS
+			want     []string
+		}{
+			{
+				name:     "declares the default library for a file without a configuration",
+				giveTree: fstest.MapFS{},
+				want:     []string{defaultInput},
+			},
+			{
+				name:     "declares the library of the governing configuration after its chain",
+				giveTree: fstest.MapFS{rootConfig: {Data: []byte(`{"compilerOptions": {"lib": ["ES2024"]}}`)}},
+				want:     []string{rootConfig, es2024Input},
+			},
+			{
+				name: "declares the library between the chain and the nearest package.json",
+				giveTree: fstest.MapFS{
+					rootConfig:  {Data: []byte(`{"compilerOptions": {"lib": ["ES2024"]}}`)},
+					packageFile: {Data: []byte("{}")},
+				},
+				want: []string{rootConfig, es2024Input, packageFile},
+			},
+			{
+				name:     "does not declare a library for a chain under noLib",
+				giveTree: fstest.MapFS{rootConfig: {Data: []byte(`{"compilerOptions": {"noLib": true}}`)}},
+				want:     []string{rootConfig},
+			},
+		}
+		for _, tt := range libraries {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				units := partitionedThrough(t, storeTree{tt.giveTree, realStores(t)}, aFile)
+				assert.Equal(t, units[0][0].Shared, tt.want, "the shared inputs of the file")
+			})
+		}
+
+		t.Run("does not declare a library whose root the store lacks", func(t *testing.T) {
+			t.Parallel()
+
+			units := partitionedThrough(t, storeTree{fstest.MapFS{}, map[string]fs.FS{
+				typescript.LibraryStore: fstest.MapFS{},
+			}}, aFile)
+			assert.Empty(t, units[0][0].Shared, "the partition does not declare a library that the store lacks")
+		})
+
+		t.Run("probes the store once for each library", func(t *testing.T) {
+			t.Parallel()
+
+			r := countingStoreReader{tree: storeTree{fstest.MapFS{}, realStores(t)}, reads: map[string]int{}}
+			refs := []plugin.SourceRef{{Path: xFile}, {Path: yFile}}
+			_, err := frontend.New().Partition(t.Context(), refs, r)
+			assert.NoError(t, err, "the tree partitions")
+			assert.Equal(t, r.reads[defaultInput], 1, "the second file takes the probe of the first")
+		})
+
+		t.Run("returns the error of a probe of the store that fails", func(t *testing.T) {
+			t.Parallel()
+
+			tree := storeTree{fstest.MapFS{}, map[string]fs.FS{
+				typescript.LibraryStore: failingFS{fakeLibrary(), defaultRoot + "/" + defaultRoot},
+			}}
+			_, err := frontend.New().Partition(t.Context(), []plugin.SourceRef{{Path: aFile}}, roundReader{tree})
+			assert.ErrorIs(t, err, errBroken, "the partition returns the failure of the probe")
+		})
 	})
 }
+
+// es2024Input is the shared input of the library of ES2024: its root inside
+// its key.
+var es2024Input = plugin.StorePath(typescript.LibraryStore, es2024Root+"/"+es2024Root)
 
 // countingReader reads a tree and counts the reads of each path.
 type countingReader struct {
@@ -96,6 +169,20 @@ type countingReader struct {
 func (r countingReader) Read(path string) ([]byte, error) {
 	r.reads[path]++
 	return r.tree.ReadFile(path)
+}
+
+// countingStoreReader reads a tree with stores and counts the reads of each
+// path.
+type countingStoreReader struct {
+	tree  fs.FS
+	reads map[string]int
+}
+
+// Read counts the read of path and returns the bytes of the file of the
+// workspace or of a store.
+func (r countingStoreReader) Read(path string) ([]byte, error) {
+	r.reads[path]++
+	return plugin.ReadFile(r.tree, path)
 }
 
 // partitioned partitions every file of a tree through the frontend.

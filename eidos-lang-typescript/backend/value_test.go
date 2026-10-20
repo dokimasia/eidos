@@ -37,6 +37,10 @@ const (
 	setType           = "Set"
 )
 
+// cloneName is a function that the default library of TypeScript
+// declares.
+const cloneName = "structuredClone"
+
 // The allocations of a value.
 const (
 	// literalAllocs is an integer literal, which TypeScript writes as its
@@ -133,6 +137,12 @@ func TestValue(t *testing.T) {
 			{
 				name: "writes a ReadonlyArray as an array literal",
 				give: emit.Composite(&emit.TypeRef{Spelling: readonlyArrayType},
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				want: "[2]",
+			},
+			{
+				name: "writes an Array of a library as an array literal",
+				give: emit.Composite(valueRef(arrayType, libraryPackage, arrayType),
 					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
 				want: "[2]",
 			},
@@ -312,6 +322,26 @@ func TestValue(t *testing.T) {
 			assert.NoError(t, err, "the value spells")
 			assert.Contains(t, string(out), unixName+"()", "the call has the function's own name")
 			assert.Equal(t, set.Len(), 0, "the file imports nothing of its own")
+		})
+
+		t.Run("calls a function of a library without an import", func(t *testing.T) {
+			t.Parallel()
+
+			got, set, err := returned(t, emit.Call(valueFn(libraryPackage, cloneName)))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, cloneName+"()", "the call has the global name")
+			assert.Equal(t, set.Len(), 0, "the file imports nothing of the library")
+		})
+
+		t.Run("returns a value error for a library function that a declaration of the file hides", func(t *testing.T) {
+			t.Parallel()
+
+			set := &render.ImportSet{}
+			set.Reserve(cloneName)
+			_, err := backend.Value(emit.Call(valueFn(libraryPackage, cloneName)), set)
+			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+			assert.Equal(t, refused.Lang, string(typescript.Lang), "naming the target")
+			assert.Contains(t, err.Error(), "hides the global "+cloneName, "the refusal contains the hidden name")
 		})
 
 		t.Run("renames a callee another import binds", func(t *testing.T) {

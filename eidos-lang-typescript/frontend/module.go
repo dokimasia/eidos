@@ -28,12 +28,20 @@ type reexport struct {
 }
 
 // module is one file's record, shared by every scope the file records:
-// its directory and package, what its imports bind, what it publishes
-// and does not declare, and how its non-relative specifiers resolve.
-// It is immutable once the parse returns, and safe for concurrent use.
+// its directory and package, the packages of its global scope, what its
+// imports bind, what it publishes and does not declare, and how its
+// non-relative specifiers resolve. It is immutable once the parse returns,
+// and safe for concurrent use.
 type module struct {
 	dir string
 	pkg string
+
+	// globals are the packages of the global scope of the file, which a
+	// bare name probes after its imports. A source file has the global
+	// package of the workspace, and then the package of its library where
+	// the load provides the library. A file of the library has the package
+	// of its library alone.
+	globals []string
 
 	// imports maps each local name an import binds onto its binding,
 	// and aliases each local name an import alias binds onto the
@@ -55,11 +63,13 @@ type module struct {
 	paths resolution
 }
 
-// newModule returns the empty record of one file.
-func newModule(file string, paths resolution) *module {
+// newModule returns the empty record of one file with the packages of its
+// global scope.
+func newModule(file string, paths resolution, globals []string) *module {
 	return &module{
 		dir:     path.Dir(file),
 		pkg:     typescript.ModulePath(file),
+		globals: globals,
 		imports: map[string]binding{},
 		aliases: map[string]string{},
 		paths:   paths,

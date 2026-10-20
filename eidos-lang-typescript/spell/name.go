@@ -35,8 +35,13 @@ var caser = naming.New()
 // quotes it on a property, a method member and an enum member, and
 // refuses it on a parameter, which has no quoted form. Every other
 // kind has no quoted form either, so Name refuses a non-identifier
-// on it. A spelling that is a reserved word is refused, because the
-// declaration it produces does not parse.
+// on it.
+//
+// A field, a method and an enum variant take any spelling that is an
+// identifier, a reserved word such as delete included, because
+// TypeScript reads the key of a member as a property name. Name refuses
+// a reserved word on every other kind, because a binding of it does not
+// parse.
 //
 // # Allocation contract
 //
@@ -66,11 +71,13 @@ func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error)
 		spelt = caser.Camel(name)
 	}
 	switch {
+	case member(kind):
+		// The key of a member takes every identifier.
 	case reserved[spelt]:
 		return "", fmt.Errorf(
-			"typescript: %s spells the reserved word %s, which no declaration may take", name, spelt,
+			"typescript: %s spells the reserved word %s, which no binding may take", name, spelt,
 		)
-	case !member(kind) && bindingReserved[spelt]:
+	case bindingReserved[spelt]:
 		return "", fmt.Errorf(
 			"typescript: %s spells %s, which a module binds nowhere", name, spelt,
 		)
@@ -123,9 +130,9 @@ func typeDeclaration(kind symbol.Kind) bool {
 	}
 }
 
-// reserved is the word set TypeScript refuses as a declaration name:
-// the ECMAScript reserved words, and the words strict mode reserves,
-// which a generated module always runs under.
+// reserved is the word set TypeScript refuses as a binding name: the
+// ECMAScript reserved words, and the words strict mode reserves, which a
+// generated module always runs under. A member key may take any of them.
 var reserved = map[string]bool{
 	"break": true, "case": true, "catch": true, "class": true,
 	"const": true, "continue": true, "debugger": true, "default": true,

@@ -235,9 +235,9 @@ func TestCapabilities(t *testing.T) {
 			name  string
 			class string
 		}{
-			{name: "returns no constructor of a class whose constructor is private", class: "Hidden"},
-			{name: "returns no constructor of a class that extends an interface", class: "OffReader"},
-			{name: "returns no constructor below the default depth of a chain of classes", class: "L0"},
+			{name: "does not return a constructor of a class whose constructor is private", class: "Hidden"},
+			{name: "does not return a constructor of a class that extends an interface", class: "OffReader"},
+			{name: "does not return a constructor below the default depth of a chain of classes", class: "L0"},
 		}
 		for _, tt := range empty {
 			t.Run(tt.name, func(t *testing.T) {
@@ -300,12 +300,28 @@ func TestCapabilities(t *testing.T) {
 			expect.Equal(t, got[0].Params[2].Name, optionsName, "the third parameter is the options")
 		})
 
-		t.Run("returns no constructor of an Error that a module exports", func(t *testing.T) {
+		t.Run("does not return a constructor of an Error that a module exports", func(t *testing.T) {
 			t.Parallel()
 
 			s := &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: "Error", Package: outsideLib}}}
 			assert.Empty(t, tsrules.Rules{}.Constructors(s, rules.View{}),
-				"the Error of a module is no global error class")
+				"the Error of a module is not a global error class")
+		})
+
+		t.Run("returns the constructor of Error for a class that extends the Error of a library", func(t *testing.T) {
+			t.Parallel()
+
+			s := &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: "Error", Target: libraryError}}}
+			got := tsrules.Rules{}.Constructors(s, rules.View{})
+			assert.Length(t, got, 1, "the Error of the library declares one constructor")
+			assert.Length(t, got[0].Params, 2, "the constructor takes a message and the options")
+		})
+
+		t.Run("does not return a constructor of a class that extends an interface of a library", func(t *testing.T) {
+			t.Parallel()
+
+			s := &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: "Map", Target: libraryMap}}}
+			assert.Empty(t, tsrules.Rules{}.Constructors(s, rules.View{}), "the Map of the library is an interface")
 		})
 	})
 
@@ -403,6 +419,10 @@ func TestCapabilities(t *testing.T) {
 				name: "reports false for a base that the view does not declare",
 				give: &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: rowName, Target: rowID}}},
 			},
+			{
+				name: "reports false for a declaration of a library that is no error class",
+				give: &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: "Map", Target: libraryMap}}},
+			},
 		}
 		for _, tt := range constructed {
 			t.Run(tt.name, func(t *testing.T) {
@@ -412,6 +432,23 @@ func TestCapabilities(t *testing.T) {
 				assert.False(t, isError, "the declaration is not an error type")
 			})
 		}
+
+		t.Run("returns the contract of a class that extends the Error of a library", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedWithLibrary(t, fstest.MapFS{"fault.ts": {Data: []byte(
+				"export class Fault extends Error {\n  cause?: unknown;\n}\n",
+			)}})
+			class, isClass := f.decl(t, "fault", "Fault", symbol.KindStruct).(*node.Struct)
+			assert.True(t, isClass, "Fault is a class")
+			assert.True(t, typescript.Library(class.Extends[0].Target.Package), "Error resolves to the library")
+			c, isError := tsrules.Rules{}.ErrorContract(class, f.view)
+			assert.True(t, isError, "Fault is an error")
+			expect.Nil(t, c.Message, "Fault inherits its message from the Error of the library")
+			assert.NotNil(t, c.Cause, "Fault declares a cause")
+			expect.Equal(t, c.Cause.Name, causeName, "the cause of Fault, not the cause of the library")
+			expect.Equal(t, c.Cause.Pos.File, "fault.ts", "the field of the class")
+		})
 	})
 }
 

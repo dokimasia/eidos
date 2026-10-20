@@ -12,17 +12,23 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// globalThisName is the name of the global scope of TypeScript, which a
+// qualified name such as globalThis.Error opens with.
+const globalThisName = "globalThis"
+
 // resolve returns what a spelling could mean in one file, in the scope
 // order of TypeScript, through the bindings that the parse recorded. A
 // file whose parse recorded no scope resolves nothing.
 //
 // A bare name probes the enclosing namespaces innermost first and then
 // the package of the file, one tier each, then the module that an import
-// binds it from, and then the global package. A qualified name probes the
-// module that a namespace import binds its first name to, a namespace
-// that a named import binds, or a namespace of each enclosing package and
-// of the global package. An import alias resolves as the entity that it
-// refers to.
+// binds it from, and then each package of the global scope: the global
+// package of the workspace and the package of the library. A qualified
+// name probes the module that a namespace import binds its first name to,
+// a namespace that a named import binds, or a namespace of each enclosing
+// package and of each package of the global scope. A name that opens with
+// globalThis probes the rest of the name in the packages of the global
+// scope alone. An import alias resolves as the entity that it refers to.
 func resolve(s plugin.ImportScope, spelling string) plugin.Candidates {
 	sc, _ := s.Bindings.(*scope)
 	if sc == nil {
@@ -57,15 +63,17 @@ func (s *scope) candidates(spelling string, followed map[string]bool) plugin.Can
 	head, name := segments[0], segments[len(segments)-1]
 	chain := s.chain()
 	if len(segments) == 1 {
-		tiers := make(plugin.Candidates, 0, len(chain)+2)
+		tiers := make(plugin.Candidates, 0, len(chain)+1+len(m.globals))
 		for _, pkg := range chain {
 			tiers = append(tiers, []symbol.Identity{{Lang: Lang, Package: pkg, Name: name}})
 		}
 		if b, bound := m.imports[name]; bound && b.name != "" {
 			tiers = append(tiers, m.from(b.specifier, "", b.name)...)
 		}
-		if !slices.Contains(chain, "") {
-			tiers = append(tiers, []symbol.Identity{{Lang: Lang, Name: name}})
+		for _, global := range m.globals {
+			if !slices.Contains(chain, global) {
+				tiers = append(tiers, []symbol.Identity{{Lang: Lang, Package: global, Name: name}})
+			}
 		}
 		return tiers
 	}
@@ -86,15 +94,28 @@ func (s *scope) candidates(spelling string, followed map[string]bool) plugin.Can
 		}
 		return m.from(b.specifier, typescript.JoinPackage(b.name, inner), name)
 	}
+	if head == globalThisName {
+		tiers := make(plugin.Candidates, 0, len(m.globals))
+		for _, global := range m.globals {
+			tiers = append(tiers, []symbol.Identity{
+				{Lang: Lang, Package: typescript.JoinPackage(global, inner), Name: name},
+			})
+		}
+		return tiers
+	}
 	namespace := strings.Join(segments[:len(segments)-1], "/")
-	tiers := make(plugin.Candidates, 0, len(chain)+1)
+	tiers := make(plugin.Candidates, 0, len(chain)+len(m.globals))
 	for _, pkg := range chain {
 		tiers = append(tiers, []symbol.Identity{
 			{Lang: Lang, Package: typescript.JoinPackage(pkg, namespace), Name: name},
 		})
 	}
-	if !slices.Contains(chain, "") {
-		tiers = append(tiers, []symbol.Identity{{Lang: Lang, Package: namespace, Name: name}})
+	for _, global := range m.globals {
+		if !slices.Contains(chain, global) {
+			tiers = append(tiers, []symbol.Identity{
+				{Lang: Lang, Package: typescript.JoinPackage(global, namespace), Name: name},
+			})
+		}
 	}
 	return tiers
 }

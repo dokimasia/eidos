@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -45,7 +46,13 @@ const (
 	dateType        = "Date"
 	abortSignalType = "AbortSignal"
 	mapType         = "Map"
+	// disposableType is a type of the library of TypeScript that
+	// [typescript.GlobalType] does not list.
+	disposableType = "Disposable"
 )
+
+// libraryPackage is the package of the default library of TypeScript.
+var libraryPackage = plugin.StorePath(typescript.LibraryStore, "lib.es2025.full.d.ts")
 
 // The declarations, the spellings and the keywords the allocation cases
 // name.
@@ -131,7 +138,7 @@ func TestVocabulary(t *testing.T) {
 	t.Run("Spell", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the spelling of a reference that names no module", func(t *testing.T) {
+		t.Run("returns the spelling of a reference without a module", func(t *testing.T) {
 			t.Parallel()
 
 			s, set := speller()
@@ -303,6 +310,43 @@ func TestVocabulary(t *testing.T) {
 			assert.HasError(t, err, "the file's AbortSignal hides the global one")
 			assert.Contains(t, err.Error(), "hides the global type "+abortSignalType,
 				"the refusal contains the hidden type")
+		})
+
+		t.Run("returns a reference to a declaration of a library as written", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetHome(storePath)
+			library := &emit.TypeRef{
+				Spelling: disposableType,
+				Target:   symbol.Identity{Lang: typescript.Lang, Package: libraryPackage, Name: disposableType},
+			}
+			assert.Equal(t, spelled(t, s, library), disposableType, "the declaration of the library is global")
+			assert.Equal(t, set.Len(), 0, "the file imports nothing of the library")
+		})
+
+		t.Run("returns an error for a type of a library that a declaration of the file hides", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.Reserve(disposableType)
+			library := &emit.TypeRef{
+				Spelling: disposableType,
+				Target:   symbol.Identity{Lang: typescript.Lang, Package: libraryPackage, Name: disposableType},
+			}
+			_, err := s.Spell(library)
+			assert.HasError(t, err, "the Disposable of the file hides the Disposable of the library")
+			assert.Contains(t, err.Error(), "hides the global type "+disposableType,
+				"the refusal contains the hidden type")
+		})
+
+		t.Run("returns a reference without a module to a declaration of the file as written", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.Reserve(disposableType)
+			assert.Equal(t, spelled(t, s, ref(disposableType)), disposableType,
+				"a name without a module refers to the declaration of the file")
 		})
 
 		t.Run("renames a declaration another import binds", func(t *testing.T) {
@@ -670,11 +714,11 @@ func TestVocabulary(t *testing.T) {
 			give symbol.Symbol
 		}{
 			{
-				name: "writes no clause for the embed of a class",
+				name: "does not write a clause for the embed of a class",
 				give: &emit.Struct{Name: rowName, Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})},
 			},
 			{
-				name: "writes no clause for the embed of an interface",
+				name: "does not write a clause for the embed of an interface",
 				give: &emit.Interface{Name: "Store", Embeds: emit.SlotOf(&emit.Embed{Ref: ref(baseName)})},
 			},
 		}

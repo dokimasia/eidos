@@ -15,6 +15,7 @@ import (
 	tsfrontend "go.dokimi.dev/eidos/lang/typescript/frontend"
 	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/rulestest"
 	"go.dokimi.dev/eidos/sdk/store"
@@ -73,6 +74,44 @@ var (
 	targetID  = symbol.Identity{Lang: typescript.Lang, Package: depPkg, Name: targetName, Kind: symbol.KindStruct}
 	derivedID = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: derivedName, Kind: symbol.KindStruct}
 )
+
+// The package of the default library and the identities of its
+// declarations that the library cases refer to.
+var (
+	libraryPkg = plugin.StorePath(typescript.LibraryStore, "lib.es2025.full.d.ts")
+	librarySig = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: abortSignal, Kind: symbol.KindInterface,
+	}
+	libraryError = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: typescript.TypeError, Kind: symbol.KindInterface,
+	}
+	libraryMap = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: typescript.TypeMap, Kind: symbol.KindInterface,
+	}
+	libraryDate = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: typescript.TypeDate, Kind: symbol.KindInterface,
+	}
+	libraryArray = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: typescript.TypeArray, Kind: symbol.KindInterface,
+	}
+	libraryProm = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: promiseName, Kind: symbol.KindInterface,
+	}
+	libraryIter = symbol.Identity{
+		Lang: typescript.Lang, Package: libraryPkg, Name: typescript.TypeAsyncIterable, Kind: symbol.KindInterface,
+	}
+)
+
+// disposedTree is a project whose library is ES2024 with the disposables
+// of ESNext. Its module failure declares an interface that extends Error
+// and an interface that extends AsyncDisposable.
+var disposedTree = fstest.MapFS{
+	"tsconfig.json": {
+		Data: []byte(`{"compilerOptions": {"target": "ES2024", "lib": ["ES2024", "ESNext.Disposable"]}}`),
+	},
+	"failure.ts": {Data: []byte("export interface Failure extends Error {\n  retryable(): boolean;\n}\n\n" +
+		"export interface Disposed extends AsyncDisposable {\n  read(key: string): Promise<string>;\n}\n")},
+}
 
 // aliasTree is a tree whose tsconfig maps the specifiers under @fx/ onto
 // the directory fx. The module fx/use imports the class Item of the module
@@ -420,6 +459,40 @@ func TestRules(t *testing.T) {
 			assert.Equal(t, names, []string{"label", "helper", "kind", "secret", "own", "constructor", "guard"},
 				"the members of Derived come first, and the members of Base follow")
 		})
+
+		library := []struct {
+			name string
+			give string
+			want []string
+		}{
+			{
+				name: "returns a policy under which an interface that extends Error has the members of the library",
+				give: "Failure",
+				want: []string{"retryable", "name", "message", "stack", "cause"},
+			},
+			{
+				name: "returns a policy under which an interface that extends AsyncDisposable has its computed member",
+				give: "Disposed",
+				want: []string{"read", "[Symbol.asyncDispose]"},
+			},
+		}
+		for _, tt := range library {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedWithLibrary(t, disposedTree)
+				iface := f.decl(t, "failure", tt.give, symbol.KindInterface)
+				set, _ := rules.NewBound(tsrules.New(), f.view, nil).MembersOf(iface)
+				var names []string
+				for _, m := range set.Members {
+					if decl, named := m.Symbol.(node.Declaration); named {
+						names = append(names, decl.Identity().Name)
+					}
+				}
+				expect.Equal(t, names, tt.want, "the members of the interface, then those of the library")
+				expect.True(t, set.Complete(), "every contributor of the library yields")
+			})
+		}
 	})
 
 	t.Run("ParamRole", func(t *testing.T) {
@@ -447,6 +520,18 @@ func TestRules(t *testing.T) {
 			{
 				name: "classifies an AbortSignal that an import binds as an input",
 				give: &node.TypeRef{Spelling: abortSignal, Package: outsideLib}, want: rules.ParamInput,
+			},
+			{
+				name: "classifies the AbortSignal of a library as the context",
+				give: &node.TypeRef{Spelling: abortSignal, Target: librarySig},
+				want: rules.ParamContext,
+			},
+			{
+				name: "classifies an AbortSignal of the workspace as an input",
+				give: &node.TypeRef{Spelling: abortSignal, Target: symbol.Identity{
+					Lang: typescript.Lang, Package: aPkg, Name: abortSignal, Kind: symbol.KindInterface,
+				}},
+				want: rules.ParamInput,
 			},
 			{
 				name: "classifies a parameter of any other type as an input",
@@ -509,6 +594,24 @@ func TestRules(t *testing.T) {
 			expect.Equal(t, c.Params[0].Role, rules.ParamContext, "the signal is the context")
 			expect.Equal(t, c.Params[1].Role, rules.ParamInput, "the id is an input")
 		})
+
+		t.Run("classifies an AbortSignal that resolves to the library as the context", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedWithLibrary(t, fstest.MapFS{"guard.ts": {Data: []byte(
+				"export function guard(signal: AbortSignal): void {}\n",
+			)}})
+			want := symbol.Identity{
+				Lang: typescript.Lang, Package: "guard", Name: "guard", Kind: symbol.KindFunction, Disc: abortSignal,
+			}
+			sym, held := f.Graph.Lookup(want)
+			assert.True(t, held, "the module declares guard")
+			fn, isFunction := sym.(*node.Function)
+			assert.True(t, isFunction, "guard is a function")
+			assert.True(t, typescript.Library(fn.Params[0].Type.Target.Package), "the signal resolves to the library")
+			c, _ := rules.NewBound(tsrules.New(), f.view, nil).CallableOf(fn)
+			assert.Equal(t, c.Params[0].Role, rules.ParamContext, "the signal of the library is the context")
+		})
 	})
 
 	t.Run("ReturnRoles", func(t *testing.T) {
@@ -535,6 +638,16 @@ func TestRules(t *testing.T) {
 					"ReturnRoles classifies an asynchronous stream of numbers as a stream")
 			})
 		}
+
+		t.Run("classifies an asynchronous stream of a library as a stream", func(t *testing.T) {
+			t.Parallel()
+
+			ret := &node.Return{Type: &node.TypeRef{
+				Spelling: "AsyncIterable", Target: libraryIter, Args: []*node.TypeRef{{Spelling: numberName}},
+			}}
+			roles, _ := tsrules.New().ReturnRoles([]*node.Return{ret}, rules.View{})
+			assert.Equal(t, roles, []rules.ReturnRole{rules.ReturnStream}, "the AsyncIterable of the library streams")
+		})
 
 		t.Run("classifies every other return as a value", func(t *testing.T) {
 			t.Parallel()
@@ -700,7 +813,23 @@ func loaded(tb assert.TB) *fixture {
 func loadedFrom(tb assert.TB, tree fstest.MapFS) *fixture {
 	tb.Helper()
 
-	f := rulestest.Loaded(tb, tsfrontend.New(), tree)
+	return viewOf(tb, rulestest.Loaded(tb, tsfrontend.New(), tree))
+}
+
+// loadedWithLibrary returns the fixture of a tree loaded beside the embedded
+// library of TypeScript, with a tracked view over it.
+func loadedWithLibrary(tb assert.TB, tree fstest.MapFS) *fixture {
+	tb.Helper()
+
+	stores, err := tsfrontend.Stores(nil)
+	assert.NoError(tb, err, "the frontend locates its stores")
+	return viewOf(tb, rulestest.LoadedWith(tb, tsfrontend.New(), tree, stores))
+}
+
+// viewOf returns a loaded fixture with a tracked view over its graph.
+func viewOf(tb assert.TB, f *rulestest.Fixture) *fixture {
+	tb.Helper()
+
 	reads := store.NewReadSet()
 	reader, err := f.Graph.Reader(reads, nil)
 	assert.NoError(tb, err, "the sealed graph returns a reader")

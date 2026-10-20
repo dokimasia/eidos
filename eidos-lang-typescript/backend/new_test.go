@@ -39,6 +39,14 @@ const (
 	settledDouble = "StubRow"
 )
 
+// The members that the cases name after reserved words of ECMAScript,
+// and the parameter of the method.
+const (
+	reservedMethod = "delete"
+	reservedField  = "default"
+	deletedKey     = "key"
+)
+
 // The source module of a builder unit, the class that the module declares,
 // the family word of the unit, and the file that a plan routes it into.
 const (
@@ -228,6 +236,31 @@ func TestNew(t *testing.T) {
 			assert.Empty(t, findings, "the file renders clean")
 			assert.ContainsInOrder(t, body, []string{"export class " + baseName, "extends " + baseName},
 				"TypeScript defines a class before a class extends it")
+		})
+
+		t.Run("returns a backend that writes a method named after a reserved word", func(t *testing.T) {
+			t.Parallel()
+
+			holder := declared(holderName)
+			holder.Methods.Append(&emit.Method{
+				Name: reservedMethod, Visibility: symbol.VisibilityPublic,
+				Params: emit.SlotOf(&emit.Param{Name: deletedKey, Type: ref("string")}),
+			})
+			body, findings := rendered(t, holder)
+			assert.Empty(t, findings, "the file renders clean")
+			assert.Contains(t, body, "  "+reservedMethod+"("+deletedKey+": string): void {\n",
+				"the method keeps its name, which TypeScript reads as a property name")
+		})
+
+		t.Run("returns a backend that writes a field named after a reserved word", func(t *testing.T) {
+			t.Parallel()
+
+			holder := declared(holderName)
+			holder.Fields.Append(&emit.Field{Name: reservedField, Type: ref("string")})
+			body, findings := rendered(t, holder)
+			assert.Empty(t, findings, "the file renders clean")
+			assert.Contains(t, body, "  "+reservedField+": string;\n",
+				"the field keeps its name, which TypeScript reads as a property name")
 		})
 
 		t.Run("returns a backend that names the settled class in a list", func(t *testing.T) {

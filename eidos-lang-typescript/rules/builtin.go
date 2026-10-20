@@ -14,8 +14,9 @@ import (
 // precision.
 const numberBits = 64
 
-// Builtin classifies a name of TypeScript's global scope that the
-// resolution step left without a target:
+// Builtin classifies a name of TypeScript's global scope: a name that the
+// resolution step left without a target, and a name that it resolved to a
+// declaration of a library, for which [typescript.Global] reports true:
 //
 //   - string, number and boolean as Text, a float of 64 bits and Bool;
 //   - any and unknown as the top type;
@@ -36,7 +37,7 @@ const numberBits = 64
 // import binds is not a global, so it is Opaque too. Builtin allocates
 // nothing.
 func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
-	if ref == nil || ref.Form != symbol.FormNamed || !ref.Target.IsZero() || ref.Package != "" {
+	if ref == nil || ref.Form != symbol.FormNamed || !typescript.Global(ref.Target, ref.Package) {
 		return rules.Opaque(ref)
 	}
 	switch ref.Spelling {
@@ -72,4 +73,17 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	default:
 		return rules.Opaque(ref)
 	}
+}
+
+// ShapeOf returns the shape of a reference to a declaration of a library of
+// TypeScript: the shape that [Rules.Builtin] gives the global name, so a
+// library type that the table of Builtin does not classify, such as
+// Promise, folds to Opaque as it did without a target. ShapeOf reports false
+// for a declaration outside a library, whose references fold to a reference
+// to it. It allocates nothing.
+func (r Rules) ShapeOf(ref *node.TypeRef, _ symbol.Symbol, v rules.View) (rules.TypeShape, bool) {
+	if ref == nil || !typescript.Library(ref.Target.Package) {
+		return rules.TypeShape{}, false
+	}
+	return r.Builtin(ref, v), true
 }

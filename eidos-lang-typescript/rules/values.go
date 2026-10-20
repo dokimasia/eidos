@@ -4,10 +4,12 @@
 package rules
 
 import (
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/numeric"
 	"go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -18,6 +20,17 @@ import (
 // interface with a field of its own type derives this many levels deep,
 // and refuses below that level.
 const deriveDepth = 8
+
+// callParens ends the text of a call without arguments, which
+// [Rules.LiteralFor] reads as a call of a function in scope.
+const callParens = "()"
+
+// The declaration kinds that [Rules.LiteralFor] reads a name and a call
+// as: the name of a constant or a variable, and the call of a function.
+var (
+	valueKinds    = []symbol.Kind{symbol.KindConstant, symbol.KindVariable}
+	functionKinds = []symbol.Kind{symbol.KindFunction}
+)
 
 // The fixed pairs and zeros of the builtin types, and the hint of a
 // string when the caller gives none. A Date and a Uint8Array are values
@@ -122,7 +135,7 @@ func (r Rules) derive(ref *node.TypeRef, hint string, v rules.View, depth int) (
 	case symbol.FormUnion:
 		return r.unionPair(ref, hint, v, depth)
 	case symbol.FormNamed:
-		if ref.Target.IsZero() {
+		if ref.Target.IsZero() || typescript.Library(ref.Target.Package) {
 			return r.builtinPair(ref, hint, v, depth)
 		}
 		return r.declaredPair(ref, hint, v, depth)
@@ -435,7 +448,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 			return emit.Composite(rules.EmitRef(ref)), true
 		case ref.Form != symbol.FormNamed:
 			return emit.Value{}, false
-		case ref.Target.IsZero():
+		case ref.Target.IsZero() || typescript.Library(ref.Target.Package):
 			return r.builtinZero(ref, v)
 		}
 		sym, _ := v.Lookup(ref.Target)
@@ -484,8 +497,9 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	return emit.Value{}, false
 }
 
-// LiteralFor lifts a TypeScript literal into the value tree, as a value
-// of the referenced type. LiteralFor reads these literals:
+// LiteralFor lifts a TypeScript literal, or the name of a declaration in
+// scope, into the value tree. It reads a literal as a value of the
+// referenced type, and it reads these literals:
 //
 //   - a number in any radix of TypeScript, with separators;
 //   - a bigint;
@@ -514,8 +528,23 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 //     member, as a value of the literal's own kind.
 //
 // Every other type does not take a literal. That includes a class, an
-// interface and a type outside the view. The scope plays no part, because
-// a TypeScript literal has the same value in every module.
+// interface and a type outside the view.
+//
+// Text that no type takes as a literal can name a declaration in the
+// scope s:
+//
+//   - The name of a constant or a variable, bare or through a namespace,
+//     is [emit.Name] of the declaration. It resolves as
+//     [directive.ResolvePackageVar] resolves it.
+//   - A call of a function without arguments, such as rootEntry(), is
+//     [emit.Call] of the function. It resolves as
+//     [directive.ResolveCallableInScope] resolves it.
+//
+// Both resolve from the subject of s in the scope order of
+// [Rules.Resolve], through the imports of its file, so a module in
+// another directory imports the declaration. LiteralFor does not check
+// the type of a name or a call. A name that an import binds from a module
+// outside the view does not resolve, and LiteralFor reports false for it.
 //
 // # Allocation contract
 //
@@ -525,16 +554,34 @@ func (r Rules) builtinZero(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 //   - the content of a string with an escape;
 //   - the digits of a bigint with its n;
 //   - for a member of an enum, the enum's list of members, the reference
-//     to the enum and the assertion.
+//     to the enum and the assertion;
+//   - for a name or a call, what [Rules.Resolve] allocates.
 //
 // A truth value, null, undefined and a string without an escape allocate
 // nothing.
-func (r Rules) LiteralFor(_ rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
-	lit, scanned := scanLiteral(text)
-	if !scanned {
+func (r Rules) LiteralFor(s rules.Scope, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	if lit, scanned := scanLiteral(text); scanned {
+		if value, typed := r.typed(lit, ref, v, 0); typed {
+			return value, true
+		}
+	}
+	name, call := strings.CutSuffix(strings.TrimSpace(text), callParens)
+	kind, kinds := directive.ResolvePackageVar, valueKinds
+	if call {
+		kind, kinds = directive.ResolveCallableInScope, functionKinds
+	}
+	sym, err := r.Resolve(s, name, kind, v)
+	if err != nil {
 		return emit.Value{}, false
 	}
-	return r.typed(lit, ref, v, 0)
+	decl, declares := sym.(node.Declaration)
+	if !declares || !slices.Contains(kinds, decl.Identity().Kind) {
+		return emit.Value{}, false
+	}
+	if call {
+		return emit.Call(decl.Identity()), true
+	}
+	return emit.Name(decl.Identity()), true
 }
 
 // typed implements [Rules.LiteralFor] at a depth of the walk.
@@ -565,7 +612,7 @@ func (r Rules) typed(lit literal, ref *node.TypeRef, v rules.View, depth int) (e
 		return emit.Value{}, false
 	case ref.Form != symbol.FormNamed:
 		return emit.Value{}, false
-	case ref.Target.IsZero():
+	case ref.Target.IsZero() || typescript.Library(ref.Target.Package):
 		return r.typedBuiltin(lit, ref, v)
 	}
 	sym, _ := v.Lookup(ref.Target)

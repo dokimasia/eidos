@@ -7,17 +7,23 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io/fs"
+	"path"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"
 
+	tsgrammar "go.dokimi.dev/eidos/lang/treesitter/typescript"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
+	"go.dokimi.dev/eidos/lang/typescript/frontend/library"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -75,6 +81,32 @@ type treeReader struct {
 
 // Read returns one file's bytes.
 func (r treeReader) Read(path string) ([]byte, error) { return r.tree.ReadFile(path) }
+
+// endingContext is a context that ends after its first check. Err returns
+// nil once and [context.Canceled] after that, so of two parses that check it
+// the first proceeds and the second ends. It has no deadline, no done
+// channel and no values.
+type endingContext struct {
+	checks atomic.Int32
+}
+
+// Deadline reports that the context has no deadline.
+func (*endingContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+
+// Done returns nil, the done channel of a context that no one cancels.
+func (*endingContext) Done() <-chan struct{} { return nil }
+
+// Err returns nil at the first call and [context.Canceled] at every later
+// call.
+func (c *endingContext) Err() error {
+	if c.checks.Add(1) == 1 {
+		return nil
+	}
+	return context.Canceled
+}
+
+// Value returns nil for every key.
+func (*endingContext) Value(any) any { return nil }
 
 // A parse turns one file into the unit's packages, so its contract
 // over the tree, the grammar and the configuration is pinned.
@@ -198,7 +230,127 @@ func TestParse(t *testing.T) {
 				f.Syntax(), brand, diag.NewSink(), f.Name())
 			assert.HasError(t, f.Parse(t.Context(), u), "a member that does not read fails the unit")
 		})
+
+		t.Run("declares the scripts of the members of a library into the package of the library", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedLibrary(t, withLibrary(fstest.MapFS{}), defaultES5, defaultDOM)
+			assert.Empty(t, found, "the library reports nothing")
+			pkg := packageIn(t, gb, defaultPackage)
+			assert.Length(t, pkg.Files, 2, "each member contributes a File node")
+			assert.Equal(t, pkg.Name, "", "the package of a library has no name, as the global package")
+			assert.Length(t, packageIn(t, gb, defaultPackage+"/Intl").Files, 1, "a namespace is below the library")
+		})
+
+		t.Run("merges an interface that two members of a library declare", func(t *testing.T) {
+			t.Parallel()
+
+			library := fstest.MapFS{
+				defaultRoot + "/" + es5Root: {Data: []byte("interface Error {\n  message: string;\n}\n")},
+				defaultRoot + "/" + domRoot: {Data: []byte("interface Error {\n  stack?: string;\n}\n")},
+			}
+			tree := storeTree{fstest.MapFS{}, map[string]fs.FS{typescript.LibraryStore: library}}
+			gb, _ := parsedLibrary(t, tree, defaultES5, defaultDOM)
+			pkg := packageIn(t, gb, defaultPackage)
+			assert.Length(t, pkg.Files[0].Decls, 1, "the first member declares Error")
+			assert.Empty(t, pkg.Files[1].Decls, "the second member merges into it")
+			assert.Length(t, pkg.Files[0].Decls[0].(*node.Interface).Fields, 2, "Error has the fields of both")
+		})
+
+		t.Run("declares the global block of a module of a library into the package of the library", func(t *testing.T) {
+			t.Parallel()
+
+			module := plugin.StorePath(typescript.LibraryStore, defaultRoot+"/lib.es2025.iterator.d.ts")
+			library := fstest.MapFS{
+				defaultRoot + "/lib.es2025.iterator.d.ts": {Data: []byte(
+					"export {};\ndeclare class Hidden {}\ndeclare global {\n  interface IteratorObject {}\n}\n",
+				)},
+			}
+			tree := storeTree{fstest.MapFS{}, map[string]fs.FS{typescript.LibraryStore: library}}
+			gb, _ := parsedLibrary(t, tree, module)
+			global := packageIn(t, gb, defaultPackage)
+			assert.Length(t, global.Files, 1, "the global block declares into the library")
+			assert.Equal(t, nameOf(global.Files[0].Decls[0]), "IteratorObject", "the interface of the global block")
+		})
+
+		t.Run("does not report a syntax error of a member of a library", func(t *testing.T) {
+			t.Parallel()
+
+			library := fstest.MapFS{defaultRoot + "/" + es5Root: {Data: []byte("interface Error {\n  message: ;\n}\n")}}
+			tree := storeTree{fstest.MapFS{}, map[string]fs.FS{typescript.LibraryStore: library}}
+			_, found := parsedLibrary(t, tree, defaultES5)
+			assert.Empty(t, found, "the author of the workspace cannot change the library")
+		})
+
+		t.Run("returns the read's error for a member of a library outside the store", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontend.New()
+			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: defaultES5}}, storeTree{fstest.MapFS{}, nil},
+				plugin.DepthSignatures, f.Syntax(), brand, diag.NewSink(), f.Name())
+			err := f.Parse(t.Context(), u)
+			assert.ErrorIs(t, err, plugin.ErrStoreAbsent, "a member that does not read fails the unit")
+		})
+
+		t.Run("returns the context's error for a library under a done context", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontend.New()
+			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: defaultES5}, {Path: defaultDOM}},
+				withLibrary(fstest.MapFS{}), plugin.DepthSignatures, f.Syntax(), brand, diag.NewSink(), f.Name())
+			assert.HonoursCancellation(t, func(ctx context.Context) error { return f.Parse(ctx, u) },
+				"a cancelled load parses no library")
+		})
+
+		t.Run("returns the context's error for a library whose context ends during the parse", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontend.New()
+			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: defaultInput}, {Path: defaultES5}},
+				withLibrary(fstest.MapFS{}), plugin.DepthSignatures, f.Syntax(), brand, diag.NewSink(), f.Name())
+			err := f.Parse(&endingContext{}, u)
+			assert.ErrorIs(t, err, context.Canceled, "the parse of the second member ends with the context")
+		})
+
+		t.Run("parses the embedded library with the one construct that the grammar does not read", func(t *testing.T) {
+			t.Parallel()
+
+			entries, err := fs.ReadDir(library.Files, library.Dir)
+			assert.NoError(t, err, "the embed lists its files")
+			var got []string
+			for _, e := range entries {
+				src, err := fs.ReadFile(library.Files, path.Join(library.Dir, e.Name()))
+				assert.NoError(t, err, "the embed reads "+e.Name())
+				tree, err := tsgrammar.TypeScript.Parse(t.Context(), e.Name(), src)
+				assert.NoError(t, err, "the grammar parses "+e.Name())
+				if problems := tree.Problems(); problems != nil {
+					for at := range problems {
+						got = append(got, at.String())
+					}
+				}
+				tree.Close()
+			}
+			assert.Equal(t, got, []string{"lib.es2015.symbol.wellknown.d.ts:106:12"},
+				"tree-sitter-typescript does not read keyof before a readonly array")
+		})
 	})
+}
+
+// parsedLibrary parses a unit of the members of a library at signature
+// depth, the depth of a dependency unit, over a tree and its stores. It
+// returns the builder of the unit and the findings of the parse.
+func parsedLibrary(tb testing.TB, tree storeTree, members ...string) (*plugin.GraphBuilder, []diag.Diag) {
+	tb.Helper()
+
+	refs := make([]plugin.SourceRef, 0, len(members))
+	for _, m := range members {
+		refs = append(refs, plugin.SourceRef{Path: m})
+	}
+	f := frontend.New()
+	sink := diag.NewSink()
+	u := plugin.NewSourceUnit(refs, tree, plugin.DepthSignatures, f.Syntax(), brand, sink, f.Name())
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the library parses")
+	return u.Graph(), slices.Collect(sink.All())
 }
 
 // BenchmarkParse drives the parse at the canonical scale: every unit of

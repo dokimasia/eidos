@@ -69,10 +69,17 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 // name bare. The import is a value import, because the value needs the
 // declaration at run time. The import specifier is the module path of the
 // declaration relative to the module of the file. A declaration in no
-// module, a declaration of the module of the file, and an identity
-// without a name spell their own name.
+// module, a declaration of a library of TypeScript, which is global, a
+// declaration of the module of the file, and an identity without a name
+// spell their own name. Callee returns a [render.ValueError] for a
+// declaration of a library that a declaration of the file hides, because
+// the name would refer to the declaration of the file.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	if id.Package == "" || id.Name == "" || id.Package == t.set.Home() {
+	library := typescript.Library(id.Package)
+	switch {
+	case library && t.set.Reserved(id.Name):
+		return "", render.RefuseValue(t.Lang(), "a declaration of the file hides the global %s", id.Name)
+	case library || id.Package == "" || id.Name == "" || id.Package == t.set.Home():
 		return id.Name, nil
 	}
 	return t.set.BindItem(relativeTo(t.set.Home(), id.Package), id.Name, false), nil
@@ -93,7 +100,7 @@ func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
 	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray || ref.Form == symbol.FormTuple ||
-		ref.Form == symbol.FormNamed && ref.Target.IsZero() && ref.Package == "" &&
+		ref.Form == symbol.FormNamed && typescript.Global(ref.Target, ref.Package) &&
 			(ref.Spelling == typescript.TypeArray || ref.Spelling == typescript.TypeReadonlyArray)) {
 
 		parts := make([]string, 0, len(entries))

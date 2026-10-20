@@ -18,7 +18,7 @@ var contributions = []rules.Contribution{rules.ContributesExtends, rules.Contrib
 
 // Rules implements the projection rules of TypeScript. It also
 // implements the optional capabilities for enums, generics, properties,
-// constructors and equality.
+// constructors, equality and the shapes of the declarations of a library.
 //
 // # Concurrency
 //
@@ -50,10 +50,10 @@ func (Rules) Members() rules.MemberPolicy {
 
 // ParamRole classifies a parameter of the type AbortSignal as the
 // context, and every other parameter as an input. The AbortSignal is the
-// global type, which no import binds. An alias of it and an optional of
-// it are the context too. Every TypeScript alias is transparent, so
-// [rules.Unaliased] follows each alias to its target. ParamRole allocates
-// nothing.
+// global type, which no import binds: a name without a target, or the
+// declaration of a library. An alias of it and an optional of it are the
+// context too. Every TypeScript alias is transparent, so [rules.Unaliased]
+// follows each alias to its target. ParamRole allocates nothing.
 func (Rules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 	if p == nil || p.Type == nil {
 		return rules.ParamInput
@@ -62,7 +62,9 @@ func (Rules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 	if t.Form == symbol.FormOptional && len(t.Elems) == 1 {
 		t = rules.Unaliased(t.Elems[0], v)
 	}
-	if t.Form == symbol.FormNamed && t.Target.IsZero() && t.Package == "" && t.Spelling == typescript.TypeAbortSignal {
+	if t.Form == symbol.FormNamed && typescript.Global(t.Target, t.Package) &&
+		t.Spelling == typescript.TypeAbortSignal {
+
 		return rules.ParamContext
 	}
 	return rules.ParamInput

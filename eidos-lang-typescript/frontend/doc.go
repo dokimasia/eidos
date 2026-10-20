@@ -7,7 +7,8 @@
 // .tsx, .mts and .cts file outside a node_modules directory, declaration
 // files included. A unit is one file, because TypeScript scopes the names
 // of a module to its file. The shared inputs of a unit are the tsconfig
-// chain that governs it and the nearest package.json above it. The chain
+// chain that governs it, the first root file of its library where the load
+// has the library store, and the nearest package.json above it. The chain
 // is the nearest tsconfig.json above the file and every configuration that
 // it extends, read as JSON with comments. Every unit key folds the version
 // of the frontend and the version of the grammar.
@@ -20,8 +21,9 @@
 // finding that counts the rest, and every declaration that the parser
 // recovered loads. A tsconfig chain that does not read whole reports under
 // [BadConfig], and a package.json that does not read or parse under
-// [BadPackage]. [BadConfig], [BadPackage], [ReadonlyRest] and
-// [RelativeAugmentation] are warnings.
+// [BadPackage]. [BadConfig], [BadPackage], [ReadonlyRest],
+// [RelativeAugmentation] and [UnknownLibrary] are warnings. A member of a
+// library does not report a syntax error.
 //
 // # Packages
 //
@@ -37,12 +39,40 @@
 // declare global block. A file contributes one File node to each package
 // that it declares into, so two declarations of one namespace share one,
 // and a second declaration of an interface in one package of a file merges
-// into the first.
+// into the first. A merged method that equals a method of the interface
+// does not add a member, and neither does a merged property of a name that
+// the interface has.
 //
 // Every package of a unit has the module of the nearest package.json: the
 // name of the package under gen.module, and the directory of the file
 // under gen.moduleRoot. A file without a package.json above it, and a
 // package.json without a name, has no module.
+//
+// # Library
+//
+// [Stores] returns the store of the declaration files of TypeScript 7.0.2,
+// which the package library embeds, under typescript.LibraryStore. The
+// tsconfig chain of a file selects its library. noLib selects no file, lib
+// selects the file of each entry, and without either option the target
+// selects its default library. An unset target is ES2025, and a file
+// without a tsconfig has the default library of ES2025. An entry, a target
+// or a lib directive with a name that the release does not know reports
+// under [UnknownLibrary].
+//
+// The key of a library is its root files, sorted and joined with
+// typescript.LibraryKeySep. Its declarations load into the package of the
+// key in the store. The frontend is in the dependent role. The round places
+// one unit for each library that a shared input of the first round or a
+// need of any round names. A unit is every file of its library, followed
+// through the lib directives of its files, in the order in which
+// typescript-go loads library files. A lib directive at the head of a
+// source file adds its library to the library of that file, and the file
+// imports the package of the extended library. A load without the store
+// has no library.
+//
+// A member of a library unit declares its script declarations and its
+// declare global blocks into the package of the library. The interfaces of
+// one name merge across the members of the unit, in the order of the unit.
 //
 // # Declarations
 //
@@ -120,11 +150,14 @@
 //
 // Resolve returns tiers in the scope order of TypeScript: the enclosing
 // namespaces innermost first, the package of the module, the module that
-// an import binds the name from, and the global package. A relative
-// specifier refers to its file before the index of the directory, an
-// emitted JavaScript extension refers to the source file, a tsconfig paths
-// pattern and baseUrl place a bare specifier, and any other specifier
-// refers to the ambient module of its name. The frontend is in the
+// an import binds the name from, the global package, and the package of
+// the library of the file. A member of a library resolves global names in
+// its library alone, and globalThis.X probes the global tiers alone.
+//
+// A relative specifier refers to its file before the index of the
+// directory, an emitted JavaScript extension refers to the source file, a
+// tsconfig paths pattern and baseUrl place a bare specifier, and any other
+// specifier refers to the ambient module of its name. The frontend is in the
 // exporter role. A module publishes the names of an export clause, its
 // default export and what its export-star modules publish, and the
 // resolution step follows them to the declaration that they publish.
@@ -180,9 +213,9 @@
 //
 // # Dependency position
 //
-// lang/typescript/frontend imports the sdk facade, the satellite root,
-// lang/treesitter and its TypeScript grammar, lang/numeric,
-// github.com/tailscale/hujson for the tsconfig chain, and the Go standard
-// library. It runs no tool and reads nothing outside the doors of its
-// units. The conformance corpus and a composition import it.
+// lang/typescript/frontend imports the sdk facade, the satellite root, its
+// package library, lang/treesitter and its TypeScript grammar,
+// lang/numeric, github.com/tailscale/hujson for the tsconfig chain, and the
+// Go standard library. It runs no tool and reads nothing outside the doors
+// of its units. The conformance corpus and a composition import it.
 package frontend

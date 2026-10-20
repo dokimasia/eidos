@@ -162,7 +162,7 @@ license:
   # no header. A key here replaces the style that ergon resolves.
   styles: {}
   # The doublestar globs of the paths whose files have no header, such as testdata/**.
-  exclude: ['**/testdata/**', eidos-lang-python/frontend/typeshed/stdlib/**]
+  exclude: ['**/testdata/**', eidos-lang-python/frontend/typeshed/stdlib/**, eidos-lang-typescript/frontend/library/libs/**]
   # The limit in minutes of the job license of ci.yml, which runs ergon license check.
   ci:
     actions: {}
