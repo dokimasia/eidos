@@ -6,6 +6,7 @@ package spell
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/spellref"
@@ -42,11 +43,14 @@ const goName = "Go"
 const spelledStack = 4
 
 // The package of Go's time types, and the spellings of the two types
-// that the well-known timestamp and duration take.
+// that the well-known timestamp and duration take. The well-known context
+// takes the type of the package context.
 const (
-	timePackage  = "time"
-	timeType     = "time.Time"
-	durationType = "time.Duration"
+	timePackage    = "time"
+	timeType       = "time.Time"
+	durationType   = "time.Duration"
+	contextPackage = "context"
+	contextType    = "context.Context"
 )
 
 // The spelling of the well-known empty value, and the iterator over pairs
@@ -59,9 +63,72 @@ const (
 	errorType   = "error"
 )
 
+// protobufLang is the language of the declarations that a binding of gRPC
+// names as protoc-gen-go names them.
+const protobufLang symbol.Lang = "protobuf"
+
+// The dot that opens a fully-qualified protobuf name, the separator of the
+// names of a nested declaration, and the mark of a name that starts with an
+// underscore.
+const (
+	protobufDot = "."
+	nameSep     = '_'
+	leadingMark = 'X'
+)
+
+// knownBase is the import path below which protoc-gen-go refers to the
+// well-known types of protobuf.
+const knownBase = "google.golang.org/protobuf/types/known/"
+
+// knownType is the Go type of one well-known type of protobuf: its named
+// reference with its package, and the spelling of a pointer to it where
+// protoc-gen-go refers to it through one, as to every message.
+type knownType struct {
+	named   emit.TypeRef
+	pointer string
+}
+
+// knownTypes maps the full name of each well-known type of protobuf to its
+// Go type under a binding of gRPC. The spoke only reads the table.
+var knownTypes = map[string]knownType{
+	"google.protobuf.Timestamp":   known("timestamppb", "Timestamp", true),
+	"google.protobuf.Duration":    known("durationpb", "Duration", true),
+	"google.protobuf.Empty":       known("emptypb", "Empty", true),
+	"google.protobuf.Any":         known("anypb", "Any", true),
+	"google.protobuf.Struct":      known("structpb", "Struct", true),
+	"google.protobuf.Value":       known("structpb", "Value", true),
+	"google.protobuf.ListValue":   known("structpb", "ListValue", true),
+	"google.protobuf.NullValue":   known("structpb", "NullValue", false),
+	"google.protobuf.FieldMask":   known("fieldmaskpb", "FieldMask", true),
+	"google.protobuf.DoubleValue": known("wrapperspb", "DoubleValue", true),
+	"google.protobuf.FloatValue":  known("wrapperspb", "FloatValue", true),
+	"google.protobuf.Int64Value":  known("wrapperspb", "Int64Value", true),
+	"google.protobuf.UInt64Value": known("wrapperspb", "UInt64Value", true),
+	"google.protobuf.Int32Value":  known("wrapperspb", "Int32Value", true),
+	"google.protobuf.UInt32Value": known("wrapperspb", "UInt32Value", true),
+	"google.protobuf.BoolValue":   known("wrapperspb", "BoolValue", true),
+	"google.protobuf.StringValue": known("wrapperspb", "StringValue", true),
+	"google.protobuf.BytesValue":  known("wrapperspb", "BytesValue", true),
+}
+
+// known returns the entry of the Go type name of the package pkg below
+// [knownBase], with the spelling of a pointer to it where pointer is set.
+func known(pkg, name string, pointer bool) knownType {
+	k := knownType{named: emit.TypeRef{Spelling: pkg + protobufDot + name, Package: knownBase + pkg}}
+	if pointer {
+		k.pointer = "*" + k.named.Spelling
+	}
+	return k
+}
+
 // Type spells the canonical shape s in Go. It is the spoke of the Go
-// target in the cross-language hub. Go does not declare a lowering
-// policy, so Type does not read p. It spells each form this way:
+// target in the cross-language hub. Under the choices grpc-go and
+// connect-go of [golang.GRPC] in p, a reference to a protobuf declaration
+// spells as protoc-gen-go names it: a message as a pointer, as
+// *GetRequest, a nested declaration with underscores, as Session_State, and
+// a well-known type of protobuf as its type below
+// google.golang.org/protobuf/types/known, as *timestamppb.Timestamp. It
+// spells each other form this way:
 //
 //   - a scalar as the predeclared type of its class and width, and int
 //     and uint for the platform's width;
@@ -77,7 +144,8 @@ const (
 //   - a wildcard as its upper bound, and as any where it has no bound;
 //   - the well-known timestamp and duration as time.Time and
 //     time.Duration, with the import of time, the well-known empty value
-//     as struct{}, and the well-known error as error;
+//     as struct{}, the well-known error as error, and the well-known
+//     context as context.Context;
 //   - every other reference and sum as a translated reference with the
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which Go writes in brackets.
@@ -101,17 +169,29 @@ const (
 // of a structural reference, the list of arguments of a translated one,
 // and the spelling of each structural reference. A refusal allocates its
 // error.
-func Type(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
-	t, err := goType(s)
+func Type(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	// A zero policy declares no key, and its binding is the default none.
+	choice, _ := p.Lookup(golang.GRPC)
+	t, err := speller{bound: choice == golang.GRPCGo || choice == golang.GRPCConnect}.goType(s)
 	if err != nil {
 		return nil, fmt.Errorf(refusalPrefix+"%w", err)
 	}
 	return t, nil
 }
 
+// speller spells shapes by the rules of [Type]. bound reports a binding of
+// gRPC, under which a reference to a protobuf declaration spells as
+// protoc-gen-go names the declaration.
+type speller struct {
+	bound bool
+}
+
 // goType spells one shape by the rules of [Type], and returns a refusal
 // without the language's prefix.
-func goType(s rules.TypeShape) (*emit.TypeRef, error) {
+func (g speller) goType(s rules.TypeShape) (*emit.TypeRef, error) {
+	if t, known := knownTypes[strings.TrimPrefix(s.Spelling, protobufDot)]; g.bound && known {
+		return t.ref(), nil
+	}
 	switch s.Form {
 	case symbol.FormScalar:
 		return scalar(s)
@@ -126,15 +206,15 @@ func goType(s rules.TypeShape) (*emit.TypeRef, error) {
 			Spelling: bytesType, Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: byteType}},
 		}, nil
 	case symbol.FormOptional, symbol.FormList, symbol.FormArray, symbol.FormStream:
-		return container(s)
+		return g.container(s)
 	case symbol.FormMap:
-		return mapOf(s)
+		return g.mapOf(s)
 	case symbol.FormFunc:
-		return function(s)
+		return g.function(s)
 	case symbol.FormWildcard:
-		return wildcard(s)
+		return g.wildcard(s)
 	case symbol.FormReference, symbol.FormSum:
-		return reference(s)
+		return g.reference(s)
 	default:
 		return nil, fmt.Errorf("%s has no Go spelling", spoke.Describe(s))
 	}
@@ -159,7 +239,7 @@ func scalar(s rules.TypeShape) (*emit.TypeRef, error) {
 // stream as a channel, and an asynchronous stream as an iterator over
 // pairs of an element and an error. It refuses an array of an unstated
 // length, and an immutable list or array.
-func container(s rules.TypeShape) (*emit.TypeRef, error) {
+func (g speller) container(s rules.TypeShape) (*emit.TypeRef, error) {
 	if s.Form == symbol.FormArray && s.Length == 0 {
 		return nil, errors.New("an array of an unstated length has no Go spelling")
 	}
@@ -169,12 +249,12 @@ func container(s rules.TypeShape) (*emit.TypeRef, error) {
 	if err := spoke.Arity(s, 1); err != nil {
 		return nil, err
 	}
-	elems, err := spoke.Children(s.Elems, goType)
+	elems, err := spoke.Children(s.Elems, g.goType)
 	if err != nil {
 		return nil, err
 	}
 	switch {
-	case s.Form == symbol.FormOptional && nilable(s.Elems[0]):
+	case s.Form == symbol.FormOptional && (nilable(s.Elems[0]) || g.bound && message(s.Elems[0])):
 		return elems[0], nil
 	case s.Form == symbol.FormStream && s.Async:
 		return &emit.TypeRef{
@@ -186,7 +266,7 @@ func container(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // mapOf spells a map. It refuses an immutable map and a key whose values
 // Go does not compare.
-func mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
+func (g speller) mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
 	if err := spoke.ReadOnly(s, goName); err != nil {
 		return nil, err
 	}
@@ -200,7 +280,7 @@ func mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
 	default:
 		// Go compares the values of every other form.
 	}
-	elems, err := spoke.Children(s.Elems, goType)
+	elems, err := spoke.Children(s.Elems, g.goType)
 	if err != nil {
 		return nil, err
 	}
@@ -209,11 +289,11 @@ func mapOf(s rules.TypeShape) (*emit.TypeRef, error) {
 
 // function spells a function type: its parameters, then nothing, one
 // result or a parenthesised list of results.
-func function(s rules.TypeShape) (*emit.TypeRef, error) {
+func (g speller) function(s rules.TypeShape) (*emit.TypeRef, error) {
 	if err := spoke.Split(s); err != nil {
 		return nil, err
 	}
-	elems, err := spoke.Children(s.Elems, goType)
+	elems, err := spoke.Children(s.Elems, g.goType)
 	if err != nil {
 		return nil, err
 	}
@@ -241,21 +321,35 @@ func restated(t *emit.TypeRef) (*emit.TypeRef, error) {
 
 // wildcard spells a wildcard as any where it has no bound, and as its
 // upper bound otherwise. It refuses a lower bound.
-func wildcard(s rules.TypeShape) (*emit.TypeRef, error) {
+func (g speller) wildcard(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch {
 	case len(s.Elems) == 0:
 		return &emit.TypeRef{Spelling: anyType}, nil
 	case s.Variance == symbol.VarianceIn:
 		return nil, errors.New("a wildcard with a lower bound has no Go spelling")
 	}
-	return spoke.Child(s.Elems[0], goType)
+	return spoke.Child(s.Elems[0], g.goType)
 }
 
 // reference spells a reference or a sum: a well-known type as Go's time
-// type, as the empty struct or as error, and every other referent as a
-// translated reference under its flat name, with its translated
-// arguments.
-func reference(s rules.TypeShape) (*emit.TypeRef, error) {
+// type, as the empty struct, as error or as context.Context, and every
+// other referent as a translated reference under its flat name, with its
+// translated arguments. Under a binding of gRPC a protobuf declaration
+// takes the name that protoc-gen-go gives it, and a message is a pointer.
+// A oneof refuses, because protoc-gen-go declares its interface
+// unexported.
+func (g speller) reference(s rules.TypeShape) (*emit.TypeRef, error) {
+	if g.bound && s.Ref.Lang == protobufLang {
+		named := &emit.TypeRef{Spelling: protocName(s.Ref), Target: s.Ref}
+		switch s.Ref.Kind {
+		case symbol.KindStruct:
+			return restated(&emit.TypeRef{Form: symbol.FormOptional, Elems: []*emit.TypeRef{named}})
+		case symbol.KindSum:
+			return nil, fmt.Errorf("protoc-gen-go declares the interface of the oneof %s unexported", s.Ref.Name)
+		default:
+			return named, nil
+		}
+	}
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: timeType, Package: timePackage}, nil
@@ -265,12 +359,69 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: emptyStruct, Form: symbol.FormInline}, nil
 	case rules.WellKnownError:
 		return &emit.TypeRef{Spelling: errorType}, nil
+	case rules.WellKnownContext:
+		return &emit.TypeRef{Spelling: contextType, Package: contextPackage}, nil
 	}
-	args, err := spoke.Children(s.Args, goType)
+	args, err := spoke.Children(s.Args, g.goType)
 	if err != nil {
 		return nil, err
 	}
 	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
+}
+
+// message reports whether s is a reference to a protobuf message, which a
+// binding of gRPC spells as a pointer whose nil value is the absent value.
+func message(s rules.TypeShape) bool {
+	return s.Form == symbol.FormReference && s.Ref.Lang == protobufLang && s.Ref.Kind == symbol.KindStruct
+}
+
+// protocName returns the name that protoc-gen-go gives the protobuf
+// declaration id: the names of its owners and its own name, each in camel
+// case, joined by underscores, as Session_State. A word of lower-case
+// letters after an underscore takes a capital in place of the underscore,
+// and a name that starts with an underscore starts with X, as protoc-gen-go
+// writes a Go identifier. It allocates the name.
+func protocName(id symbol.Identity) string {
+	full := id.Name
+	if id.Owner != "" {
+		full = id.Owner + symbol.OwnerSep + id.Name
+	}
+	b := make([]byte, 0, len(full))
+	for i := 0; i < len(full); i++ {
+		c := full[i]
+		lowerNext := i+1 < len(full) && 'a' <= full[i+1] && full[i+1] <= 'z'
+		switch {
+		case c == symbol.OwnerSep[0] && lowerNext:
+		case c == symbol.OwnerSep[0]:
+			b = append(b, nameSep)
+		case c == nameSep && (i == 0 || full[i-1] == symbol.OwnerSep[0]):
+			b = append(b, leadingMark)
+		case c == nameSep && lowerNext:
+		case '0' <= c && c <= '9':
+			b = append(b, c)
+		default:
+			if 'a' <= c && c <= 'z' {
+				c -= 'a' - 'A'
+			}
+			b = append(b, c)
+			for ; i+1 < len(full) && 'a' <= full[i+1] && full[i+1] <= 'z'; i++ {
+				b = append(b, full[i+1])
+			}
+		}
+	}
+	return string(b)
+}
+
+// ref returns a new reference to the Go type of the well-known type k, with
+// the import of its package: a pointer where protoc-gen-go refers to the type
+// through one. It allocates the reference, and for a pointer its element and
+// the list of the element.
+func (k knownType) ref() *emit.TypeRef {
+	t := k.named
+	if k.pointer == "" {
+		return &t
+	}
+	return &emit.TypeRef{Spelling: k.pointer, Form: symbol.FormOptional, Elems: []*emit.TypeRef{&t}}
 }
 
 // nilable reports whether the nil value of Go's spelling of s is the

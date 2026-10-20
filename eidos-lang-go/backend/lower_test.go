@@ -333,6 +333,15 @@ func TestLower(t *testing.T) {
 			})
 		}
 
+		t.Run("returns an error for a struct with the deleter of a property", func(t *testing.T) {
+			t.Parallel()
+
+			host := hostOf()
+			host.Methods.Append(&emit.Method{Name: getName, Accessor: symbol.AccessorDelete})
+			_, err := backend.Lower(host)
+			assert.HasError(t, err, "Go has no properties")
+		})
+
 		t.Run("restates a generic struct's parameters on each method's receiver", func(t *testing.T) {
 			t.Parallel()
 

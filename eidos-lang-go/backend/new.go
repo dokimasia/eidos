@@ -19,7 +19,7 @@ import (
 // remain are the bytes gofmt leaves.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the seven kind templates: 1,609 allocations.
+// and the seven kind templates: 1,613 allocations.
 func New() backend.Backend {
 	return backend.New(golang.Name, golang.Target, golang.Syntax()).
 		Version(golang.Version).
@@ -30,9 +30,11 @@ func New() backend.Backend {
 		Naming(spell.Filename).
 		Packages(spell.Package).
 		Respell(spell.Name).
+		Policies(golang.Policies()...).
 		Types(spell.Type).
 		Lower(Lower).
 		Scaffold(Scaffold).
+		Value(Value).
 		Imports(Imports).
 		TemplateImport(TemplateImport).
 		Finalise(format.Source).

@@ -4,10 +4,12 @@
 package backend_test
 
 import (
+	"go/format"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
@@ -49,8 +51,9 @@ var svcPackage = symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbo
 // corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the seven kind templates.
-	newAllocs = 1_609
+	// template and the seven kind templates, and the spec of the policy of
+	// the binding of gRPC.
+	newAllocs = 1_613
 	// renderAllocs is one render of the scaled corpus of 200,000
 	// declarations: text/template's reflective calls, about half of its
 	// allocations, go/format's parse and print of every file, about four
@@ -117,6 +120,22 @@ func TestNew(t *testing.T) {
 			c, err := output.NewContract(contractBrand, golang.Syntax())
 			assert.NoError(t, err, "the module contract composes")
 			backendtest.AssertStamped(t, setup, c)
+		})
+
+		t.Run("returns a backend whose stamped files gofmt leaves unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			c, err := output.NewContract(contractBrand, golang.Syntax())
+			assert.NoError(t, err, "the module contract composes")
+			files := backendtest.RenderSettled(t, setup)
+			assert.NotEmpty(t, files, "the fixture renders files")
+			for _, f := range files {
+				out, err := c.Stamp(f)
+				assert.NoError(t, err, "the file stamps")
+				formatted, err := format.Source(out)
+				assert.NoError(t, err, "gofmt reads the stamped file")
+				expect.Equal(t, string(formatted), string(out), "gofmt writes the same bytes as the stamp")
+			}
 		})
 
 		t.Run("returns a backend that exports neutral names through the settle", func(t *testing.T) {

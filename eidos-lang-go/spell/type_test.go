@@ -9,8 +9,10 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -423,6 +425,11 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{Spelling: "error"},
 			},
 			{
+				name: "returns context.Context for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext),
+				want: &emit.TypeRef{Spelling: "context.Context", Package: "context"},
+			},
+			{
 				name: "returns the flat name for a reference to a nested type",
 				give: rules.Reference("Session.State", state),
 				want: &emit.TypeRef{Spelling: "SessionState", Target: state},
@@ -633,6 +640,104 @@ func TestType(t *testing.T) {
 				assert.Equal(t, err.Error(), tt.want, "the error contains the spelling of the key")
 			})
 		}
+
+		grpc, err := plugin.NewPolicy(golang.Target, golang.Policies(),
+			map[plugin.PolicyKey]plugin.Choice{golang.GRPC: golang.GRPCGo})
+		assert.NoError(t, err, "the binding grpc-go is a choice of the policy")
+		request := symbol.Identity{Lang: "protobuf", Package: "svc", Name: "GetRequest", Kind: symbol.KindStruct}
+		state := symbol.Identity{
+			Lang:    "protobuf",
+			Package: "svc",
+			Owner:   "Session",
+			Name:    "State",
+			Kind:    symbol.KindEnum,
+		}
+		snake := symbol.Identity{Lang: "protobuf", Package: "svc", Name: "get_request", Kind: symbol.KindStruct}
+		bound := []struct {
+			name string
+			give rules.TypeShape
+			want string
+		}{
+			{
+				name: "returns a pointer for a message",
+				give: rules.Reference("GetRequest", request),
+				want: "*GetRequest",
+			},
+			{
+				name: "returns one pointer for an optional of a message",
+				give: rules.TypeShape{
+					Form:  symbol.FormOptional,
+					Elems: []rules.TypeShape{rules.Reference("x", request)},
+				},
+				want: "*GetRequest",
+			},
+			{
+				name: "joins the names of a nested enum with an underscore", give: rules.Reference("x", state),
+				want: "Session_State",
+			},
+			{
+				name: "writes a name of lower-case words in camel case", give: rules.Reference("x", snake),
+				want: "*GetRequest",
+			},
+			{
+				name: "returns the known type of a timestamp of protobuf",
+				give: rules.Reference(".google.protobuf.Timestamp", rules.WellKnownTimestamp),
+				want: "*timestamppb.Timestamp",
+			},
+			{
+				name: "returns the known type of a wrapper",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "google.protobuf.StringValue",
+					Elems: []rules.TypeShape{text},
+				},
+				want: "*wrapperspb.StringValue",
+			},
+			{
+				name: "returns the enum of the null value",
+				give: rules.Opaque(&node.TypeRef{Spelling: "google.protobuf.NullValue"}), want: "structpb.NullValue",
+			},
+			{
+				name: "starts a name of a leading underscore with X",
+				give: rules.Reference("x", symbol.Identity{Lang: "protobuf", Name: "_hidden", Kind: symbol.KindEnum}),
+				want: "XHidden",
+			},
+			{
+				name: "keeps the digits of a name",
+				give: rules.Reference("x", symbol.Identity{Lang: "protobuf", Name: "v2_state", Kind: symbol.KindEnum}),
+				want: "V2State",
+			},
+		}
+		for _, tt := range bound {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spell.Type(tt.give, grpc)
+				assert.NoError(t, err, "the binding spells the reference")
+				assert.Equal(t, got.Spelling, tt.want, "the name of protoc-gen-go")
+			})
+		}
+
+		t.Run("returns an error for a oneof under a binding", func(t *testing.T) {
+			t.Parallel()
+
+			oneof := symbol.Identity{
+				Lang:    "protobuf",
+				Package: "svc",
+				Owner:   "Session",
+				Name:    "auth",
+				Kind:    symbol.KindSum,
+			}
+			_, err := spell.Type(rules.TypeShape{Form: symbol.FormSum, Ref: oneof}, grpc)
+			assert.HasError(t, err, "protoc-gen-go declares the interface of a oneof unexported")
+		})
+
+		t.Run("returns the translated reference of a message without a binding", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := spell.Type(rules.Reference("GetRequest", request), plugin.Policy{})
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got.Spelling, "GetRequest", "the flat name")
+		})
 	})
 }
 

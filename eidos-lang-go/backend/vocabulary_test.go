@@ -5,6 +5,7 @@ package backend_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -13,6 +14,7 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -75,6 +77,10 @@ const (
 // write.
 var generateArgs = []string{"stringer", "-type=Colour"}
 
+// filledLine is a word as wide as the documentation, so the wrap starts a
+// line with the word after it.
+var filledLine = strings.Repeat("a", textfmt.DocsWidth)
+
 // The allocations of the vocabulary.
 const (
 	// qualifiedAllocs is a qualified name: the name behind its bound
@@ -106,6 +112,9 @@ const (
 	tagAllocs = 1
 	// docsAllocs is a docblock, sized once.
 	docsAllocs = 1
+	// wrapDocsAllocs is the wrap of a single-spaced text: the list of its
+	// lines, each of which is a part of the text.
+	wrapDocsAllocs = 1
 	// directivesAllocs is the directive lines, sized once.
 	directivesAllocs = 1
 	// constraintAllocs is the line of a build constraint with its blank
@@ -198,6 +207,24 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Docs([]string{"One.", "Two."}), "// One.\n// Two.\n", "at the top level")
+		})
+	})
+
+	t.Run("WrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("wraps the text at the width of the documentation", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" next"), []string{filledLine, "next"},
+				"the word past the width starts the next line")
+		})
+
+		t.Run("starts a line with a word that starts with @", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" @see next"), []string{filledLine, "@see next"},
+				"a Go comment reads an unindented line as text")
 		})
 	})
 
@@ -1538,11 +1565,13 @@ func vocabularyCalls() []allocCall {
 	annotations := symbol.Annotations{{Name: generateDirective, Args: generateArgs}}
 	constrained := symbol.Annotations{{Name: golang.BuildAnnotation, Args: []string{linuxConstraint}}}
 	pkg := symbol.Identity{Package: storePkg, Name: storeName}
+	wrapped := filledLine + " next"
 	var (
 		spellerOut backend.Speller
 		out        string
 		err        error
 		funcs      template.FuncMap
+		lines      []string
 	)
 	spells := func(want string) func(tb assert.TB) {
 		return func(tb assert.TB) {
@@ -1592,11 +1621,18 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 19, "Funcs returns the nineteen helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 20, "Funcs returns the twenty helpers") },
 		},
 		{
 			name: "Docs", allocs: docsAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("// " + rowDoc + "\n"),
+		},
+		{
+			name: "WrapDocs", allocs: wrapDocsAllocs,
+			call: func() { lines = backend.WrapDocs(wrapped) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
+			},
 		},
 		{
 			name: "MemberDocs", allocs: docsAllocs,

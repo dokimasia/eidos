@@ -48,7 +48,9 @@ const markerPrefix = "is"
 // change the result. Every other declaration passes through unchanged.
 // Lower returns an error for a callable with failure types whose body has
 // verbatim text, statements or a return statement in a slot, because the
-// error return changes what each return statement returns.
+// error return changes what each return statement returns. It returns an
+// error for a declaration with the deleter of a property, through
+// [lowering.DeleteAccessor], because Go has no properties.
 //
 // # Allocation contract
 //
@@ -63,6 +65,9 @@ const markerPrefix = "is"
 // grown storage of its returns. A struct allocates the receiver of each
 // method that it fills. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	if err := lowering.DeleteAccessor(golang.Lang, s); err != nil {
+		return nil, err
+	}
 	switch d := s.(type) {
 	case *emit.Enum:
 		return lowerEnum(d)

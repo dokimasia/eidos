@@ -91,21 +91,31 @@ const platformWidth = 0
 //     without a target, because both are well-known types
 //   - the one value of a struct without fields, struct{}{}, beside an
 //     alternate that refuses with no literal
+//   - the pair of a function type as two functions that return the zero
+//     value of each result, and the pair of a channel as two makes of the
+//     channel
+//   - the pair of any and interface{} as the pair of a string from the
+//     hint
 //
 // A map of empty structs, the set of Go, derives its pair from the pair of
 // its keys with struct{}{} as the value of each entry. A slice of empty
 // structs derives no alternate, because the halves of its pair differ in
 // the element.
 //
+// A function literal and a make are new values wherever a body writes
+// them, so the two halves of their pairs differ. A part of a composite,
+// such as an element or a field, derives neither, and a struct sets its
+// next field instead. A function type whose result has no zero value
+// refuses with no literal.
+//
 // The type arguments of a reference to a generic type replace its type
 // parameters in the type of each field and in the target of a defined
 // type, through [rules.Substitute], so a field of Box[int] that T types
 // derives the pair of int. A number states the width of its builtin. An
-// interface, a function type, a channel, an inline body with members, a
-// predeclared type without a literal and a pointer to anything but a
-// composite refuse with no literal, because Go takes the address of a
-// composite literal alone. A named type outside the view refuses as
-// unresolved.
+// interface with methods, an inline body with members, a predeclared type
+// without a literal and a pointer to anything but a composite refuse with
+// no literal, because Go takes the address of a composite literal alone. A
+// named type outside the view refuses as unresolved.
 //
 // The element of a slice or an array, the key and the value of a map, and
 // the field of a struct take the values that an author stated for them
@@ -117,7 +127,9 @@ const platformWidth = 0
 // The pair of a builtin allocates nothing beyond the hinted text of a
 // string. The pair of a composite allocates the reference to its type and
 // the list of each composite, and a conversion allocates its wrapped
-// value.
+// value. The pair of a function type allocates the reference to the type
+// and the list of the zero values of its results, and the pair of a
+// channel the reference alone.
 func (r Rules) DeriveSamples(
 	ref *node.TypeRef,
 	hint string,
@@ -162,21 +174,58 @@ func (r Rules) derive(
 		}
 		return r.declaredPair(ref, hint, v, depth)
 	case symbol.FormInline:
+		if emptyInterfaceBody(ref.Spelling) {
+			return r.builtinPair(ref, hint)
+		}
 		if len(ref.Fields) > 0 || len(ref.Methods) > 0 || !strings.HasPrefix(named(ref), structKeyword) {
 			return rules.RefusedPair(rules.RefusedNoLiteral)
 		}
 		// Every value of a struct without fields is the one value struct{}{}.
 		return rules.Of(emit.Composite(rules.EmitRef(ref))), rules.Refused(rules.RefusedNoLiteral)
+	case symbol.FormFunc:
+		return r.funcPair(ref, v)
+	case symbol.FormStream:
+		// Each make is a new channel, so the halves differ.
+		t := rules.EmitRef(ref)
+		return rules.Of(emit.Make(t)), rules.Of(emit.Make(t))
 	default:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
+}
+
+// funcPair derives the pair of a function type as two functions that
+// return the zero value of each result. A function literal is a new
+// function value wherever it is written, so the halves differ. A result
+// without a zero value refuses the pair with no literal, and so does a
+// reference whose results start outside its children.
+func (r Rules) funcPair(ref *node.TypeRef, v rules.View) (rules.Sample, rules.Sample) {
+	if ref.Split < 0 || ref.Split > len(ref.Elems) {
+		return rules.RefusedPair(rules.RefusedNoLiteral)
+	}
+	var zeros []emit.Value
+	if results := ref.Elems[ref.Split:]; len(results) > 0 {
+		zeros = make([]emit.Value, 0, len(results))
+		for _, result := range results {
+			zero, placed := r.ZeroValue(result, v)
+			if !placed {
+				return rules.RefusedPair(rules.RefusedNoLiteral)
+			}
+			zeros = append(zeros, zero)
+		}
+	}
+	t := rules.EmitRef(ref)
+	return rules.Of(emit.Func(t, zeros...)), rules.Of(emit.Func(t, zeros...))
 }
 
 // partPair returns the pair of one part of a composite. It takes the
 // values that an author stated on the declaration that has the part and
 // on its type, and derives each half that no author stated. A list
 // element and the key and the value of a map have no declaration of their
-// own, so subject is zero for them.
+// own, so subject is zero for them. A part derives no fresh value, a
+// function or a make, because the two halves of a composite would then
+// differ in the identity of a new value alone, and a composite with a
+// function inside equals no composite under reflect.DeepEqual, itself
+// included.
 func (r Rules) partPair(
 	subject symbol.Identity,
 	ref *node.TypeRef,
@@ -189,6 +238,9 @@ func (r Rules) partPair(
 		return sample, alternate
 	}
 	derived, derivedAlternate := r.derive(ref, hint, v, depth)
+	if derived.Value.Fresh() {
+		derived, derivedAlternate = rules.RefusedPair(rules.RefusedNoLiteral)
+	}
 	return rules.Complete(sample, alternate, derived, derivedAlternate)
 }
 
@@ -273,7 +325,8 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 		}
 	case symbol.FormBool:
 		return rules.Pair(emit.LiteralBool, trueSpelling, falseSpelling)
-	case symbol.FormText:
+	case symbol.FormText, symbol.FormDynamic:
+		// A string is a value of the empty interface too.
 		if hint == "" {
 			hint = defaultHint
 		}
@@ -466,11 +519,12 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 //   - A literal, typed by the reference. A literal is nil, one of the two
 //     booleans, an integer in any base that Go reads, a float, a rune as
 //     its integer value, or a quoted or raw string.
-//   - The name of a constant or a variable in the scope s, bare or
-//     qualified, as [emit.Name] of the declaration. The variant of an
-//     enumeration is a constant.
-//   - A call of a function in the scope s without arguments, such as New()
-//     or store.New(), as [emit.Call] of the function.
+//   - The name of a constant or a variable in the scope s, bare, qualified
+//     or under a full import path, as [emit.Name] of the declaration. The
+//     variant of an enumeration is a constant.
+//   - A call of a function in the scope s without arguments, such as New(),
+//     store.New() or example.com/shop/store.New(), as [emit.Call] of the
+//     function.
 //
 // The scanner of Go reads a literal, and LiteralFor writes it back as
 // canonical decimal text, which every target reads alike. Where the
@@ -487,7 +541,9 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 // it needs a receiver. LiteralFor does not check the type of a name or a
 // call. A qualified name or call whose qualifier the file of s imports
 // from a package outside the view is a stand-in under the import path,
-// with the kind of a constant or a function. Any other text is no value.
+// with the kind of a constant or a function. A name or a call under the
+// full import path of such a package is the same stand-in, whether the
+// file imports the package or not. Any other text is no value.
 //
 // # Allocation contract
 //
@@ -499,7 +555,8 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 // to eight imports without a dot import, which is the whole cost of a
 // stand-in. A name or a call that resolves in the view allocates the
 // bindings and the list of candidates of the resolution, four
-// allocations, and a qualified one the bindings a second time.
+// allocations, and a qualified one the bindings a second time. A name or
+// a call under a full import path allocates neither.
 func (r Rules) LiteralFor(
 	s rules.Scope,
 	ref *node.TypeRef,

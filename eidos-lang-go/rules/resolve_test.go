@@ -40,9 +40,9 @@ const (
 	// three allocations, and the list of candidates.
 	probeAllocs = 3 + 1
 	// memberAllocs is a resolution among the members of the subject's
-	// type: the list of the types it searches, the binding the member
-	// walk runs on, and the walk's member list.
-	memberAllocs = 3
+	// type: the list of the types that it searches and the member list of
+	// the walk.
+	memberAllocs = 2
 )
 
 // A directive names a declaration by a spelling, and the Go rules
@@ -133,6 +133,27 @@ func TestResolve(t *testing.T) {
 				give:    "yaml.Node", kind: directive.ResolveTypeInScope,
 				want: symbol.Identity{Lang: golang.Lang, Package: yamlPath, Name: "Node", Kind: symbol.KindAlias},
 			},
+			{
+				name:    "returns the type that a full import path names from a file that does not import it",
+				imports: []*node.Import{},
+				give:    depPath + ".Target", kind: directive.ResolveTypeInScope, want: target,
+			},
+			{
+				name: "returns the constant that a full import path names",
+				give: depPath + ".Ratio", kind: directive.ResolvePackageVar,
+				want: id(depPath, "Ratio", symbol.KindConstant),
+			},
+			{
+				name: "returns a stand-in named by its path for a type under a full import path outside the view",
+				give: yamlPath + ".Node", kind: directive.ResolveTypeInScope,
+				want: symbol.Identity{Lang: golang.Lang, Package: yamlPath, Name: "Node", Kind: symbol.KindAlias},
+			},
+			{
+				name:    "returns a stand-in for a type under a full import path from a file without imports",
+				imports: []*node.Import{},
+				give:    seedPath + ".Region", kind: directive.ResolveTypeInScope,
+				want: symbol.Identity{Lang: golang.Lang, Package: seedPath, Name: "Region", Kind: symbol.KindAlias},
+			},
 		}
 		for _, tt := range resolves {
 			t.Run(tt.name, func(t *testing.T) {
@@ -189,6 +210,22 @@ func TestResolve(t *testing.T) {
 			{
 				name: "returns an error for an instantiated type spelling",
 				give: "dep.Target[int]", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a name that the package of a full import path does not declare",
+				give: depPath + ".Ghost", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a field of a type under a full import path",
+				give: depPath + ".Target.V", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a callable under a full import path outside the view",
+				give: yamlPath + ".Marshal", kind: directive.ResolveCallableInScope,
+			},
+			{
+				name: "returns an error for an import path with an empty element",
+				give: "fx//dep.Target", kind: directive.ResolveTypeInScope,
 			},
 			{
 				name: "returns an error for a callable spelling under a pointer",
@@ -567,6 +604,14 @@ func resolveCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Resolve finds ID")
 				assert.Equal(tb, got.Kind(), symbol.KindField, "Resolve returns the field")
+			},
+		},
+		{
+			name: "Resolve", caseName: "a type under a full import path",
+			call: func() { got, err = r.Resolve(scope, depPath+".Target", directive.ResolveTypeInScope, f.view) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve finds Target")
+				assert.Equal(tb, got.Kind(), symbol.KindStruct, "Resolve returns the struct")
 			},
 		},
 	}

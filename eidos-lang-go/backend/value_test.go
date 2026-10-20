@@ -28,6 +28,20 @@ const (
 	nowName  = "Now"
 )
 
+// The allocations of a value.
+const (
+	// literalAllocs is an integer literal, which Go writes as its text.
+	literalAllocs = 0
+	// callAllocs is a call of a function of another package with two
+	// arguments, in a file that binds the package already: the qualified
+	// name of the callee and the text of the call.
+	callAllocs = 2
+)
+
+// unixCall is the call time.Unix(1, 0). The specs only read it.
+var unixCall = emit.Call(valueFn(timePkg, unixName),
+	emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "0"))
+
 // Every value spelling is pinned byte for byte, for the reason the
 // statement spellings are: the text is spliced into generated bodies,
 // and a drift rewrites files.
@@ -193,6 +207,39 @@ func TestValue(t *testing.T) {
 				want:    "has no construction of Row",
 				wantErr: true,
 			},
+			{
+				name: "writes a function that returns its results",
+				give: emit.Func(fnType("func(context.Context) error", 1, imported(contextPkg, contextPkg, "Context"),
+					ref("error")), emit.Literal(emit.LiteralNil, "")),
+				want: "\treturn func(context.Context) error { return nil }\n",
+			},
+			{
+				name: "writes a function with two results",
+				give: emit.Func(fnType("func() (int, error)", 0, ref("int"), ref("error")),
+					emit.Literal(emit.LiteralInt, "0"), emit.Literal(emit.LiteralNil, "")),
+				want: "\treturn func() (int, error) { return 0, nil }\n",
+			},
+			{
+				name: "writes a function without results with an empty body",
+				give: emit.Func(fnType("func(string)", 1, ref("string"))),
+				want: "\treturn func(string) {}\n",
+			},
+			{
+				name: "writes a make of a channel",
+				give: emit.Make(composite(symbol.FormStream, "chan string", ref("string"))),
+				want: "\treturn make(chan string)\n",
+			},
+			{
+				name: "writes a make of a receive-only channel",
+				give: emit.Make(composite(symbol.FormStream, "<-chan string", ref("string"))),
+				want: "\treturn make(<-chan string)\n",
+			},
+			{
+				name:    "returns a value error for a function of a type that is not a function type",
+				give:    emit.Func(valueRef(rowName, svcPkg, rowName)),
+				want:    "Row is not one",
+				wantErr: true,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -225,6 +272,15 @@ func TestValue(t *testing.T) {
 			assert.NoError(t, err, "the tree spells")
 			assert.Equal(t, set.Paths(), []string{legacyPkg, storePkg, unitsPkg, timePkg},
 				"every package the tree names, in path order")
+		})
+
+		t.Run("binds the import of each type of the signature of a function", func(t *testing.T) {
+			t.Parallel()
+
+			_, set, err := returned(t, emit.Func(fnType("func(context.Context) error", 1,
+				imported(contextPkg, contextPkg, "Context"), ref("error")), emit.Literal(emit.LiteralNil, "")))
+			assert.NoError(t, err, "the function spells")
+			assert.Equal(t, set.Paths(), []string{contextPkg}, "the file imports the package of the parameter")
 		})
 
 		t.Run("writes the names of the file's own package bare", func(t *testing.T) {
@@ -318,6 +374,82 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, string(out), "\twant(got, 42)\n", "a value is an argument like any other")
 		})
 	})
+
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes a value as the scaffold writes it", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Value(unixCall, homeSet())
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, "time.Unix(1, 0)", "the Go spelling")
+		})
+
+		t.Run("binds the import of a callee of another package", func(t *testing.T) {
+			t.Parallel()
+
+			set := homeSet()
+			_, err := backend.Value(unixCall, set)
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Paths(), []string{timePkg}, "the file imports the package of the callee")
+		})
+
+		t.Run("returns a value error for a value that Go cannot spell", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Value(emit.Construction(valueRef(rowName, svcPkg, rowName)), homeSet())
+			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+			assert.Equal(t, refused.Lang, string(golang.Lang), "naming the target")
+		})
+	})
+}
+
+// A literal allocates nothing, and a call allocates the qualified name of
+// its callee and the text that it joins. The ordinary run, which runs no
+// benchmark, checks those ceilings here.
+func TestValueAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls())
+}
+
+// BenchmarkValue measures the spelling of one value that a template
+// writes.
+func BenchmarkValue(b *testing.B) {
+	benchCalls(b, valueCalls())
+}
+
+// valueCalls returns a call of Value over an integer literal, and over a
+// call of a function of a package that the file binds already.
+func valueCalls() []allocCall {
+	literal := emit.Literal(emit.LiteralInt, "42")
+	set := homeSet()
+	var (
+		out string
+		err error
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "Value spells the value")
+			assert.Equal(tb, out, want, "Value writes the Go spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "Value", caseName: "an integer", allocs: literalAllocs,
+			call: func() { out, err = backend.Value(literal, set) }, check: spells("42"),
+		},
+		{
+			name: "Value", caseName: "a call of another package", allocs: callAllocs,
+			call: func() { out, err = backend.Value(unixCall, set) }, check: spells("time.Unix(1, 0)"),
+		},
+	}
+}
+
+// homeSet returns the import set of a file of svcPkg.
+func homeSet() *render.ImportSet {
+	set := &render.ImportSet{}
+	set.SetHome(svcPkg)
+	return set
 }
 
 // valueRef returns a resolved reference to a struct of one package,

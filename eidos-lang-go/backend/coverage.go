@@ -26,11 +26,16 @@ import (
 // has no syntax for them. A field that another type receives refuses,
 // because Go has no extension field. The annotations of a file refuse,
 // because the skeleton does not write the header that a generator states.
+// The passing of a parameter takes the [render.Holds] verdict, because a
+// Go caller passes every argument by position and Go has no form of a
+// keyword argument.
 //
 // Go writes no async, override, default body, type level or computed
 // name, and a declaration without such a fact is a declaration of another
 // meaning. These facts take the [render.Rejects] verdict, and so does the
-// mutability of an index signature.
+// mutability of an index signature. A wire name rejects too, because a Go
+// file writes the key of a wire format in a struct tag and the case of a
+// Go name states its visibility.
 //
 // Coverage builds the table on every call, which the caller keeps: the
 // fact map's four allocations, and the exception map's two with its five
@@ -60,6 +65,8 @@ func Coverage() render.Coverage {
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Refuses,
 			symbol.FactVariadic:         render.Renders,
+			symbol.FactPassing:          render.Holds,
+			symbol.FactWire:             render.Rejects,
 			symbol.FactNamedReturn:      render.Renders,
 			symbol.FactFields:           render.Refuses,
 			symbol.FactMethods:          render.Refuses,

@@ -120,6 +120,14 @@ func TestCoverage(t *testing.T) {
 				name: "returns Refuses for a file's annotations",
 				kind: symbol.KindFile, fact: symbol.FactAnnotations, want: render.Refuses,
 			},
+			{
+				name: "returns Holds for a parameter's passing",
+				kind: symbol.KindParam, fact: symbol.FactPassing, want: render.Holds,
+			},
+			{
+				name: "returns Rejects for a wire name of a field",
+				kind: symbol.KindField, fact: symbol.FactWire, want: render.Rejects,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

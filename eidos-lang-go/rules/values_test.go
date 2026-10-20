@@ -41,7 +41,12 @@ const (
 	uuidSpelling       = "uuid.UUID"
 	unknownSpelling    = "Unknown"
 	emptyStruct        = "struct{}"
+	emptyInterface     = "interface{}"
 )
+
+// seedPath is the import path of a package outside the view, which the
+// value cases name in full.
+const seedPath = "example.com/shop/seed"
 
 // The fixture's declarations and fields the value cases derive.
 const (
@@ -116,6 +121,16 @@ const (
 	// entry list and the key of each composite, and the hinted texts of
 	// the keys.
 	mapSamplesAllocs = 4 + 2 + 2 + 2
+	// funcSamplesAllocs is the pair of func(string) error: the reference to
+	// the function type with its list of children and its two children's
+	// references, and the list of the zero values of the results, which
+	// both halves share.
+	funcSamplesAllocs = 4 + 1
+	// chanSamplesAllocs is the pair of chan int: the reference to the
+	// channel with its list of children and its child's reference.
+	chanSamplesAllocs = 3
+	// anySamplesAllocs is the pair of any: the hinted texts.
+	anySamplesAllocs = 2
 	// structZeroAllocs is a struct's zero value: the reference to the
 	// type of the empty composite.
 	structZeroAllocs = 1
@@ -196,6 +211,13 @@ func TestValues(t *testing.T) {
 				wantSample:    emit.Literal(emit.LiteralString, defaultHint+sampleSuffix),
 				wantAlternate: emit.Literal(emit.LiteralString, defaultHint+alternateSuffix),
 			},
+			{
+				name:          "returns the hint with a suffix per half for any",
+				give:          anySpelling,
+				giveHint:      nameHint,
+				wantSample:    emit.Literal(emit.LiteralString, nameHint+sampleSuffix),
+				wantAlternate: emit.Literal(emit.LiteralString, nameHint+alternateSuffix),
+			},
 		}
 		for _, tt := range builtins {
 			t.Run(tt.name, func(t *testing.T) {
@@ -254,12 +276,86 @@ func TestValues(t *testing.T) {
 				"the dependency round resolves the reference, and the time is still well-known")
 		})
 
+		t.Run("returns the hint with a suffix per half for the empty interface", func(t *testing.T) {
+			t.Parallel()
+
+			s, a := pairOf(t, loaded(t), &node.TypeRef{Spelling: emptyInterface, Form: symbol.FormInline}, nameHint)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Literal(emit.LiteralString, nameHint+sampleSuffix),
+				emit.Literal(emit.LiteralString, nameHint+alternateSuffix),
+			}, "a string is a value of the empty interface")
+		})
+
+		t.Run("returns two functions that return zero values for a function type", func(t *testing.T) {
+			t.Parallel()
+
+			fn := composite("func(string) (int, error)", symbol.FormFunc,
+				builtin(stringSpelling), builtin(intSpelling), builtin(errorSpelling))
+			fn.Split = 1
+			s, a := pairOf(t, loaded(t), fn, "")
+			want := emit.Func(
+				rules.EmitRef(fn),
+				emit.Literal(emit.LiteralInt, zeroText),
+				emit.Literal(emit.LiteralNil, ""),
+			)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{want, want},
+				"two function literals are two function values")
+		})
+
+		t.Run("returns two functions without results for a function type without results", func(t *testing.T) {
+			t.Parallel()
+
+			fn := composite("func()", symbol.FormFunc)
+			s, a := pairOf(t, loaded(t), fn, "")
+			want := emit.Func(rules.EmitRef(fn))
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{want, want}, "each function has an empty body")
+		})
+
+		t.Run("returns two makes for a channel", func(t *testing.T) {
+			t.Parallel()
+
+			ch := composite("chan int", symbol.FormStream, builtin(intSpelling))
+			s, a := pairOf(t, loaded(t), ch, "")
+			want := emit.Make(rules.EmitRef(ch))
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{want, want}, "each make is a new channel")
+		})
+
+		t.Run("returns RefusedNoLiteral for a function type whose result has no zero value", func(t *testing.T) {
+			t.Parallel()
+
+			fn := composite("func() Ghost", symbol.FormFunc, ref(fxPath, ghostType, symbol.KindStruct))
+			assert.Equal(t, refusalOf(loaded(t), fn), rules.RefusedNoLiteral, "the function cannot return a value")
+		})
+
+		t.Run("returns RefusedNoLiteral for a slice of functions", func(t *testing.T) {
+			t.Parallel()
+
+			list := composite("[]func()", symbol.FormList, composite("func()", symbol.FormFunc))
+			assert.Equal(t, refusalOf(loaded(t), list), rules.RefusedNoLiteral,
+				"two slices of new functions differ in the identity of the functions alone")
+		})
+
+		t.Run("returns RefusedNoLiteral for a map whose value is a channel", func(t *testing.T) {
+			t.Parallel()
+
+			m := composite("map[string]chan int", symbol.FormMap, builtin(stringSpelling),
+				composite("chan int", symbol.FormStream, builtin(intSpelling)))
+			assert.Equal(t, refusalOf(loaded(t), m), rules.RefusedNoLiteral, "a part derives no make")
+		})
+
+		t.Run("returns RefusedNoLiteral for a function type whose results start past its children", func(t *testing.T) {
+			t.Parallel()
+
+			fn := composite("func(int)", symbol.FormFunc, builtin(intSpelling))
+			fn.Split = 2
+			assert.Equal(t, refusalOf(loaded(t), fn), rules.RefusedNoLiteral, "the reference states no results")
+		})
+
 		refusals := []struct {
 			name string
 			give *node.TypeRef
 			want rules.Refusal
 		}{
-			{name: "returns RefusedNoLiteral for any", give: builtin(anySpelling), want: rules.RefusedNoLiteral},
 			{name: "returns RefusedNoLiteral for error", give: builtin(errorSpelling), want: rules.RefusedNoLiteral},
 			{
 				name: "returns RefusedNoLiteral for comparable",
@@ -283,16 +379,8 @@ func TestValues(t *testing.T) {
 			},
 			{
 				name: "returns RefusedNoLiteral for a map whose value has no literal",
-				give: composite("map[string]any", symbol.FormMap, builtin(stringSpelling), builtin(anySpelling)),
+				give: composite("map[string]error", symbol.FormMap, builtin(stringSpelling), builtin(errorSpelling)),
 				want: rules.RefusedNoLiteral,
-			},
-			{
-				name: "returns RefusedNoLiteral for a function type",
-				give: composite("func()", symbol.FormFunc), want: rules.RefusedNoLiteral,
-			},
-			{
-				name: "returns RefusedNoLiteral for a channel",
-				give: composite("chan int", symbol.FormStream, builtin(intSpelling)), want: rules.RefusedNoLiteral,
 			},
 			{
 				name: "returns RefusedNoLiteral for an inline struct",
@@ -425,7 +513,7 @@ func TestValues(t *testing.T) {
 			s, _ := pairOf(t, loaded(t), hooked, "")
 			assert.Equal(t, s, emit.Composite(rules.EmitRef(hooked),
 				emit.NamedField(nameField, emit.Literal(emit.LiteralString, nameField+sampleSuffix))),
-				"a function field has no literal, so the string field sets the composite")
+				"a composite takes no function as a part, so the string field sets the composite")
 		})
 
 		t.Run("returns a conversion of the underlying pair for a defined type", func(t *testing.T) {
@@ -1077,6 +1165,18 @@ func TestValues(t *testing.T) {
 				give: "time.Now()", want: emit.Call(now),
 			},
 			{
+				name: "returns the name of a constant that a full import path names",
+				give: depPath + ".Ratio", want: emit.Name(id(depPath, "Ratio", symbol.KindConstant)),
+			},
+			{
+				name: "returns a stand-in constant for a name under a full import path outside the view",
+				give: seedPath + ".Region", want: emit.Name(id(seedPath, "Region", symbol.KindConstant)),
+			},
+			{
+				name: "returns a stand-in function for a call under a full import path outside the view",
+				give: seedPath + ".Defaults()", want: emit.Call(id(seedPath, "Defaults", symbol.KindFunction)),
+			},
+			{
 				name: "reads a name behind spaces",
 				give: " Limit ", want: emit.Name(id(fxPath, "Limit", symbol.KindConstant)),
 			},
@@ -1109,6 +1209,11 @@ func TestValues(t *testing.T) {
 			{name: "reports false for a call with an argument", give: "Find(1)"},
 			{name: "reports false for a call of the result of a call", give: "All()()"},
 			{name: "reports false for a selector of a variable", give: "Registry.Len"},
+			{
+				name: "reports false for a name that the package of a full import path does not declare",
+				give: depPath + ".Missing",
+			},
+			{name: "reports false for a field of a type under a full import path", give: depPath + ".Target.V"},
 		}
 		for _, tt := range unnamed {
 			t.Run(tt.name, func(t *testing.T) {
@@ -1128,6 +1233,28 @@ func TestValues(t *testing.T) {
 			assert.False(t, ok, "no import binds the qualifier without the file")
 		})
 
+		t.Run("returns the name under a full import path in a file that does not import its package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				scope := rules.Scope{Subject: rowID, File: &node.File{}}
+				got, ok := gorules.New().LiteralFor(scope, nil, depPath+".Ratio", f.view)
+				assert.True(t, ok, "a full import path needs no import of the file")
+				want := emit.Name(id(depPath, "Ratio", symbol.KindConstant))
+				assert.Equal(t, got, want, "the value refers to the constant")
+			})
+
+		t.Run("returns the name under a full import path in a scope without a file", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			got, ok := gorules.New().LiteralFor(rules.Scope{Subject: rowID}, nil, depPath+".Ratio", f.view)
+			assert.True(t, ok, "a full import path needs no file")
+			want := emit.Name(id(depPath, "Ratio", symbol.KindConstant))
+			assert.Equal(t, got, want, "the value refers to the constant")
+		})
+
 		t.Run("reads the call that an author states on a field of a type without a literal", func(t *testing.T) {
 			t.Parallel()
 
@@ -1137,6 +1264,43 @@ func TestValues(t *testing.T) {
 			sample, _ := f.view.Authored(gorules.New(), when.ID, when.Type)
 			assert.Equal(t, sample.Value, emit.Call(now), "View.Authored lifts the text through LiteralFor")
 		})
+
+		authored := []struct {
+			name      string
+			giveField string
+			giveText  string
+			want      rules.Sample
+		}{
+			{
+				name:      "reads the name that an author states on a field of an integer type",
+				giveField: idField,
+				giveText:  "Limit",
+				want:      rules.Of(emit.Name(id(fxPath, "Limit", symbol.KindConstant))),
+			},
+			{
+				name:      "reads the name that an author states on a field of a float type",
+				giveField: "Ratio",
+				giveText:  "dep.Ratio",
+				want:      rules.Of(emit.Name(id(depPath, "Ratio", symbol.KindConstant))),
+			},
+			{
+				name:      "returns RefusedAuthored for a name that the scope does not declare on a field of an integer type",
+				giveField: idField,
+				giveText:  "Missing",
+				want:      rules.Refused(rules.RefusedAuthored),
+			},
+		}
+		for _, tt := range authored {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				field := f.field(t, rowType, tt.giveField)
+				stamp(t, f.Facts, field.ID, f.Keys.Sample, tt.giveText)
+				sample, _ := f.view.Authored(gorules.New(), field.ID, field.Type)
+				assert.Equal(t, sample, tt.want, "View.Authored lifts the text of a number through LiteralFor")
+			})
+		}
 
 		t.Run("reports false for a call of a sibling method from a method subject", func(t *testing.T) {
 			t.Parallel()
@@ -1188,6 +1352,10 @@ func valueCalls(tb testing.TB) []allocCall {
 	scope := f.scope(row.Target)
 	slice := composite("[]string", symbol.FormList, builtin(stringSpelling))
 	m := composite("map[string]int", symbol.FormMap, builtin(stringSpelling), builtin(intSpelling))
+	fn := composite("func(string) error", symbol.FormFunc, builtin(stringSpelling), builtin(errorSpelling))
+	fn.Split = 1
+	ch := composite("chan int", symbol.FormStream, builtin(intSpelling))
+	top := builtin(anySpelling)
 	var (
 		sample rules.Sample
 		value  emit.Value
@@ -1215,6 +1383,27 @@ func valueCalls(tb testing.TB) []allocCall {
 			call: func() { sample, _ = r.DeriveSamples(m, keyHint, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "DeriveSamples derives the map")
+			},
+		},
+		{
+			name: "DeriveSamples", caseName: "a function type", allocs: funcSamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(fn, "", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueFunc, "DeriveSamples derives the function")
+			},
+		},
+		{
+			name: "DeriveSamples", caseName: "a channel", allocs: chanSamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(ch, "", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueMake, "DeriveSamples derives the make")
+			},
+		},
+		{
+			name: "DeriveSamples", caseName: "any", allocs: anySamplesAllocs,
+			call: func() { sample, _ = r.DeriveSamples(top, tagHint, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Text, tagHint+sampleSuffix, "DeriveSamples derives the hinted string")
 			},
 		},
 		{
@@ -1246,6 +1435,20 @@ func valueCalls(tb testing.TB) []allocCall {
 			call: func() { value, _ = r.LiteralFor(scope, scalar, "time.Now()", f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, value.Kind, emit.ValueCall, "LiteralFor reads the call of time.Now")
+			},
+		},
+		{
+			name: "LiteralFor", caseName: "a constant under a full import path",
+			call: func() { value, _ = r.LiteralFor(scope, scalar, depPath+".Ratio", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value, emit.Name(id(depPath, "Ratio", symbol.KindConstant)), "LiteralFor reads Ratio")
+			},
+		},
+		{
+			name: "LiteralFor", caseName: "a call of a stand-in function under a full import path",
+			call: func() { value, _ = r.LiteralFor(scope, scalar, seedPath+".Defaults()", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value.Kind, emit.ValueCall, "LiteralFor reads the call of Defaults")
 			},
 		},
 	}
