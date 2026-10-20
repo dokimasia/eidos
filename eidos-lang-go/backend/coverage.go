@@ -30,12 +30,12 @@ import (
 // Go caller passes every argument by position and Go has no form of a
 // keyword argument.
 //
-// Go writes no async, override, default body, type level or computed
-// name, and a declaration without such a fact is a declaration of another
-// meaning. These facts take the [render.Rejects] verdict, and so does the
-// mutability of an index signature. A wire name rejects too, because a Go
-// file writes the key of a wire format in a struct tag and the case of a
-// Go name states its visibility.
+// Go writes no async, override, default body, type level, computed name or
+// overload signature, and a declaration without such a fact is a
+// declaration of another meaning. These facts take the [render.Rejects]
+// verdict, and so does the mutability of an index signature. A wire name
+// rejects too, because a Go file writes the key of a wire format in a
+// struct tag and the case of a Go name states its visibility.
 //
 // Coverage builds the table on every call, which the caller keeps: the
 // fact map's four allocations, and the exception map's two with its five
@@ -61,6 +61,7 @@ func Coverage() render.Coverage {
 			symbol.FactSealed:           render.Refuses,
 			symbol.FactPermits:          render.Refuses,
 			symbol.FactOverride:         render.Rejects,
+			symbol.FactOverload:         render.Rejects,
 			symbol.FactDefaultBody:      render.Rejects,
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Refuses,

@@ -127,9 +127,13 @@ func known(pkg, name string, pointer bool) knownType {
 // spells as protoc-gen-go names it: a message as a pointer, as
 // *GetRequest, a nested declaration with underscores, as Session_State, and
 // a well-known type of protobuf as its type below
-// google.golang.org/protobuf/types/known, as *timestamppb.Timestamp. It
-// spells each other form this way:
+// google.golang.org/protobuf/types/known, as *timestamppb.Timestamp. The
+// reference to a declaration of the schema is bound, so the layout
+// qualifies it by the package that [Home] returns. It spells each other
+// form this way:
 //
+//   - a type parameter as its name, through [spoke.Param], at every depth
+//     of a shape;
 //   - a scalar as the predeclared type of its class and width, and int
 //     and uint for the platform's width;
 //   - Bool, Text and Bytes as bool, string and []byte, and the top type as
@@ -154,10 +158,10 @@ func known(pkg, name string, pointer bool) knownType {
 // stream ends with the first pair whose error is not nil.
 //
 // Type refuses a tuple, a union, an intersection, a borrow, a wildcard
-// with a lower bound, an inline type and an opaque type, because Go has
-// no spelling of them. A Go pointer aliases and a Go value copies, so
-// neither is a borrow. Type refuses a scalar of another width and an
-// array of an unstated length. It refuses an immutable list, array and
+// with a lower bound, an inline type and an opaque type of another
+// reference than a type parameter, because Go has no spelling of them. A
+// Go pointer aliases and a Go value copies, so neither is a borrow. Type
+// refuses a scalar of another width and an array of an unstated length. It refuses an immutable list, array and
 // map, because a holder can write through a Go slice, array and map. It
 // refuses a map key of a list, a map, a function type and bytes, because
 // Go does not compare their values. It refuses a form whose child it
@@ -189,6 +193,9 @@ type speller struct {
 // goType spells one shape by the rules of [Type], and returns a refusal
 // without the language's prefix.
 func (g speller) goType(s rules.TypeShape) (*emit.TypeRef, error) {
+	if t, param := spoke.Param(s); param {
+		return t, nil
+	}
 	if t, known := knownTypes[strings.TrimPrefix(s.Spelling, protobufDot)]; g.bound && known {
 		return t.ref(), nil
 	}
@@ -336,11 +343,12 @@ func (g speller) wildcard(s rules.TypeShape) (*emit.TypeRef, error) {
 // other referent as a translated reference under its flat name, with its
 // translated arguments. Under a binding of gRPC a protobuf declaration
 // takes the name that protoc-gen-go gives it, and a message is a pointer.
-// A oneof refuses, because protoc-gen-go declares its interface
-// unexported.
+// The reference is bound, because protoc-gen-go writes the declaration and
+// not the plan. A oneof refuses, because protoc-gen-go declares its
+// interface unexported.
 func (g speller) reference(s rules.TypeShape) (*emit.TypeRef, error) {
 	if g.bound && s.Ref.Lang == protobufLang {
-		named := &emit.TypeRef{Spelling: protocName(s.Ref), Target: s.Ref}
+		named := &emit.TypeRef{Spelling: protocName(s.Ref), Target: s.Ref, Bound: true}
 		switch s.Ref.Kind {
 		case symbol.KindStruct:
 			return restated(&emit.TypeRef{Form: symbol.FormOptional, Elems: []*emit.TypeRef{named}})
@@ -377,16 +385,22 @@ func message(s rules.TypeShape) bool {
 
 // protocName returns the name that protoc-gen-go gives the protobuf
 // declaration id: the names of its owners and its own name, each in camel
-// case, joined by underscores, as Session_State. A word of lower-case
-// letters after an underscore takes a capital in place of the underscore,
-// and a name that starts with an underscore starts with X, as protoc-gen-go
-// writes a Go identifier. It allocates the name.
+// case, joined by underscores, as Session_State. It allocates the name, and
+// the full name of a nested declaration.
 func protocName(id symbol.Identity) string {
 	full := id.Name
 	if id.Owner != "" {
 		full = id.Owner + symbol.OwnerSep + id.Name
 	}
-	b := make([]byte, 0, len(full))
+	return string(appendProtoc(make([]byte, 0, len(full)), full))
+}
+
+// appendProtoc appends to b the Go name that protoc-gen-go gives the full
+// protobuf name full, and returns the extended buffer. A word of lower-case
+// letters after an underscore takes a capital in place of the underscore,
+// and a name that starts with an underscore starts with X, as protoc-gen-go
+// writes a Go identifier. It allocates only where b grows.
+func appendProtoc(b []byte, full string) []byte {
 	for i := 0; i < len(full); i++ {
 		c := full[i]
 		lowerNext := i+1 < len(full) && 'a' <= full[i+1] && full[i+1] <= 'z'
@@ -409,7 +423,7 @@ func protocName(id symbol.Identity) string {
 			}
 		}
 	}
-	return string(b)
+	return b
 }
 
 // ref returns a new reference to the Go type of the well-known type k, with

@@ -128,6 +128,18 @@ func TestCoverage(t *testing.T) {
 				name: "returns Rejects for a wire name of a field",
 				kind: symbol.KindField, fact: symbol.FactWire, want: render.Rejects,
 			},
+			{
+				name: "returns Holds for an enum's contracts",
+				kind: symbol.KindEnum, fact: symbol.FactImplements, want: render.Holds,
+			},
+			{
+				name: "returns Rejects for an overload signature of a function",
+				kind: symbol.KindFunction, fact: symbol.FactOverload, want: render.Rejects,
+			},
+			{
+				name: "returns Holds for a sum's contracts",
+				kind: symbol.KindSum, fact: symbol.FactImplements, want: render.Holds,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

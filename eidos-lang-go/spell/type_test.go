@@ -74,7 +74,18 @@ var (
 	union     = rules.TypeShape{
 		Form: symbol.FormUnion, Spelling: "string | number", Elems: []rules.TypeShape{text, number},
 	}
+	// paramShape is the shape that the fold gives a reference to the type
+	// parameter paramName of page.
+	paramShape = rules.TypeShape{
+		Form: symbol.FormOpaque, Spelling: paramName,
+		Ref: symbol.Identity{
+			Lang: sourceLang, Package: "svc/store", Owner: pageName, Name: paramName, Kind: symbol.KindTypeParam,
+		},
+	}
 )
+
+// paramName is the name of the type parameter of the cases.
+const paramName = "T"
 
 // typeCall is one spelling that the allocation test and the benchmark
 // measure: the shape, its ceiling and the spelling that it returns.
@@ -281,6 +292,23 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{
 					Spelling: "[]Session", Form: symbol.FormList,
 					Elems: []*emit.TypeRef{{Spelling: sessionName, Target: session}},
+				},
+			},
+			{name: "returns the name of a type parameter", give: paramShape, want: &emit.TypeRef{Spelling: paramName}},
+			{
+				name: "returns a slice of a type parameter for a list",
+				give: rules.TypeShape{Form: symbol.FormList, Spelling: "T[]", Elems: []rules.TypeShape{paramShape}},
+				want: &emit.TypeRef{
+					Spelling: "[]" + paramName, Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: paramName}},
+				},
+			},
+			{
+				name: "returns a pointer for an optional of a type parameter",
+				give: rules.TypeShape{
+					Form: symbol.FormOptional, Spelling: "T | undefined", Elems: []rules.TypeShape{paramShape},
+				},
+				want: &emit.TypeRef{
+					Spelling: "*" + paramName, Form: symbol.FormOptional, Elems: []*emit.TypeRef{{Spelling: paramName}},
 				},
 			},
 			{
@@ -644,6 +672,9 @@ func TestType(t *testing.T) {
 		grpc, err := plugin.NewPolicy(golang.Target, golang.Policies(),
 			map[plugin.PolicyKey]plugin.Choice{golang.GRPC: golang.GRPCGo})
 		assert.NoError(t, err, "the binding grpc-go is a choice of the policy")
+		connect, err := plugin.NewPolicy(golang.Target, golang.Policies(),
+			map[plugin.PolicyKey]plugin.Choice{golang.GRPC: golang.GRPCConnect})
+		assert.NoError(t, err, "the binding connect-go is a choice of the policy")
 		request := symbol.Identity{Lang: "protobuf", Package: "svc", Name: "GetRequest", Kind: symbol.KindStruct}
 		state := symbol.Identity{
 			Lang:    "protobuf",
@@ -714,6 +745,45 @@ func TestType(t *testing.T) {
 				got, err := spell.Type(tt.give, grpc)
 				assert.NoError(t, err, "the binding spells the reference")
 				assert.Equal(t, got.Spelling, tt.want, "the name of protoc-gen-go")
+			})
+		}
+
+		const timestampPath = "google.golang.org/protobuf/types/known/timestamppb"
+		references := []struct {
+			name       string
+			give       rules.TypeShape
+			givePolicy plugin.Policy
+			want       *emit.TypeRef
+		}{
+			{
+				name: "returns a pointer to a bound reference for a message under grpc-go",
+				give: rules.Reference("GetRequest", request), givePolicy: grpc,
+				want: &emit.TypeRef{
+					Spelling: "*GetRequest", Form: symbol.FormOptional,
+					Elems: []*emit.TypeRef{{Spelling: "GetRequest", Target: request, Bound: true}},
+				},
+			},
+			{
+				name: "returns a bound reference for an enum under connect-go",
+				give: rules.Reference("x", state), givePolicy: connect,
+				want: &emit.TypeRef{Spelling: "Session_State", Target: state, Bound: true},
+			},
+			{
+				name: "returns a reference with the import of a known type under a binding",
+				give: rules.Reference(".google.protobuf.Timestamp", rules.WellKnownTimestamp), givePolicy: grpc,
+				want: &emit.TypeRef{
+					Spelling: "*timestamppb.Timestamp", Form: symbol.FormOptional,
+					Elems: []*emit.TypeRef{{Spelling: "timestamppb.Timestamp", Package: timestampPath}},
+				},
+			},
+		}
+		for _, tt := range references {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spell.Type(tt.give, tt.givePolicy)
+				assert.NoError(t, err, "the binding spells the reference")
+				assert.Equal(t, got, tt.want, "the reference")
 			})
 		}
 

@@ -11,6 +11,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
+// internalPart is the part of the name of the internal test file of a
+// family before the test suffix.
+const internalPart = "_internal"
+
 // Filename spells a unit's filename in Go's snake case. The stem of the
 // unit's [plugin.Unit.FileKey], the family word and the tag join with
 // underscores and convert as one, so a family word spelled HTTPClient
@@ -27,17 +31,26 @@ import (
 // store_test is stub_test.go, and a stub of the source store_test.go is
 // store_test_stub_test.go.
 //
+// A test file of a unit with an origin in [plugin.Unit.Inside] is the
+// internal test file of its family, which tests the package from inside.
+// Its name has internal before the test suffix, as
+// store_check_internal_test.go beside store_check_test.go, the file of
+// the declarations that test from outside.
+//
 // # Allocation contract
 //
 // Filename allocates the list of the filename's parts and the name with
 // its extension. It allocates once more for each step that applies: the
-// join of more than one part, a snake-case conversion, and the test
-// suffix. A per-source unit whose parts are snake case already costs
-// three allocations.
+// join of more than one part, a snake-case conversion, the test suffix
+// and the internal part. A per-source unit whose parts are snake case
+// already costs three allocations.
 func Filename(u plugin.Unit) string {
 	name := naming.SnakeFilename(u.FileKey(), u.Word, u.Tag, "")
 	if strings.HasSuffix(u.Pkg.Package, golang.TestSuffix) && !strings.HasSuffix(name, golang.TestSuffix) {
 		name += golang.TestSuffix
+	}
+	if len(u.Inside) > 0 && strings.HasSuffix(name, golang.TestSuffix) {
+		name = strings.TrimSuffix(name, golang.TestSuffix) + internalPart + golang.TestSuffix
 	}
 	return name + golang.Extension
 }

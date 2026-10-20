@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/go/spell"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The allocations of a filename.
@@ -85,6 +86,22 @@ func TestFilename(t *testing.T) {
 					Per: plugin.PerSource, Key: "svc/store/store_test.go", Word: "stub", Pkg: origin(testPath),
 				},
 				want: "store_test_stub_test.go",
+			},
+			{
+				name: "returns the internal test file for a unit with an origin that tests from inside",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/store.go", Word: "check", Tag: "test",
+					Inside: []symbol.Identity{origin(storePath)},
+				},
+				want: "store_check_internal_test.go",
+			},
+			{
+				name: "returns no internal part for a file that is no test file",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/store.go", Word: "stub",
+					Inside: []symbol.Identity{origin(storePath)},
+				},
+				want: "store_stub.go",
 			},
 			{
 				name: "returns the word alone for a plan unit",
