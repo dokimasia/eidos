@@ -228,6 +228,7 @@ func (w *binaryWriter) encodeFunction(x *Function) {
 	w.str(x.Name)
 	w.unsigned(uint64(x.Visibility))
 	w.boolean(x.Async)
+	w.boolean(x.Overload)
 	w.unsigned(uint64(len(x.TypeParams)))
 	for _, child := range x.TypeParams {
 		w.encodeTypeParam(child)
@@ -258,6 +259,7 @@ func (r *binaryReader) decodeFunction() *Function {
 	x.Name = r.str()
 	x.Visibility = symbol.Visibility(r.unsigned())
 	x.Async = r.boolean()
+	x.Overload = r.boolean()
 	if n := r.count(); n > 0 {
 		x.TypeParams = make([]*TypeParam, n)
 		for i := range x.TypeParams {
@@ -313,6 +315,7 @@ func (w *binaryWriter) encodeMethod(x *Method) {
 	w.boolean(x.Optional)
 	w.unsigned(uint64(x.Mutability))
 	w.boolean(x.Computed)
+	w.boolean(x.Overload)
 	w.encodeParam(x.Receiver)
 	w.encodeTypeRef(x.Receives)
 	w.unsigned(uint64(len(x.TypeParams)))
@@ -358,6 +361,7 @@ func (r *binaryReader) decodeMethod() *Method {
 	x.Optional = r.boolean()
 	x.Mutability = symbol.Mutability(r.unsigned())
 	x.Computed = r.boolean()
+	x.Overload = r.boolean()
 	x.Receiver = ref[*Param](r)
 	x.Receives = ref[*TypeRef](r)
 	if n := r.count(); n > 0 {
@@ -698,6 +702,10 @@ func (w *binaryWriter) encodeEnum(x *Enum) {
 	for _, child := range x.Methods {
 		w.encodeMethod(child)
 	}
+	w.unsigned(uint64(len(x.Implements)))
+	for _, child := range x.Implements {
+		w.encodeTypeRef(child)
+	}
 	w.annotations(x.Annotations)
 }
 
@@ -729,6 +737,12 @@ func (r *binaryReader) decodeEnum() *Enum {
 		x.Methods = make([]*Method, n)
 		for i := range x.Methods {
 			x.Methods[i] = ref[*Method](r)
+		}
+	}
+	if n := r.count(); n > 0 {
+		x.Implements = make([]*TypeRef, n)
+		for i := range x.Implements {
+			x.Implements[i] = ref[*TypeRef](r)
 		}
 	}
 	x.Annotations = r.annotations()
@@ -794,6 +808,10 @@ func (w *binaryWriter) encodeSum(x *Sum) {
 	for _, child := range x.Methods {
 		w.encodeMethod(child)
 	}
+	w.unsigned(uint64(len(x.Implements)))
+	for _, child := range x.Implements {
+		w.encodeTypeRef(child)
+	}
 	w.annotations(x.Annotations)
 }
 
@@ -823,6 +841,12 @@ func (r *binaryReader) decodeSum() *Sum {
 		x.Methods = make([]*Method, n)
 		for i := range x.Methods {
 			x.Methods[i] = ref[*Method](r)
+		}
+	}
+	if n := r.count(); n > 0 {
+		x.Implements = make([]*TypeRef, n)
+		for i := range x.Implements {
+			x.Implements[i] = ref[*TypeRef](r)
 		}
 	}
 	x.Annotations = r.annotations()

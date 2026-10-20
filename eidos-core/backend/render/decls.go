@@ -6,6 +6,7 @@ package render
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/emit"
@@ -17,53 +18,96 @@ import (
 // follows another puts a blank line between them.
 const lineBreak = '\n'
 
-// declRun renders one unit's declarations: what the language's
-// Cluster gathers renders through the group templates, each
-// cluster at the position of its first member, and the rest
-// renders through the kind templates, in the order the flush
-// fixed. An emit.File is part of the header of the file, which the
-// skeleton writes, so the run skips it. It reports whether any
+// clusterRun is the state of the clusters of one unit under render: the
+// clusters that the language's Cluster gathers, the cluster of each
+// clustered declaration by its index in the unit, and the clusters that
+// rendered.
+type clusterRun struct {
+	clusters []Clustered
+	memberOf map[int]int
+	rendered map[int]bool
+}
+
+// declRun renders one unit's declarations in the order the flush
+// fixed, as [frame.declAt] renders each. It reports whether any
 // declaration rendered.
 func (f *frame) declRun(u plugin.Unit, b *bound) bool {
-	memberOf := map[int]int{}
-	var clusters []Clustered
-	if f.pass.cluster != nil {
-		clusters = f.pass.cluster(u.Decls)
-		index := make(map[symbol.Symbol]int, len(u.Decls))
-		for i, d := range u.Decls {
-			index[d] = i
-		}
-		for ci, c := range clusters {
-			for _, d := range c.Decls {
-				i, held := index[d]
-				if !held {
-					continue
-				}
-				if _, claimed := memberOf[i]; claimed {
-					continue
-				}
-				memberOf[i] = ci
-			}
-		}
-	}
-	rendered := make(map[int]bool, len(clusters))
+	run := f.clustersOf(u)
 	spelt := false
-	for i, d := range u.Decls {
-		if _, header := d.(*emit.File); header {
-			continue
-		}
-		ci, member := memberOf[i]
-		if !member {
-			spelt = f.singleton(u, d, b) || spelt
-			continue
-		}
-		if rendered[ci] {
-			continue
-		}
-		rendered[ci] = true
-		spelt = f.clustered(u, clusters[ci], d, b) || spelt
+	for i := range u.Decls {
+		spelt = f.declAt(u, &run, i, b) || spelt
 	}
 	return spelt
+}
+
+// orderedRun renders the declarations of the file g in order, as
+// [frame.declAt] renders each, with the state of the clusters of its
+// unit. It reports whether any declaration rendered.
+func (f *frame) orderedRun(g *plugin.File, order []declRef, b *bound) bool {
+	s := &f.ord
+	s.runs = slices.Grow(s.runs[:0], len(g.Units))
+	for _, u := range g.Units {
+		s.runs = append(s.runs, f.clustersOf(u))
+	}
+	spelt := false
+	for _, r := range order {
+		u := g.Units[r.unit]
+		f.plugin = u.Plugin
+		spelt = f.declAt(u, &s.runs[r.unit], r.decl, b) || spelt
+	}
+	return spelt
+}
+
+// clustersOf returns the clusters of the unit u that the language's
+// Cluster gathers, with the cluster of each declaration that one claims.
+// A declaration that two clusters claim goes to the first, and a member
+// that the unit does not contain is ignored. A language without a Cluster
+// returns the zero state, which allocates nothing.
+func (f *frame) clustersOf(u plugin.Unit) clusterRun {
+	if f.pass.cluster == nil {
+		return clusterRun{}
+	}
+	run := clusterRun{clusters: f.pass.cluster(u.Decls), memberOf: map[int]int{}}
+	index := make(map[symbol.Symbol]int, len(u.Decls))
+	for i, d := range u.Decls {
+		index[d] = i
+	}
+	for ci, c := range run.clusters {
+		for _, d := range c.Decls {
+			i, held := index[d]
+			if !held {
+				continue
+			}
+			if _, claimed := run.memberOf[i]; claimed {
+				continue
+			}
+			run.memberOf[i] = ci
+		}
+	}
+	run.rendered = make(map[int]bool, len(run.clusters))
+	return run
+}
+
+// declAt renders the declaration at index i of the unit u: what the
+// language's Cluster gathers renders through the group template of its
+// cluster, at the position of the first member of the cluster that comes
+// up, and the rest renders through the kind templates. An emit.File is
+// part of the header of the file, which the skeleton writes, so declAt
+// skips it. It reports whether the declaration rendered.
+func (f *frame) declAt(u plugin.Unit, run *clusterRun, i int, b *bound) bool {
+	d := u.Decls[i]
+	if _, header := d.(*emit.File); header {
+		return false
+	}
+	ci, member := run.memberOf[i]
+	if !member {
+		return f.singleton(u, d, b)
+	}
+	if run.rendered[ci] {
+		return false
+	}
+	run.rendered[ci] = true
+	return f.clustered(u, run.clusters[ci], d, b)
 }
 
 // singleton renders one declaration through its kind template,

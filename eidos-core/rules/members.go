@@ -137,12 +137,12 @@ func memberedOf(sym symbol.Symbol) (membered, bool) {
 		if d == nil {
 			return membered{}, false
 		}
-		return membered{id: d.ID, fields: d.Fields, methods: d.Methods}, true
+		return membered{id: d.ID, fields: d.Fields, methods: d.Methods, implements: d.Implements}, true
 	case *node.Sum:
 		if d == nil {
 			return membered{}, false
 		}
-		return membered{id: d.ID, methods: d.Methods, params: d.TypeParams}, true
+		return membered{id: d.ID, methods: d.Methods, implements: d.Implements, params: d.TypeParams}, true
 	default:
 		return membered{}, false
 	}

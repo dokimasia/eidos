@@ -397,10 +397,12 @@ func TestShape(t *testing.T) {
 			t.Parallel()
 
 			b, reads, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
-			s := b.TypeOf(named(svcPath, paramName, symbol.KindTypeParam))
+			ref := named(svcPath, paramName, symbol.KindTypeParam)
+			s := b.TypeOf(ref)
 			assert.Equal(t, s.Form, symbol.FormOpaque,
 				"a use of a parameter states no argument, so no read decides its shape")
 			assert.Equal(t, s.Spelling, paramName, "the leaf keeps the spelling of the parameter")
+			assert.Equal(t, s.Ref, ref.Target, "the leaf keeps the identity of the parameter")
 			assert.Empty(t, slices.Collect(reads.Identities()), "the kind of the target alone decides")
 		})
 

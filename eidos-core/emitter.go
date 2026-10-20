@@ -5,6 +5,7 @@ package eidos
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -182,15 +183,16 @@ func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 // target, after it reports the refusal. A nil ref returns nil and true.
 //
 // A reference in the language of the plan's target translates as
-// written, through [rules.EmitRef]. A reference to a type parameter
-// translates to a reference that has the parameter's name and no target.
-// Every other reference folds into its shape under the rules of the
-// language of owner. The fold reads through the view of the invocation,
-// so each declaration that it reads records on the invocation. Where
-// owner is a field of the graph and ref is the type of that field, the
-// fold is [rules.Bound.FieldTypeOf], so the presence of the field
-// translates as an optional. The spoke of the plan spells the shape
-// under the policy of the plan. When the spoke reads the choice of a
+// written, through [rules.EmitRef]. Every other reference folds into its
+// shape under the rules of the language of owner, a reference to a type
+// parameter included, so the spoke decides at every depth of a structural
+// type. A spoke of a language with type parameters spells a parameter by
+// its name and without a target. The fold reads through the view of the
+// invocation, so each declaration that it reads records on the
+// invocation. Where owner is a field of the graph and ref is the type of
+// that field, the fold is [rules.Bound.FieldTypeOf], so the presence of
+// the field translates as an optional. The spoke of the plan spells the
+// shape under the policy of the plan. When the spoke reads the choice of a
 // policy key, the policy first reads the value of the key at directive
 // authority on owner, then on the subject of the match, and then on the
 // package of owner. The first value that it finds is the choice. Each of
@@ -205,16 +207,15 @@ func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 // # Allocation contract
 //
 // Type allocates what [rules.EmitRef] allocates for a reference in the
-// target's language, and one reference for a type parameter. For any
-// other reference it allocates what the fold allocates and the reference
-// that the spoke returns. The lookup of a field owner allocates only
-// where the read set of the invocation grows. The fold allocates the memo
-// of the binding on the first fold of the invocation in the subject's
-// language, and on every call where the language of owner is not the
-// subject's. A refusal allocates its message. The match makes its reader
-// of overrides on its first translation in a phase call, one allocation,
-// and an override read allocates only where the read set of the
-// invocation grows.
+// target's language. For any other reference it allocates what the fold
+// allocates and the reference that the spoke returns. The lookup of a
+// field owner allocates only where the read set of the invocation grows.
+// The fold allocates the memo of the binding on the first fold of the
+// invocation in the subject's language, and on every call where the
+// language of owner is not the subject's. A refusal allocates its
+// message. The match makes its reader of overrides on its first
+// translation in a phase call, one allocation, and an override read
+// allocates only where the read set of the invocation grows.
 func (e *Emitter) Type(owner symbol.Identity, ref *node.TypeRef) (*emit.TypeRef, bool) {
 	return e.translate(owner, ref, false)
 }
@@ -266,54 +267,192 @@ func (e *Emitter) Fields(fields []*node.Field, keep func(*node.Field) bool) ([]*
 	return out, true
 }
 
+// TypeParams translates the type parameters tps of the declaration owner
+// into the plan's target. Each emit parameter keeps the name, the variance,
+// the const mark and the spelling of the default value of its parameter.
+// Its bounds translate as supertypes of owner, as [Emitter.Supertype]
+// translates them, and its default and the type of its value translate as
+// [Emitter.Type] translates a type. TypeParams returns nil and true for no
+// parameter.
+//
+// TypeParams reports false for a bound, a default or a type of a value
+// without a spelling in the target, after the translation reports the
+// refusal, and then returns no parameters. The caller withholds its
+// declaration, as it does after a refusal of [Emitter.Fields].
+//
+// # Allocation contract
+//
+// TypeParams allocates the list of the emit parameters at the length of
+// tps, each emit parameter, the list of the bounds of each parameter with
+// bounds, and what each translation allocates. It allocates nothing for no
+// parameter.
+func (e *Emitter) TypeParams(owner symbol.Identity, tps []*node.TypeParam) ([]*emit.TypeParam, bool) {
+	if len(tps) == 0 {
+		return nil, true
+	}
+	out := make([]*emit.TypeParam, 0, len(tps))
+	for _, tp := range tps {
+		p := &emit.TypeParam{Name: tp.Name, Variance: tp.Variance, Const: tp.Const, DefaultValue: tp.DefaultValue}
+		if len(tp.Bounds) > 0 {
+			p.Bounds = make([]*emit.TypeRef, 0, len(tp.Bounds))
+		}
+		for _, b := range tp.Bounds {
+			bound, spelled := e.Supertype(owner, b)
+			if !spelled {
+				return nil, false
+			}
+			p.Bounds = append(p.Bounds, bound)
+		}
+		var spelled bool
+		if p.Default, spelled = e.Type(owner, tp.Default); !spelled {
+			return nil, false
+		}
+		if p.Type, spelled = e.Type(owner, tp.Type); !spelled {
+			return nil, false
+		}
+		out = append(out, p)
+	}
+	return out, true
+}
+
+// Handler returns the method of the plan's target that serves rpc, in the
+// form of the gRPC binding that the policy of the plan selects for it. It
+// projects rpc under the rules of its language, with the context of the call
+// among the parameters, and asks the [plugin.Binder] of the plan's backend.
+// A backend without a binder serves the method of
+// [plugin.CanonicalHandler]. The binder spells each reference of the rpc as
+// [Emitter.Type] translates a type with rpc as the owner, so each
+// declaration that a fold reads records on the invocation, and the policy
+// reads the overrides of its keys on rpc first. The service of a
+// [plugin.RPC] is the interface whose owner chain declares rpc.
+//
+// Handler reports false for a nil rpc. A refusal of the binder or of a
+// spelling reports an Error under [RefusedHandler] at the position of rpc,
+// and Handler reports false. The message contains the target, the rpc and
+// the reason.
+//
+// # Allocation contract
+//
+// Handler allocates the parameter list and the return list of the
+// projection, what each translation allocates as Type states it, the method
+// that the binder returns, and the closure that spells the references. A
+// refusal allocates its message.
+func (e *Emitter) Handler(rpc *node.Method) (*emit.Method, bool) {
+	if rpc == nil {
+		return nil, false
+	}
+	rs, m := e.rs, e.m
+	b := e.rulesOf(rpc.ID)
+	// A method of the graph is a callable, so the projection reports true.
+	c, _ := b.CallableOf(rpc)
+	r := plugin.RPC{ID: rpc.ID, Service: serviceOf(rpc.ID), Doc: rpc.Doc, Visibility: rpc.Visibility, Callable: c}
+	translate := plugin.Translate(func(ref *node.TypeRef) (*emit.TypeRef, error) {
+		if ref == nil {
+			return nil, errUntyped
+		}
+		return e.typeOf(rpc.ID, ref, false)
+	})
+	prev := m.translating
+	m.translating = rpc.ID
+	p := rs.policy.Overridden(m.overrides())
+	var (
+		method *emit.Method
+		err    error
+	)
+	switch binder, binds := rs.types.(plugin.Binder); {
+	case binds:
+		method, err = binder.Handler(r, p, translate)
+	case rs.types != nil:
+		method, err = plugin.CanonicalHandler(r, p, rs.types, translate)
+	default:
+		err = errNoSpoke
+	}
+	m.translating = prev
+	if err != nil {
+		rs.reportf(m.seq, RefusedHandler, diag.SeverityError, rs.positionOf(rpc.ID),
+			"the %s target cannot serve the rpc %s: %v", rs.target, rpc.ID, err)
+		return nil, false
+	}
+	return method, true
+}
+
+// errNoSpoke is the reason of a refusal of a plan whose backend does not
+// implement a type spoke.
+var errNoSpoke = errors.New("eidos: the plan's backend does not implement a type spoke")
+
+// errUntyped is the reason of a refusal of a parameter or a return of an rpc
+// without a type.
+var errUntyped = errors.New("eidos: a parameter or a return of the rpc has no type")
+
 // translate is the translation of [Emitter.Type] and [Emitter.Supertype].
-// supertype selects the supertype spelling of the backend, where the
-// backend implements [plugin.SupertypeSpeller].
+// It reports the refusal of [Emitter.typeOf] under [RefusedType] at the
+// position of owner.
 func (e *Emitter) translate(owner symbol.Identity, ref *node.TypeRef, supertype bool) (*emit.TypeRef, bool) {
 	if ref == nil {
 		return nil, true
 	}
-	rs, m := e.rs, e.m
-	if owner.Lang == symbol.Lang(rs.target) {
-		return rules.EmitRef(ref), true
-	}
-	if ref.Target.Kind == symbol.KindTypeParam {
-		return &emit.TypeRef{Spelling: ref.Spelling}, true
-	}
-	if rs.types == nil {
-		rs.reportf(m.seq, RefusedType, diag.SeverityError, rs.positionOf(owner),
-			"the %s target cannot spell the %s type %s: the plan's backend does not implement a type spoke",
-			rs.target, owner.Lang, ref.Spelling)
+	spelled, err := e.typeOf(owner, ref, supertype)
+	if err != nil {
+		e.rs.reportf(e.m.seq, RefusedType, diag.SeverityError, e.rs.positionOf(owner),
+			"the %s target cannot spell the %s type %s: %v", e.rs.target, owner.Lang, ref.Spelling, err)
 		return nil, false
 	}
-	var b rules.Bound
-	if owner.Lang == m.subject.Lang {
-		b = m.Rules()
-	} else {
-		b = m.RulesFor(owner.Lang)
+	return spelled, true
+}
+
+// typeOf translates the reference ref of the declaration owner, as
+// [Emitter.Type] states it, and returns the reason of a refusal. supertype
+// selects the supertype spelling of the backend, where the backend
+// implements [plugin.SupertypeSpeller]. ref is not nil.
+func (e *Emitter) typeOf(owner symbol.Identity, ref *node.TypeRef, supertype bool) (*emit.TypeRef, error) {
+	rs, m := e.rs, e.m
+	switch {
+	case owner.Lang == symbol.Lang(rs.target):
+		return rules.EmitRef(ref), nil
+	case rs.types == nil:
+		return nil, errNoSpoke
 	}
+	b := e.rulesOf(owner)
 	var shape rules.TypeShape
 	if f, field := fieldOf(b.View(), owner); field && f.Type == ref {
 		shape = b.FieldTypeOf(f)
 	} else {
 		shape = b.TypeOf(ref)
 	}
+	prev := m.translating
 	m.translating = owner
 	p := rs.policy.Overridden(m.overrides())
-	var spelled *emit.TypeRef
-	var err error
+	var (
+		spelled *emit.TypeRef
+		err     error
+	)
 	if s, spells := rs.types.(plugin.SupertypeSpeller); supertype && spells {
 		spelled, err = s.SpellSupertype(shape, p)
 	} else {
 		spelled, err = rs.types.SpellType(shape, p)
 	}
-	m.translating = symbol.Identity{}
-	if err != nil {
-		rs.reportf(m.seq, RefusedType, diag.SeverityError, rs.positionOf(owner),
-			"the %s target cannot spell the %s type %s: %v", rs.target, owner.Lang, ref.Spelling, err)
-		return nil, false
+	m.translating = prev
+	return spelled, err
+}
+
+// rulesOf returns the rules of the language of owner, bound to the view of
+// the invocation: the rules of the subject's language, or the rules of
+// another language of the composition.
+func (e *Emitter) rulesOf(owner symbol.Identity) rules.Bound {
+	if owner.Lang == e.m.subject.Lang {
+		return e.m.Rules()
 	}
-	return spelled, true
+	return e.m.RulesFor(owner.Lang)
+}
+
+// serviceOf returns the identity of the interface that declares the rpc id:
+// the last name of the owner chain of id, under the rest of the chain.
+func serviceOf(id symbol.Identity) symbol.Identity {
+	owner, name := "", id.Owner
+	if at := strings.LastIndex(id.Owner, symbol.OwnerSep); at >= 0 {
+		owner, name = id.Owner[:at], id.Owner[at+len(symbol.OwnerSep):]
+	}
+	return symbol.Identity{Lang: id.Lang, Package: id.Package, Owner: owner, Name: name, Kind: symbol.KindInterface}
 }
 
 // out resolves the family, buffers the touch of the accumulator, and
@@ -382,9 +521,23 @@ func oneTag(tags []Tag) Tag {
 // therefore attributed and ordered without shared mutable state, and two
 // matches have two handles to one accumulator.
 type Out struct {
-	rs    *runState
-	seq   int
-	touch int
+	rs       *runState
+	seq      int
+	touch    int
+	internal bool // [Out.Internal] marked the handle
+}
+
+// Internal marks the declarations that the handle places from now on as
+// tests of their package from inside, such as the check of an unexported
+// declaration in a family that states [plugin.Output.External]. The flush
+// lists their origins in [plugin.Unit.Inside]. The Go target writes them
+// into the internal test file of the family, which declares the package
+// under test, as store_check_internal_test.go beside store_check_test.go.
+// A family that is not External tests from inside already, and the mark
+// does not change its units. Internal returns o, and it allocates nothing.
+func (o *Out) Internal() *Out {
+	o.internal = true
+	return o
 }
 
 // Append places emit declarations under the subject of the handle. A
@@ -407,7 +560,7 @@ func (o *Out) Append(decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
 	}
-	o.rs.fx.place(o.seq, o.touch, decls, nil)
+	o.rs.fx.place(o.seq, o.touch, decls, nil, o.internal)
 }
 
 // Record places emit declarations under the subject of the handle as
@@ -423,7 +576,7 @@ func (o *Out) Record(data any, decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
 	}
-	o.rs.fx.place(o.seq, o.touch, decls, data)
+	o.rs.fx.place(o.seq, o.touch, decls, data, o.internal)
 }
 
 // SlotView is the write access of one invocation to one slot.
@@ -478,7 +631,8 @@ type accumulator struct {
 // placed is one appended declaration with its ordering key and the data
 // that an [Out.Record] call attached to it. pos is the position of the
 // origin in the graph, and zero for an origin without one. The data is
-// nil for [Out.Append].
+// nil for [Out.Append]. internal reports that the handle of the call was
+// marked through [Out.Internal].
 type placed struct {
 	pos      position.Pos
 	origin   symbol.Identity
@@ -486,6 +640,7 @@ type placed struct {
 	seq      int
 	decl     symbol.Symbol
 	data     any
+	internal bool
 }
 
 // originsOf returns the distinct nonzero origins of places, sorted by
@@ -602,6 +757,7 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 		var (
 			data     map[symbol.Identity]any
 			subjects map[symbol.Identity]symbol.Identity
+			inside   []symbol.Identity
 		)
 		for _, p := range acc.places {
 			decls = append(decls, p.decl)
@@ -617,6 +773,9 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 				}
 				subjects[origin] = p.origin
 			}
+			if p.internal && acc.out.External && !origin.IsZero() {
+				inside = append(inside, origin)
+			}
 			if p.data == nil {
 				continue
 			}
@@ -628,6 +787,7 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 			}
 		}
 		origins := originsOf(acc.places)
+		slices.SortFunc(inside, symbol.Identity.Compare)
 		err := into.Add(plugin.Unit{
 			Plugin:   c.plugin,
 			Tag:      string(k.tag),
@@ -640,6 +800,7 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 			Subjects: subjects,
 			Template: acc.out.Template,
 			Data:     data,
+			Inside:   slices.Compact(inside),
 		})
 		if err != nil {
 			return fmt.Errorf("eidos: %s flush: %w", c.plugin, err)

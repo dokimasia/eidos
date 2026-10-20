@@ -156,6 +156,7 @@ func appendDecl(lines []string, host string, s symbol.Symbol) []string {
 	case *node.Enum:
 		name := qualified(host, d.Name)
 		lines = append(lines, modifiers([modCount]bool{modConst: d.Const})+d.Kind().String()+" "+name)
+		lines = appendRelations(lines, name+relImplements, d.Implements)
 		for _, v := range d.Variants {
 			lines = append(lines, name+"."+v.Name+assigned(v.Value))
 		}
@@ -164,6 +165,7 @@ func appendDecl(lines []string, host string, s symbol.Symbol) []string {
 	case *node.Sum:
 		name := qualified(host, d.Name)
 		lines = append(lines, d.Kind().String()+" "+name+typeParams(d.TypeParams))
+		lines = appendRelations(lines, name+relImplements, d.Implements)
 		for _, v := range d.Variants {
 			lines = append(lines, name+"."+v.Name+"("+fieldList(v.Fields)+")")
 		}

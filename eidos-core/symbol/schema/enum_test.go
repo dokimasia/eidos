@@ -94,6 +94,23 @@ func TestEnum(t *testing.T) {
 			"as the method kind a struct declares")
 	})
 
+	t.Run("declares the contracts of a variant set", func(t *testing.T) {
+		t.Parallel()
+
+		// A Java enum lists its interfaces, and a Rust enum or data enum
+		// implements a trait in an impl block.
+		for _, name := range []string{"Enum", "Sum"} {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				implements, held := everyKind()[name].FieldByName("Implements")
+				assert.True(t, held, "a variant set states the contracts that it satisfies")
+				assert.Equal(t, implements.Type.String(), reflect.TypeFor[[]*schema.TypeRef]().String(),
+					"as the type references of the contracts of a struct")
+			})
+		}
+	})
+
 	t.Run("annotates every field from the vocabulary", func(t *testing.T) {
 		t.Parallel()
 		assertAnnotations(t, familyOf(t, "enum.go"))

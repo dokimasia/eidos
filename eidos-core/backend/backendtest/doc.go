@@ -49,7 +49,10 @@
 // the files and the findings. [RenderSettled] also fails on an Error, so
 // the tests of a satellite pin its rendered bytes. [Fixture.Context]
 // lowers a fixture to the context of one render call, for a test that
-// renders through a context of its own.
+// renders through a context of its own. A fixture with a
+// [Fixture.Layout] routes its store through the layout of a plan, so its
+// files are the files that a workspace writes for the same units, with
+// the packages of their families and the qualified references.
 //
 // [AssertStamped] joins the render to the output contract: every
 // rendered file stamps, the frame contains the body byte for byte,
@@ -61,9 +64,9 @@
 // # Dependency position
 //
 // core/backend/backendtest imports core/plugin,
-// core/backend/render, core/output, core/emit, core/symbol,
-// core/diag, the assert module and the Go stdlib. It never
-// imports the root package: the harness works directly on the
+// core/backend/render, core/layout, core/output, core/emit,
+// core/symbol, core/diag, the assert module and the Go stdlib. It
+// never imports the root package: the harness works directly on the
 // SPI, so a kit-built backend and a hand-rolled renderer face the
 // same checks.
 package backendtest

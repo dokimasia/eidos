@@ -890,11 +890,16 @@ func (r *resolver) rewriteRef(t *emit.TypeRef) {
 // referent's emitted bare name, by the package's table where it is
 // bare, and as written otherwise. A reference without a target that
 // names another package is qualified, so no declaration of this
-// package binds it, and it is left as written. It reports true for a
-// spelling the table matches to declarations whose settled names
-// diverge, which is left as written too. It reads two maps and
-// allocates nothing but what others and the read log allocate.
+// package binds it, and it is left as written. A bound reference keeps
+// the name that its binding gives it, because the plan does not emit its
+// referent. It reports true for a spelling the table matches to
+// declarations whose settled names diverge, which is left as written too.
+// It reads two maps and allocates nothing but what others and the read
+// log allocate.
 func (r *resolver) spelling(t *emit.TypeRef) (string, bool) {
+	if t.Bound {
+		return t.Spelling, false
+	}
 	if !t.Target.IsZero() {
 		if settled, match := r.ofOrigin(t.Target, t.Spelling); match {
 			return settled, false

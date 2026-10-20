@@ -897,6 +897,12 @@ const (
 	// template run through reflection allocates 3, and each file about
 	// 13 for its buffers, its import set and its bytes.
 	renderStructsAllocs = 613_293 + 8*6
+	// renderOrderedAllocs is the same render in a language that orders
+	// the declarations of a file: 613,364 on average over 8 runs with a
+	// standard deviation of 11. Each of the four workers grows the memory
+	// of the order once for its largest file, about 18 allocations, and a
+	// file allocates nothing more for its order.
+	renderOrderedAllocs = 613_364 + 8*11
 	// renderBindingAllocs is the same render with every struct binding
 	// one import through the vocabulary: 1,815,374 on average with a
 	// standard deviation of 14. A binding of a package bound before
@@ -1042,6 +1048,16 @@ func BenchmarkPass(b *testing.B) {
 		b.Run("1,000 files of 200 structs", func(b *testing.B) {
 			e := benchStore(b, structDecl, benchStruct)
 			benchRender(b, composedPass(b), e, nil, renderStructsAllocs)
+		})
+
+		b.Run("1,000 files of 200 structs in a language that orders them", func(b *testing.B) {
+			e := benchStore(b, structDecl, benchStruct)
+			l := language()
+			l.Evaluated = extending
+			l.Implemented = true
+			p, err := render.New(passName, l)
+			assert.NoError(b, err, "the ordering language composes")
+			benchRender(b, p, e, nil, renderOrderedAllocs)
 		})
 
 		b.Run("1,000 files of 200 structs binding one import each", func(b *testing.B) {

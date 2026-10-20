@@ -17,7 +17,7 @@ import (
 // walkVisits is what a walk over every kind's populated subject
 // visits: each subject and the one child in each of its traversed
 // fields.
-const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 5 + 1 + 4 + 2 + 3 + 2 + 2 + 9 + 8 + 3 + 3 + 4 + 2 + 1
+const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 6 + 1 + 5 + 2 + 3 + 2 + 2 + 9 + 8 + 3 + 3 + 4 + 2 + 1
 
 // walkOriginated is how many kinds carry origin storage.
 const walkOriginated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
@@ -125,13 +125,14 @@ func TestWalk(t *testing.T) {
 			subject.VariantsSlot().Append(&EnumVariant{})
 			subject.FieldsSlot().Append(&Field{})
 			subject.MethodsSlot().Append(&Method{})
+			subject.Implements = append(subject.Implements, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 5,
+			assert.Equal(t, seen, 6,
 				"the walk descends into every traversed field")
 		})
 
@@ -142,13 +143,14 @@ func TestWalk(t *testing.T) {
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 			subject.VariantsSlot().Append(&SumVariant{})
 			subject.MethodsSlot().Append(&Method{})
+			subject.Implements = append(subject.Implements, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 4,
+			assert.Equal(t, seen, 5,
 				"the walk descends into every traversed field")
 		})
 
@@ -385,6 +387,7 @@ func TestWalk(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -399,6 +402,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -632,6 +636,7 @@ func TestWalk(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -650,6 +655,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -907,6 +913,7 @@ func TestWalk(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -921,6 +928,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1116,6 +1124,7 @@ func TestWalk(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1133,6 +1142,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1584,6 +1594,7 @@ func walkSubjects() []symbol.Symbol {
 		subject.VariantsSlot().Append(&EnumVariant{})
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		out = append(out, subject)
 	}
 	{
@@ -1595,6 +1606,7 @@ func walkSubjects() []symbol.Symbol {
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.VariantsSlot().Append(&SumVariant{})
 		subject.MethodsSlot().Append(&Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		out = append(out, subject)
 	}
 	{

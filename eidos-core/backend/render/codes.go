@@ -110,3 +110,13 @@ var HelperCollision = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 var UnbindableHelper = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 73, Meaning: "a plugin registers a template helper that text/template cannot call",
 })
+
+// UnimplementedOverload reports an overloaded function name of a file
+// without one implementation after its overload signatures, in a language
+// that is [Language.Implemented]. A name with signatures and no
+// implementation skips every declaration of the name. A name with two or
+// more implementations skips each implementation after the first. The file
+// renders without the skipped declarations.
+var UnimplementedOverload = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 80, Meaning: "an overloaded function name of a file has no implementation, or a second one",
+})

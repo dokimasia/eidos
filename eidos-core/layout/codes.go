@@ -58,17 +58,18 @@ var PathCollision = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 })
 
 // UnderivedPackage reports a reference into a routed file whose
-// package the target derives no identity for, at the referencing
-// declaration's origin. The referencing declaration is refused.
+// package the target derives no identity for, and a bound reference
+// whose binder derives no package, at the referencing declaration's
+// origin. The referencing declaration is refused.
 var UnderivedPackage = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  54,
 	Meaning: "a reference needs the package of a routed file, and none derives",
 })
 
 // UntranslatedReference reports a reference to a declaration of another
-// language that the plan does not emit. The finding is at the origin of
-// the referencing declaration, and the referencing declaration is
-// refused.
+// language that the plan does not emit, and a bound reference in a plan
+// whose backend has no binder. The finding is at the origin of the
+// referencing declaration, and the referencing declaration is refused.
 var UntranslatedReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  70,
 	Meaning: "a translated reference refers to a declaration that the plan does not emit",

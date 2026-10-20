@@ -31,3 +31,12 @@ var RefusedFile = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  78,
 	Meaning: "a handler addresses the source file of an identity that the package of its subject does not declare",
 })
+
+// RefusedHandler reports an rpc that the plan's target cannot serve: a
+// binding that refuses the rpc, or a reference of the rpc without a
+// spelling in the target. The finding is at the position of the rpc.
+// [Emitter.Handler] reports it as an Error, so the plan fails.
+var RefusedHandler = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  79,
+	Meaning: "the plan's target cannot serve an rpc in the form of its binding",
+})

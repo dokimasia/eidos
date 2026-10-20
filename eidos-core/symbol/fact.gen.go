@@ -14,6 +14,7 @@ const (
 	FactComment
 	FactVisibility
 	FactAsync
+	FactOverload
 	FactTypeParams
 	FactMultiReturn
 	FactThrows
@@ -39,6 +40,7 @@ const (
 	FactUnderlying
 	FactFields
 	FactMethods
+	FactImplements
 	FactValue
 	FactWire
 	FactReceives
@@ -47,7 +49,6 @@ const (
 	FactTypes
 	FactEmbeds
 	FactExtends
-	FactImplements
 	FactPermits
 	FactProperties
 	FactDefined
@@ -62,6 +63,7 @@ var factNames = [...]string{
 	FactComment:          "Comment",
 	FactVisibility:       "Visibility",
 	FactAsync:            "Async",
+	FactOverload:         "Overload",
 	FactTypeParams:       "TypeParams",
 	FactMultiReturn:      "MultiReturn",
 	FactThrows:           "Throws",
@@ -87,6 +89,7 @@ var factNames = [...]string{
 	FactUnderlying:       "Underlying",
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
+	FactImplements:       "Implements",
 	FactValue:            "Value",
 	FactWire:             "Wire",
 	FactReceives:         "Receives",
@@ -95,7 +98,6 @@ var factNames = [...]string{
 	FactTypes:            "Types",
 	FactEmbeds:           "Embeds",
 	FactExtends:          "Extends",
-	FactImplements:       "Implements",
 	FactPermits:          "Permits",
 	FactProperties:       "Properties",
 	FactDefined:          "Defined",
@@ -119,6 +121,7 @@ func Facts() []Fact {
 		FactComment,
 		FactVisibility,
 		FactAsync,
+		FactOverload,
 		FactTypeParams,
 		FactMultiReturn,
 		FactThrows,
@@ -144,6 +147,7 @@ func Facts() []Fact {
 		FactUnderlying,
 		FactFields,
 		FactMethods,
+		FactImplements,
 		FactValue,
 		FactWire,
 		FactReceives,
@@ -152,7 +156,6 @@ func Facts() []Fact {
 		FactTypes,
 		FactEmbeds,
 		FactExtends,
-		FactImplements,
 		FactPermits,
 		FactProperties,
 		FactDefined,

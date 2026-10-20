@@ -81,7 +81,12 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	)
 	for c.Loop() {
 		sink := diag.NewSink()
-		files, renderErr := bk.Render(f.Context(bk, sink))
+		ctx, routeErr := f.Context(bk, sink)
+		if routeErr != nil {
+			err = cmp.Or(err, routeErr)
+			continue
+		}
+		files, renderErr := bk.Render(ctx)
 		err = cmp.Or(err, renderErr)
 		empty = empty || len(files) == 0
 		failed = failed || sink.Failed()

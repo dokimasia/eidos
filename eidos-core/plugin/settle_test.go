@@ -165,8 +165,9 @@ func membering(fn plugin.MemberRespell) *memberSpelling {
 // resolves to the struct, and a variable of a composite spelling without
 // structure. Two variables have bare references to the name of the
 // struct with a package, one with another package and one with the
-// package of the struct. The other variables have structural references
-// over the name of the struct.
+// package of the struct. One variable has a bound reference to the
+// struct. The other variables have structural references over the name of
+// the struct.
 type respelledStore struct {
 	box       *emit.Struct
 	fetch     *emit.Method
@@ -174,6 +175,7 @@ type respelledStore struct {
 	composite *emit.Variable
 	foreign   *emit.Variable
 	own       *emit.Variable
+	bound     *emit.Variable
 	listed    *emit.Variable
 	nested    *emit.Variable
 	argued    *emit.Variable
@@ -233,6 +235,11 @@ func settleRespelled(t *testing.T) respelledStore {
 		Name:   "own",
 		Type:   &emit.TypeRef{Spelling: "box", Package: "svc"},
 	}
+	bound := &emit.Variable{
+		Origin: settleOrigin("bound", symbol.KindVariable),
+		Name:   "bound",
+		Type:   &emit.TypeRef{Spelling: "box", Target: boxOrigin, Bound: true},
+	}
 	boxRef := func() *emit.TypeRef { return &emit.TypeRef{Spelling: "box"} }
 	listed := variableOf("listed", structural(symbol.FormList, "[]box", boxRef()))
 	nested := variableOf("nested", structural(symbol.FormList, "[]*box",
@@ -259,12 +266,12 @@ func settleRespelled(t *testing.T) respelledStore {
 	})
 	e := storeOf(t,
 		settleUnit("svc", "svc/a.src", box, match),
-		settleUnit("svc", "svc/b.src", composite, foreign, own),
+		settleUnit("svc", "svc/b.src", composite, foreign, own, bound),
 		settleUnit("svc", "svc/c.src", listed, nested, argued, keyed, labeled, qualified),
 	)
 	coretest.AssertCodes(t, settled(t, e, b))
 	return respelledStore{
-		box: box, fetch: fetch, match: match, composite: composite, foreign: foreign, own: own,
+		box: box, fetch: fetch, match: match, composite: composite, foreign: foreign, own: own, bound: bound,
 		listed: listed, nested: nested, argued: argued, keyed: keyed, labeled: labeled, qualified: qualified,
 	}
 }
@@ -548,6 +555,10 @@ func TestSettle(t *testing.T) {
 			{
 				name: "rewrites a resolved reference to its origin's settled name",
 				got:  func(s respelledStore) string { return s.match.Target.Spelling }, want: "Tbox",
+			},
+			{
+				name: "leaves a bound reference to an emitted origin as written",
+				got:  func(s respelledStore) string { return s.bound.Type.Spelling }, want: "box",
 			},
 			{
 				name: "rewrites a bare reference through the package's table",

@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -42,6 +43,12 @@ type Fixture struct {
 	// through the import set of each file. The zero Policy declares no key,
 	// and a backend then renders under the defaults of its policies.
 	Policy plugin.Policy
+	// Layout is the input of the layout of the plan that routes the store,
+	// as the Layout of the plugin test kit returns it, and nil routes the
+	// store as [Files] does. The context of a render sets the store, the
+	// speller, the packager, the binder, the target and the sink of the
+	// input from the fixture and the backend under test.
+	Layout *layout.Input
 }
 
 // Setup builds the backend under test and the emit fixture that it
@@ -53,12 +60,29 @@ type Setup func(tb assert.TB) (backend.Backend, *Fixture)
 
 // Context lowers the fixture to the context of one render call by b. The
 // context contains every part of the fixture, reports into sink, and
-// renders under the identity of the suite. [Files] routes the store into
-// files through the filename speller of b.
-func (f *Fixture) Context(b backend.Backend, sink *diag.Sink) *plugin.RenderContext {
+// renders under the identity of the suite. Where Layout is set, the layout
+// of the plan routes the settled store through b, and its findings arrive
+// in sink. Otherwise [Files] routes the store into files through the
+// filename speller of b.
+//
+// Error modes: the error of [layout.Route] for a defect of the input of
+// the layout, such as an unsettled store or a nil index.
+func (f *Fixture) Context(b backend.Backend, sink *diag.Sink) (*plugin.RenderContext, error) {
+	var files []plugin.File
+	if f.Layout == nil {
+		files = Files(f.Emit, b)
+	} else {
+		in := *f.Layout
+		in.Emit, in.Speller, in.Packager, in.Binder, in.Target, in.Sink = f.Emit, b, b, b, b.Target(), sink
+		routes, err := layout.Route(in)
+		if err != nil {
+			return nil, err
+		}
+		files = routes.Files
+	}
 	return &plugin.RenderContext{
-		Emit: f.Emit, Files: Files(f.Emit, b), Schedule: f.Schedule, Trees: f.Trees, Policy: f.Policy,
+		Emit: f.Emit, Files: files, Schedule: f.Schedule, Trees: f.Trees, Policy: f.Policy,
 		Funcs: f.Funcs, Overrides: f.Overrides,
 		Sink: sink, Plugin: origin,
-	}
+	}, nil
 }

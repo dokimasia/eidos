@@ -18,10 +18,10 @@ import (
 // construct forms, the hard privacy, the mutability of an index
 // signature and the computed mark. Each parameter keeps its label, its
 // default and its optional and variadic forms. Mirror leaves out the
-// facts of an implementation: abstract, final, override and a default
-// body, because the generator writes the implementation. The Receives
-// field of the result is host, so the settle scopes the method under
-// host as it scopes a parsed method.
+// facts of an implementation: abstract, final, override, a default body
+// and the mark Overload, because the generator writes the
+// implementation. The Receives field of the result is host, so the
+// settle scopes the method under host as it scopes a parsed method.
 //
 // Mirror leaves the receiver unset, because each target writes it in
 // its own form. The Go satellite sets a pointer receiver on a stub
@@ -113,8 +113,9 @@ func MirrorTypeParams(tps []*node.TypeParam) []*emit.TypeParam {
 // TypeArgs returns the type parameters tps, in order, as the type
 // arguments of a reference inside the declaration that declares them.
 // It returns nil for no parameters. Each argument has the name of its
-// parameter and no target. [Emitter.Type] translates a reference to a
-// type parameter the same way. A generator uses the arguments where a
+// parameter and no target. Under the spoke of a language with type
+// parameters, [Emitter.Type] returns the same reference for a reference to
+// a type parameter. A generator uses the arguments where a
 // generic declaration that it emits refers to itself or to the
 // declaration that it derives from. The mock of a generic interface
 // uses them in the reference to the interface that it implements.

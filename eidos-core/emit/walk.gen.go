@@ -76,6 +76,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Methods.Items() {
 			Walk(child, visit)
 		}
+		for _, child := range x.Implements {
+			Walk(child, visit)
+		}
 	case *Sum:
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
@@ -84,6 +87,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 			Walk(child, visit)
 		}
 		for _, child := range x.Methods.Items() {
+			Walk(child, visit)
+		}
+		for _, child := range x.Implements {
 			Walk(child, visit)
 		}
 	case *SumVariant:

@@ -512,6 +512,7 @@ func TestKinds(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
 					"a Enum returns the members it has")
 			}
@@ -581,6 +582,7 @@ func TestKinds(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a Enum returns the members it has")
 			}
@@ -590,6 +592,7 @@ func TestKinds(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a Sum returns the members it has")
 			}
@@ -1136,6 +1139,7 @@ func kindsCases() []kindsCase {
 		subject.Variants = append(subject.Variants, &EnumVariant{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		var (
 			kind    symbol.Kind
 			pos     position.Pos
@@ -1247,6 +1251,7 @@ func kindsCases() []kindsCase {
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Variants = append(subject.Variants, &SumVariant{})
 		subject.Methods = append(subject.Methods, &Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		var (
 			kind    symbol.Kind
 			pos     position.Pos

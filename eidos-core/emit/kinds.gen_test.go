@@ -340,6 +340,7 @@ func TestKinds(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
 					"a Enum returns the members it has")
 			}
@@ -399,6 +400,7 @@ func TestKinds(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a Enum returns the members it has")
 			}
@@ -408,6 +410,7 @@ func TestKinds(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a Sum returns the members it has")
 			}
@@ -841,6 +844,7 @@ func kindsCases() []kindsCase {
 		subject.VariantsSlot().Append(&EnumVariant{})
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		var (
 			kind    symbol.Kind
 			pos     position.Pos
@@ -932,6 +936,7 @@ func kindsCases() []kindsCase {
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.VariantsSlot().Append(&SumVariant{})
 		subject.MethodsSlot().Append(&Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		var (
 			kind    symbol.Kind
 			pos     position.Pos

@@ -62,12 +62,16 @@ type stagedFile struct {
 func (w *Workspace) write(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink, others plugin.Names,
 ) ([]stagedFile, []plugin.File, []plugin.NameEntry, error) {
+	// A backend without the role has no binder, and the layout refuses its
+	// bound references.
+	binder, _ := pl.backend.(plugin.Binder)
 	in := layout.Input{
 		Emit:       into,
 		Config:     pl.routing,
 		Outputs:    pl.outputs,
 		Speller:    pl.backend,
 		Packager:   pl.backend,
+		Binder:     binder,
 		Index:      ix,
 		Residents:  src.residents,
 		Directives: w.directives,

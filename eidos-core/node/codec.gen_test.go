@@ -407,6 +407,7 @@ func populated() []symbol.Symbol {
 		subject.Name = "Name"
 		subject.Visibility = 6
 		subject.Async = true
+		subject.Overload = true
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Params = append(subject.Params, &Param{})
@@ -435,6 +436,7 @@ func populated() []symbol.Symbol {
 		subject.Optional = true
 		subject.Mutability = 18
 		subject.Computed = true
+		subject.Overload = true
 		subject.Annotations = symbol.Annotations{{Name: "Annotations", Args: []string{"x", "y"}}, {Name: "bare"}, {Name: "assigned", Args: []string{"x"}, Assigned: true}}
 		subject.Host = symbol.Identity{Lang: "lang", Package: "pkg/Host", Owner: "Owner", Name: "Host", Kind: symbol.KindStruct, Disc: "disc"}
 		subject.Receiver = &Param{}
@@ -541,6 +543,7 @@ func populated() []symbol.Symbol {
 		subject.Variants = append(subject.Variants, &EnumVariant{})
 		subject.Fields = append(subject.Fields, &Field{})
 		subject.Methods = append(subject.Methods, &Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		out = append(out, subject)
 	}
 	{
@@ -567,6 +570,7 @@ func populated() []symbol.Symbol {
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.Variants = append(subject.Variants, &SumVariant{})
 		subject.Methods = append(subject.Methods, &Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		out = append(out, subject)
 	}
 	{

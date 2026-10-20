@@ -4,6 +4,8 @@
 package rules
 
 import (
+	"slices"
+
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -145,4 +147,20 @@ func (b Bound) callable(
 		c.Returns = append(c.Returns, ReturnView{Name: r.Name, Ref: r.Type, Role: role})
 	}
 	return c
+}
+
+// IsImplementation reports whether the method m is the implementation of
+// an overloaded name among methods: m has no mark Overload, and another
+// method of its name and its level has the mark. A reader of the
+// signatures that callers see, such as the constructors of a class, leaves
+// the implementation out, because TypeScript and Python show callers the
+// overload signatures alone. It reports false for a nil method, and it
+// allocates nothing.
+func IsImplementation(m *node.Method, methods []*node.Method) bool {
+	if m == nil || m.Overload {
+		return false
+	}
+	return slices.ContainsFunc(methods, func(other *node.Method) bool {
+		return other != nil && other.Overload && other.Name == m.Name && other.Level == m.Level
+	})
 }

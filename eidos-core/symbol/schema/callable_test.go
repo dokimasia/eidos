@@ -79,6 +79,24 @@ func TestCallable(t *testing.T) {
 			"on both models, because a generated parameter states one too")
 	})
 
+	t.Run("marks an overload signature on both models", func(t *testing.T) {
+		t.Parallel()
+
+		// TypeScript and Python split an overloaded callable into its
+		// signatures and one implementation, and a generated callable
+		// states the split too.
+		for _, kind := range []reflect.Type{reflect.TypeFor[schema.Function](), reflect.TypeFor[schema.Method]()} {
+			t.Run(kind.Name(), func(t *testing.T) {
+				t.Parallel()
+
+				field, held := kind.FieldByName("Overload")
+				assert.True(t, held, "a callable states whether it is an overload signature")
+				assert.Equal(t, field.Type.Kind(), reflect.Bool, "as a mark")
+				assert.Equal(t, annotation(t, kind, "Overload").side, model.SideBothToken, "on both models")
+			})
+		}
+	})
+
 	t.Run("annotates every field from the vocabulary", func(t *testing.T) {
 		t.Parallel()
 		assertAnnotations(t, familyOf(t, "callable.go"))

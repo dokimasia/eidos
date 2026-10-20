@@ -356,6 +356,51 @@ func TestCallable(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("IsImplementation", func(t *testing.T) {
+		t.Parallel()
+
+		signature := &node.Method{Name: fetchName, Overload: true}
+		implementation := &node.Method{Name: fetchName}
+		static := &node.Method{Name: fetchName, Level: symbol.LevelType}
+		other := &node.Method{Name: getName}
+		tests := []struct {
+			name        string
+			give        *node.Method
+			giveMethods []*node.Method
+			want        bool
+		}{
+			{
+				name: "reports true for a method without the mark of an overloaded name", give: implementation,
+				giveMethods: []*node.Method{signature, implementation}, want: true,
+			},
+			{
+				name: "reports false for an overload signature", give: signature,
+				giveMethods: []*node.Method{signature, implementation},
+			},
+			{
+				name: "reports false for a method of a name without an overload", give: other,
+				giveMethods: []*node.Method{signature, other},
+			},
+			{
+				name: "reports false for a method of another level than the overloads", give: static,
+				giveMethods: []*node.Method{signature, static},
+			},
+			{name: "reports false for a nil method", giveMethods: []*node.Method{signature}},
+			{
+				name: "reports false for a method beside a nil method", give: implementation,
+				giveMethods: []*node.Method{nil, implementation},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, rules.IsImplementation(tt.give, tt.giveMethods), tt.want,
+					"whether the method is the implementation of its overloads")
+			})
+		}
+	})
 }
 
 // fetch returns an asynchronous function of a context and a variadic

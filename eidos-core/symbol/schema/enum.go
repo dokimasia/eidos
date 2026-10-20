@@ -24,6 +24,11 @@ import (
 // integer type of a Rust repr attribute. It is nil where the language
 // does not declare one, as in a TypeScript, a protobuf or a Java enum.
 //
+// Implements contains the contracts that the enum satisfies. A Java
+// enum states them after implements, and a Rust impl block implements a
+// trait for an enum. A language whose enums implement nothing leaves it
+// empty.
+//
 //eidos:subject
 type Enum struct {
 	ID          symbol.Identity    `eidos:"node"`
@@ -38,6 +43,7 @@ type Enum struct {
 	Variants    []*EnumVariant     `eidos:"both,walk,slot=variants"`
 	Fields      []*Field           `eidos:"both,walk,slot=fields,fact=Fields"`   // Java enums carry instance state
 	Methods     []*Method          `eidos:"both,walk,slot=methods,fact=Methods"` // and behaviour
+	Implements  []*TypeRef         `eidos:"both,walk,fact=Implements"`           // the contracts it satisfies
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 
@@ -71,6 +77,9 @@ type EnumVariant struct {
 // separate because conflating them is how a target language ends up
 // guessing which one it is spelling.
 //
+// Implements contains the contracts that every variant satisfies. A
+// Rust impl block implements a trait for the whole data enum.
+//
 //eidos:subject
 type Sum struct {
 	ID          symbol.Identity    `eidos:"node"`
@@ -83,6 +92,7 @@ type Sum struct {
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"` // Rust data enums are generic
 	Variants    []*SumVariant      `eidos:"both,walk,slot=variants"`
 	Methods     []*Method          `eidos:"both,walk,slot=methods,fact=Methods"`
+	Implements  []*TypeRef         `eidos:"both,walk,fact=Implements"` // the contracts every variant satisfies
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 

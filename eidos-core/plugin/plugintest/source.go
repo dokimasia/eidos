@@ -80,23 +80,12 @@ func Loaded(tb assert.TB, s Source) *Fixture {
 				"the keys of the frontend "+string(front.Name())+" register")
 		}
 	}
-	schemas := directive.NewRegistry()
-	assert.Total(tb, schemas.Register, directive.Kernel(), "the schemas of the kernel register")
 	for _, p := range s.Plugins {
 		if kp, provides := p.(plugin.KeyProvider); provides {
 			assert.NoError(tb, kp.Keys(f.Keys.For(string(p.Name()))), "the keys of "+string(p.Name())+" register")
 		}
-		dp, declares := p.(plugin.DirectiveProvider)
-		if !declares {
-			continue
-		}
-		for _, d := range dp.Directives() {
-			if _, registered := schemas.ResolveName(d.Canonical()); !registered {
-				assert.NoError(tb, schemas.Register(d), "the schema "+string(d.Canonical())+" registers")
-			}
-		}
 	}
-	assert.Empty(tb, schemas.Seal(), "the schemas of the fixture seal")
+	schemas := schemasOf(tb, s.Plugins)
 	f.Keys.Seal()
 	f.Facts = meta.NewFacts(f.Keys)
 
@@ -133,6 +122,31 @@ func Loaded(tb assert.TB, s Source) *Fixture {
 		assert.Contains(tb, found, path, "the load declares the package "+path)
 	}
 	return f
+}
+
+// schemasOf returns the sealed registry of the schemas of the kernel and of
+// each plugin that declares directives, as a workspace registers them. A
+// schema that an earlier plugin of the list registered registers once. It
+// stops the test where a schema does not register or the registry does
+// not seal.
+func schemasOf(tb assert.TB, plugins []plugin.Plugin) *directive.Registry {
+	tb.Helper()
+
+	schemas := directive.NewRegistry()
+	assert.Total(tb, schemas.Register, directive.Kernel(), "the schemas of the kernel register")
+	for _, p := range plugins {
+		dp, declares := p.(plugin.DirectiveProvider)
+		if !declares {
+			continue
+		}
+		for _, d := range dp.Directives() {
+			if _, registered := schemas.ResolveName(d.Canonical()); !registered {
+				assert.NoError(tb, schemas.Register(d), "the schema "+string(d.Canonical())+" registers")
+			}
+		}
+	}
+	assert.Empty(tb, schemas.Seal(), "the schemas of the fixture seal")
+	return schemas
 }
 
 // scopedResolver returns the resolver through which validation binds the

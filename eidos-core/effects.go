@@ -92,11 +92,13 @@ type touch struct {
 
 // place is one [Out.Append] or [Out.Record] call: the touch of the
 // handle it went through, its declarations' range in the lane's decls,
-// and the data of a Record call, which is nil for an Append call.
+// the data of a Record call, which is nil for an Append call, and whether
+// [Out.Internal] marked the handle.
 type place struct {
 	touch    int
 	from, to int
 	data     any
+	internal bool
 }
 
 // slotted is one [SlotView.Append] call: the lane's typed buffer of
@@ -162,12 +164,12 @@ func (fx *effects) touch(seq int, t touch) int {
 
 // place buffers one append call's declarations, in order, under the
 // touch of the handle the call went through, with the data of a record
-// call, nil for an append.
-func (fx *effects) place(seq, touch int, decls []symbol.Symbol, data any) {
+// call, nil for an append, and the internal mark of the handle.
+func (fx *effects) place(seq, touch int, decls []symbol.Symbol, data any, internal bool) {
 	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: len(fx.places), kind: effectPlace})
 	from := len(fx.decls)
 	fx.decls = append(grow.Room(fx.decls, len(decls), minGrowth), decls...)
-	p := place{touch: touch, from: from, to: len(fx.decls), data: data}
+	p := place{touch: touch, from: from, to: len(fx.decls), data: data, internal: internal}
 	fx.places = append(grow.Room(fx.places, 1, minGrowth), p)
 }
 
@@ -324,6 +326,7 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 				seq:      len(t.acc.places),
 				decl:     d,
 				data:     p.data,
+				internal: p.internal,
 			})
 		}
 	case effectSlot:

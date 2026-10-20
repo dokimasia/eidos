@@ -76,6 +76,44 @@ func TestMembers(t *testing.T) {
 			})
 		}
 
+		contracts := []struct {
+			name string
+			give func(implements []*node.TypeRef) symbol.Symbol
+		}{
+			{
+				name: "walks the contracts of an enum under implements",
+				give: func(implements []*node.TypeRef) symbol.Symbol {
+					id := coretest.ID(svcPath, "Phase", symbol.KindEnum)
+					return &node.Enum{ID: id, Name: "Phase", Implements: implements}
+				},
+			},
+			{
+				name: "walks the contracts of a sum under implements",
+				give: func(implements []*node.TypeRef) symbol.Symbol {
+					id := coretest.ID(svcPath, "Shape", symbol.KindSum)
+					return &node.Sum{ID: id, Name: "Shape", Implements: implements}
+				},
+			},
+		}
+		for _, tt := range contracts {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				stringer := &node.Interface{
+					ID: coretest.ID(svcPath, "Stringer", symbol.KindInterface), Name: "Stringer",
+					Methods: []*node.Method{method(svcPath, "Stringer", "String")},
+				}
+				decl := tt.give([]*node.TypeRef{named(svcPath, "Stringer", symbol.KindInterface)})
+				v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, stringer, decl)))
+				b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+					Contributes: []rules.Contribution{rules.ContributesImplements}, Shadowing: rules.ShadowOverride,
+				}}, v, nil)
+				set, is := b.MembersOf(decl)
+				assert.True(t, is, "a variant set walks")
+				assert.Equal(t, names(set), []string{"String"}, "the method of the contract arrives through implements")
+			})
+		}
+
 		t.Run("lets a declared member shadow a promoted one", func(t *testing.T) {
 			t.Parallel()
 

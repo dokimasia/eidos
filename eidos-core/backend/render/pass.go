@@ -44,12 +44,16 @@ type Pass struct {
 	// shared is the vocabulary bound to a set of the pass's own: the
 	// names the parse and the override checks read. A render binds
 	// vocab per worker instead.
-	shared   template.FuncMap
-	vocab    func(set *ImportSet) template.FuncMap
-	spell    Naming
-	split    Split
-	cluster  Cluster
-	scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
+	shared  template.FuncMap
+	vocab   func(set *ImportSet) template.FuncMap
+	spell   Naming
+	split   Split
+	cluster Cluster
+	// evaluated and implemented are the language's [Language.Evaluated]
+	// and [Language.Implemented], which the order of a file reads.
+	evaluated   Evaluated
+	implemented bool
+	scaffold    func(s emit.Stmt, set *ImportSet) ([]byte, error)
 	// value is the language's [Language.Value], which the value builtin
 	// calls, and nil for a language without a writer of values.
 	value    func(v emit.Value, set *ImportSet) (string, error)
@@ -169,6 +173,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		name: name, kinds: kinds, refused: maps.Clone(l.Refused),
 		groups: groups, file: file, shared: shared,
 		vocab: l.Funcs, spell: l.Naming, split: l.Split, cluster: l.Cluster,
+		evaluated: l.Evaluated, implemented: l.Implemented,
 		scaffold: l.Scaffold, value: l.Value, imports: l.Imports, final: l.Finalise,
 		coverage: l.Coverage, memberIndent: l.MemberIndent, templateImport: l.TemplateImport,
 	}, nil
@@ -374,6 +379,9 @@ type frame struct {
 	// nested renders under execution.
 	nestOut []*bytes.Buffer
 	depth   int
+	// ord is the memory of the order of a file, which every file of the
+	// frame reuses.
+	ord orderScratch
 }
 
 // refKey addresses one parsed reference template: the plugin whose
@@ -506,8 +514,10 @@ func (f *frame) header() *emit.File {
 }
 
 // file renders one routed file into the frame's shared buffer: every
-// unit's declarations in the order the flush fixed, then the
-// formatter. A file that a family claims renders through the family's
+// unit's declarations in the order of the file, then the formatter. The
+// order of the file is the order the flush fixed, and the order of
+// [frame.order] for a language that states [Language.Evaluated] or is
+// [Language.Implemented]. A file that a family claims renders through the family's
 // file template instead. An emit.File of a unit is part of the header of
 // the file and no declaration, and every template of the file reads the
 // header through the header builtin. The header passes the guard of the
@@ -547,22 +557,18 @@ func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 			return nil, false
 		}
 	} else {
+		order, ordered := f.order(g)
 		// The file's own declarations take their names before anything
 		// renders, so no import binds a name the file declares.
-		declared := 0
-		for _, u := range g.Units {
-			for _, d := range u.Decls {
-				if _, header := d.(*emit.File); header {
-					continue
-				}
-				declared++
-				f.set.Reserve(emit.DeclaredName(d))
-			}
-		}
+		declared := f.reserve(g, order, ordered)
 		spelt := false
-		for _, u := range g.Units {
-			f.plugin = u.Plugin
-			spelt = f.declRun(u, b) || spelt
+		if !ordered {
+			for _, u := range g.Units {
+				f.plugin = u.Plugin
+				spelt = f.declRun(u, b) || spelt
+			}
+		} else {
+			spelt = f.orderedRun(g, order, b)
 		}
 		if declared > 0 && !spelt {
 			return nil, false

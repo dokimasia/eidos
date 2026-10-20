@@ -76,6 +76,10 @@ func TestCodes(t *testing.T) {
 			name: "UnbindableHelper", code: render.UnbindableHelper, spelled: "EID-0073",
 			meaning: "a plugin registers a template helper that text/template cannot call",
 		},
+		{
+			name: "UnimplementedOverload", code: render.UnimplementedOverload, spelled: "EID-0080",
+			meaning: "an overloaded function name of a file has no implementation, or a second one",
+		},
 	}
 	for _, tt := range codes {
 		t.Run(tt.name, func(t *testing.T) {

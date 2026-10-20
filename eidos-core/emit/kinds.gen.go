@@ -24,6 +24,12 @@ import (
 // declared throws leaves it empty, and the error model remains the
 // projection's neutral question.
 //
+// Overload marks one overload signature of an overloaded name. The
+// signature has no body, and the function of the name without the mark
+// is the implementation. TypeScript writes an overload signature without
+// a body, and Python writes it under the decorator overload. A language
+// that writes a body for each overload, such as Java, leaves it false.
+//
 // The node model records the signature and never a body, because
 // parsed bodies are out of scope entirely. The emit model records a
 // generated body in its Body field: the standard slots, and one
@@ -37,6 +43,7 @@ type Function struct {
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
 	Async       bool               `json:"async,omitzero"`
+	Overload    bool               `json:"overload,omitzero"` // one overload signature of the name, without a body
 	TypeParams  []*TypeParam       `json:"typeParams,omitzero"`
 	Params      Slot[*Param]       `json:"params,omitzero"`
 	Returns     Slot[*Return]      `json:"returns,omitzero"`
@@ -93,6 +100,10 @@ func (x *Function) Docs() []string { return x.Doc }
 // language, such as TypeScript's [Symbol.iterator], and the name is the
 // source text of the expression.
 //
+// Overload marks one overload signature of an overloaded name, as it does
+// for a [Function]. The method of the name and the level without the mark
+// is the implementation.
+//
 // The node model records the signature and never a body, and the
 // emit model records a generated body in its Body field.
 //
@@ -116,6 +127,7 @@ type Method struct {
 	Optional    bool               `json:"optional,omitzero"`   // a value of the type may lack it: TypeScript's ?
 	Mutability  symbol.Mutability  `json:"mutability,omitzero"` // an index signature: whether a holder can assign its entries
 	Computed    bool               `json:"computed,omitzero"`   // the name is an expression: TypeScript's [expr]
+	Overload    bool               `json:"overload,omitzero"`   // one overload signature of the name, without a body
 	Receiver    *Param             `json:"receiver,omitzero"`   // nil where the receiver is implicit
 	Receives    *TypeRef           `json:"receives,omitzero"`   // set when declared outside the type it attaches to
 	TypeParams  []*TypeParam       `json:"typeParams,omitzero"`
@@ -400,6 +412,11 @@ func (x *Binding) Docs() []string { return nil }
 // integer type of a Rust repr attribute. It is nil where the language
 // does not declare one, as in a TypeScript, a protobuf or a Java enum.
 //
+// Implements contains the contracts that the enum satisfies. A Java
+// enum states them after implements, and a Rust impl block implements a
+// trait for an enum. A language whose enums implement nothing leaves it
+// empty.
+//
 // This is the emit spelling of the kind.
 type Enum struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
@@ -410,8 +427,9 @@ type Enum struct {
 	Const       bool               `json:"const,omitzero"`      // inlined at use: TypeScript's const enum
 	Underlying  *TypeRef           `json:"underlying,omitzero"` // the declared representation; nil when none
 	Variants    Slot[*EnumVariant] `json:"variants,omitzero"`
-	Fields      Slot[*Field]       `json:"fields,omitzero"`  // Java enums carry instance state
-	Methods     Slot[*Method]      `json:"methods,omitzero"` // and behaviour
+	Fields      Slot[*Field]       `json:"fields,omitzero"`     // Java enums carry instance state
+	Methods     Slot[*Method]      `json:"methods,omitzero"`    // and behaviour
+	Implements  []*TypeRef         `json:"implements,omitzero"` // the contracts it satisfies
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
 }
 
@@ -485,6 +503,9 @@ func (x *EnumVariant) Docs() []string { return x.Doc }
 // separate because conflating them is how a target language ends up
 // guessing which one it is spelling.
 //
+// Implements contains the contracts that every variant satisfies. A
+// Rust impl block implements a trait for the whole data enum.
+//
 // This is the emit spelling of the kind.
 type Sum struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
@@ -495,6 +516,7 @@ type Sum struct {
 	TypeParams  []*TypeParam       `json:"typeParams,omitzero"` // Rust data enums are generic
 	Variants    Slot[*SumVariant]  `json:"variants,omitzero"`
 	Methods     Slot[*Method]      `json:"methods,omitzero"`
+	Implements  []*TypeRef         `json:"implements,omitzero"` // the contracts every variant satisfies
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
 }
 
@@ -1032,6 +1054,13 @@ func (x *Alias) Docs() []string { return x.Doc }
 // backend writes an inline body from the spelling of the reference, and
 // binds the imports of its children.
 //
+// Bound marks a reference to code that the code generator of a binding
+// of the plan's target writes for Target, such as a message that
+// protoc-gen-go writes under a gRPC binding. The plan does not emit its
+// referent. The layout qualifies it by the package that the binder of
+// the backend returns for Target. Only the emit model has it, because a
+// spoke of a binding sets it.
+//
 // This is the emit spelling of the kind.
 type TypeRef struct {
 	Spelling   string            `json:"spelling,omitzero"`   // source text, verbatim
@@ -1040,6 +1069,7 @@ type TypeRef struct {
 	Form       symbol.TypeForm   `json:"form,omitzero"`       // the structure; FormNamed by default
 	Variance   symbol.Variance   `json:"variance,omitzero"`   // FormWildcard: In for a lower bound, Out for an upper one
 	Async      bool              `json:"async,omitzero"`      // FormStream: the elements arrive asynchronously
+	Bound      bool              `json:"bound,omitzero"`      // the referent is code that the binding of the plan's target generates
 	Mutability symbol.Mutability `json:"mutability,omitzero"` // List, Array, Tuple, Map and Borrow: whether a holder can write through it
 	Elems      []*TypeRef        `json:"elems,omitzero"`      // the form's children, in the form's fixed order
 	Split      int               `json:"split,omitzero"`      // FormFunc: the index in Elems where the returns begin

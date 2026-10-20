@@ -5,6 +5,8 @@ package layout
 
 import (
 	"errors"
+	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -106,6 +108,10 @@ func (r *router) qualify() {
 // target's reason.
 var errKeptUnderived = errors.New("layout: the file is kept from an earlier run without a package")
 
+// errNoBinder is the reason of the refusal of a bound reference in a plan
+// whose backend has no binder.
+var errNoBinder = errors.New("layout: the backend of the plan has no binder")
+
 // qualifyDecl qualifies the bare and the translated references of one
 // declaration written in the file at index fi. It refuses the
 // declaration at its first translated reference whose referent no file
@@ -126,6 +132,11 @@ func (r *router) qualifyDecl(
 			found bool
 		)
 		switch {
+		case t.Bound && lang != "" && !t.Target.IsZero() && t.Target.Lang != lang:
+			if !r.qualifyBound(d, u, f, t) {
+				return
+			}
+			continue
 		case lang != "" && !t.Target.IsZero() && t.Target.Lang != lang:
 			home, found = r.referent(origins, t)
 			if !found {
@@ -156,6 +167,71 @@ func (r *router) qualifyDecl(
 			f.refer(home.file.Pkg)
 		}
 	}
+}
+
+// qualifyBound qualifies the bound reference t of the declaration d, which
+// the file f writes. It sets the package of t to the package that
+// [router.boundHome] returns where that package is not the package of f,
+// records the package among the referents of f, and reports true. It
+// refuses d and reports false where the plan has no binder, under
+// [UntranslatedReference], and where the binder returns no package, under
+// [UnderivedPackage].
+func (r *router) qualifyBound(d symbol.Symbol, u *plugin.Unit, f *building, t *emit.TypeRef) bool {
+	pkg, err := r.boundHome(t.Target)
+	if err != nil {
+		code := UnderivedPackage
+		if r.in.Binder == nil {
+			code = UntranslatedReference
+		}
+		origin, _ := emit.OriginOf(d)
+		r.errorf(code, r.positionOf(origin, u), nil,
+			"%s references %s of %s, the code of a binding, and is refused: %v", Describe(d), t.Spelling, t.Target, err)
+		r.refused[d] = struct{}{}
+		return false
+	}
+	t.Package = ""
+	if pkg.Package != f.file.Pkg.Package {
+		t.Package = pkg.Package
+		f.refer(pkg)
+	}
+	return true
+}
+
+// boundHome returns the package of the code that the code generator of a
+// binding writes for target. It places the source file of target where the
+// default placement of the plan writes the code of the file: beside it, or
+// below the output directory of the plan where the plan centralises its
+// files. The placement has the residents and the modules of the directory
+// and the import base of the plan, as the placement of a routed file has.
+// It returns the package that the binder of the input returns for the
+// placement.
+//
+// Error modes: an error for an input without a binder, an error for a
+// target without a workspace source, and the error of the binder.
+func (r *router) boundHome(target symbol.Identity) (symbol.Identity, error) {
+	if r.in.Binder == nil {
+		return symbol.Identity{}, errNoBinder
+	}
+	file, found := r.sourceFile(target)
+	if !found {
+		return symbol.Identity{}, fmt.Errorf("layout: %s has no workspace source beside which a binding writes", target)
+	}
+	dir := path.Dir(file)
+	if r.in.Config.Policy == PolicyCentralised {
+		dir = path.Join(r.in.Config.Dir, dir)
+	}
+	at := plugin.Placement{
+		Path:    path.Join(dir, path.Base(file)),
+		Origin:  target.PackageIdentity(),
+		Modules: r.in.Modules,
+	}
+	if r.in.Residents != nil {
+		at.Residents = r.in.Residents(dir)
+	}
+	if base := r.in.Config.ImportBase; base != "" {
+		at.ImportBase, at.BaseDir = base, r.in.Config.Dir
+	}
+	return r.in.Binder.Home(target, at)
 }
 
 // refer records the package of a file that a reference of b is qualified

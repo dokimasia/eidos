@@ -22,6 +22,12 @@ import (
 // declared throws leaves it empty, and the error model remains the
 // projection's neutral question.
 //
+// Overload marks one overload signature of an overloaded name. The
+// signature has no body, and the function of the name without the mark
+// is the implementation. TypeScript writes an overload signature without
+// a body, and Python writes it under the decorator overload. A language
+// that writes a body for each overload, such as Java, leaves it false.
+//
 // The node model records the signature and never a body, because
 // parsed bodies are out of scope entirely. The emit model records a
 // generated body in its Body field: the standard slots, and one
@@ -37,6 +43,7 @@ type Function struct {
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Async       bool               `eidos:"both,fact=Async"`
+	Overload    bool               `eidos:"both,fact=Overload"` // one overload signature of the name, without a body
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
 	Params      []*Param           `eidos:"both,walk,slot=params"`
 	Returns     []*Return          `eidos:"both,walk,slot=returns,fact=MultiReturn"`
@@ -83,6 +90,10 @@ type Function struct {
 // language, such as TypeScript's [Symbol.iterator], and the name is the
 // source text of the expression.
 //
+// Overload marks one overload signature of an overloaded name, as it does
+// for a [Function]. The method of the name and the level without the mark
+// is the implementation.
+//
 // The node model records the signature and never a body, and the
 // emit model records a generated body in its Body field.
 //
@@ -108,6 +119,7 @@ type Method struct {
 	Optional    bool               `eidos:"both,fact=Optional"`    // a value of the type may lack it: TypeScript's ?
 	Mutability  symbol.Mutability  `eidos:"both,fact=Mutability"`  // an index signature: whether a holder can assign its entries
 	Computed    bool               `eidos:"both,fact=Computed"`    // the name is an expression: TypeScript's [expr]
+	Overload    bool               `eidos:"both,fact=Overload"`    // one overload signature of the name, without a body
 	Receiver    *Param             `eidos:"both,walk"`             // nil where the receiver is implicit
 	Receives    *TypeRef           `eidos:"both,walk"`             // set when declared outside the type it attaches to
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`

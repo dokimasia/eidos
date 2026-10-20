@@ -54,6 +54,20 @@ func (choiceSpoke) SpellType(_ rules.TypeShape, p plugin.Policy) (*emit.TypeRef,
 	return &emit.TypeRef{Spelling: string(p.Choice(widthKey))}, nil
 }
 
+// schemed is a plugin that declares the schemas of its list.
+type schemed []directive.Schema
+
+var _ plugin.DirectiveProvider = schemed(nil)
+
+// Name returns the plugin of the first schema.
+func (s schemed) Name() plugin.ID { return plugin.ID(s[0].Plugin) }
+
+// Directives returns the schemas of the list.
+func (s schemed) Directives() []directive.Schema { return s }
+
+// probeSchema is the schema of the directive probe of the plugin t.
+var probeSchema = directive.Schema{Plugin: "t", Name: "probe", Doc: "marks a subject that the plugin probes"}
+
 // The fixture is the read side of a run, built by hand, so everything
 // that a phase call receives through it is contract: the loaded
 // packages, the validated gates, the stamped facts, the seeded units,
@@ -345,6 +359,74 @@ func TestFixture(t *testing.T) {
 				})
 			assert.Equal(t, coretest.Contracts(failure), []string{"the generate phase runs without a panic"},
 				"the failure names the panic")
+		})
+	})
+
+	t.Run("Layout", func(t *testing.T) {
+		t.Parallel()
+
+		probe := plugin.Output{Per: plugin.PerSource, Word: "probe"}
+		probes := eidos.NewPlugin("t").Output(probe).
+			Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
+			Generator()
+
+		t.Run("returns the families that each plugin declares", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			assert.Equal(t, f.Layout(t, probes, handRolled{}).Outputs, map[plugin.ID][]plugin.Output{
+				"t": {probe}, "twin": nil,
+			}, "a plugin without families routes no unit")
+		})
+
+		t.Run("returns an index over the fixture", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, _ := twoStructs(t)
+			_, found := f.Layout(t, probes).Index.Lookup(alpha.ID)
+			assert.True(t, found, "the index resolves a struct of the fixture")
+		})
+
+		t.Run("returns the residents of the graph by directory", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			assert.Equal(t, f.Layout(t, probes).Residents("."), []plugin.Resident{
+				{File: coretest.UnitFile, Pkg: coretest.PackageID(coretest.StorePath)},
+			}, "the file of the store is the resident of its directory")
+		})
+
+		t.Run("returns the modules that the facts of the graph state", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			pkg := coretest.PackageID(coretest.StorePath)
+			plugintest.Stamp(t, f, f.Kernel.Module, pkg, "example.com/acme")
+			plugintest.Stamp(t, f, f.Kernel.ModuleRoot, pkg, ".")
+			assert.Equal(t, f.Layout(t, probes).Modules, []plugin.Module{
+				{Lang: coretest.Lang, Path: "example.com/acme", Root: "."},
+			}, "the module of the store is a module of the plan")
+		})
+
+		t.Run("returns a registry with the schema of each plugin", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			_, registered := f.Layout(t, schemed{probeSchema}).Directives.ResolveName(probeSchema.Canonical())
+			assert.True(t, registered, "the registry scopes the routing keys of the directive of the plugin")
+		})
+
+		t.Run("fails the test for a schema that does not register", func(t *testing.T) {
+			t.Parallel()
+
+			failure := assert.Rejects(t, "a schema under a kernel name must fail the test", func(tb assert.TB) {
+				f, _, _ := twoStructs(tb)
+				claimed := probeSchema
+				claimed.Name = directive.KernelOut
+				f.Layout(tb, schemed{claimed})
+			})
+			assert.Equal(t, coretest.Contracts(failure), []string{"the schema t:out registers"},
+				"the failure names the schema")
 		})
 	})
 

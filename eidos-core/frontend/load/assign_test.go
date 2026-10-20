@@ -52,13 +52,15 @@ const (
 
 // The method the discriminator cases declare, and the discriminator
 // its parameters spell in a language that overloads. deleteDisc is the
-// discriminator of a delete accessor, and untypedDisc the spelling of a
-// parameter without a type.
+// discriminator of a delete accessor, untypedDisc the spelling of a
+// parameter without a type, and implementationMark the start of the
+// discriminator of an implementation.
 const (
-	getName     = "Get"
-	getDisc     = "string,int"
-	deleteDisc  = "del"
-	untypedDisc = "_"
+	getName            = "Get"
+	getDisc            = "string,int"
+	deleteDisc         = "del"
+	untypedDisc        = "_"
+	implementationMark = "="
 )
 
 // TestAssign pins the canonical identities that the assignment step
@@ -392,7 +394,7 @@ func TestAssign(t *testing.T) {
 
 				g, _, sink := loadTree(t, oneFileTree(), with(&holey{
 					Scripted: frontendtest.NewScripted(),
-					decl:     &node.Function{Name: serveName, Params: tt.params},
+					decls:    node.Symbols{&node.Function{Name: serveName, Params: tt.params}},
 				}))
 				id := assigned("", serveName, symbol.KindFunction)
 				id.Disc = tt.want
@@ -409,7 +411,9 @@ func TestAssign(t *testing.T) {
 				{Name: keyName, Accessor: symbol.AccessorGet},
 				{Name: keyName, Accessor: symbol.AccessorDelete},
 			}}
-			g, _, sink := loadTree(t, oneFileTree(), with(&holey{Scripted: frontendtest.NewScripted(), decl: holder}))
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
 			getter := assigned(outerName, keyName, symbol.KindMethod)
 			deleter := getter
 			deleter.Disc = deleteDisc
@@ -428,7 +432,9 @@ func TestAssign(t *testing.T) {
 				{Name: keyName, Accessor: symbol.AccessorGet},
 				{Name: keyName, Accessor: symbol.AccessorSet, Params: []*node.Param{{Name: keyName}}},
 			}}
-			g, _, sink := loadTree(t, oneFileTree(), with(&holey{Scripted: frontendtest.NewScripted(), decl: holder}))
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
 			getter := assigned(outerName, keyName, symbol.KindMethod)
 			setter := getter
 			setter.Disc = untypedDisc
@@ -447,7 +453,9 @@ func TestAssign(t *testing.T) {
 				{Name: keyName, Receiver: &node.Param{Name: blankName, Type: &node.TypeRef{Spelling: stringType}}},
 				{Name: keyName, Receiver: &node.Param{Name: blankName}},
 			}}
-			g, _, sink := loadTree(t, oneFileTree(), with(&holey{Scripted: frontendtest.NewScripted(), decl: holder}))
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
 			untyped := assigned(outerName, keyName, symbol.KindMethod)
 			typed := untyped
 			typed.Disc = stringType + ";"
@@ -457,6 +465,100 @@ func TestAssign(t *testing.T) {
 			assert.True(t, held, "the overload of a receiver without a type has the empty discriminator")
 			coretest.AssertCodes(t, sink)
 		})
+
+		t.Run("spells = before the parameters of the implementation of an overloaded method", func(t *testing.T) {
+			t.Parallel()
+
+			// TypeScript code states an overload with the parameters of its
+			// implementation to show callers the signature of the
+			// implementation.
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{Name: keyName, Overload: true, Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{
+					Spelling: stringType,
+				}}}},
+				{Name: keyName, Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}}},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
+			signature := assigned(outerName, keyName, symbol.KindMethod)
+			signature.Disc = stringType
+			implementation := signature
+			implementation.Disc = implementationMark + stringType
+			got, held := g.Lookup(implementation)
+			assert.True(t, held, "the implementation has a discriminator of its own")
+			assert.False(t, got.(*node.Method).Overload, "the method is the implementation")
+			_, held = g.Lookup(signature)
+			assert.True(t, held, "the overload keeps the discriminator of its parameters")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("spells = before the parameters of the implementation of an overloaded function", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(),
+				decls: node.Symbols{
+					&node.Function{Name: serveName, Overload: true, Params: []*node.Param{{
+						Name: keyName, Type: &node.TypeRef{Spelling: stringType},
+					}}},
+					&node.Function{Name: serveName, Params: []*node.Param{{
+						Name: keyName, Type: &node.TypeRef{Spelling: stringType},
+					}}},
+				},
+			}))
+			implementation := assigned("", serveName, symbol.KindFunction)
+			implementation.Disc = implementationMark + stringType
+			got, held := g.Lookup(implementation)
+			assert.True(t, held, "the implementation has a discriminator of its own")
+			assert.False(t, got.(*node.Function).Overload, "the function is the implementation")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("keeps the discriminator of a method of another name than a marked method", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{Name: keyName, Overload: true},
+				{Name: getName},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
+			_, held := g.Lookup(assigned(outerName, getName, symbol.KindMethod))
+			assert.True(t, held, "a method of a name without an overload is no implementation")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("keeps the discriminator of a method of a nested type", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &node.Struct{
+				Name:    outerName,
+				Methods: []*node.Method{{Name: keyName, Overload: true}},
+				Types:   []symbol.Symbol{&node.Struct{Name: innerName, Methods: []*node.Method{{Name: keyName}}}},
+			}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
+			_, held := g.Lookup(assigned(outerName+symbol.OwnerSep+innerName, keyName, symbol.KindMethod))
+			assert.True(t, held, "the marked methods of a type leave the methods of its nested types alone")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports DuplicateDeclaration for the implementation in a language without overloads",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, _, sink := loadTree(t, oneFileTree(), with(&holey{
+					Scripted: singular(),
+					decls: node.Symbols{
+						&node.Function{Name: serveName, Overload: true},
+						&node.Function{Name: serveName},
+					},
+				}))
+				coretest.AssertCodes(t, sink, load.DuplicateDeclaration)
+			})
 
 		t.Run("spells empty for a callable in a language without overloads", func(t *testing.T) {
 			t.Parallel()
@@ -484,7 +586,7 @@ func TestAssign(t *testing.T) {
 				got := assert.Panics(t, func() {
 					_, _, _ = load.Load(t.Context(), mustConfig(oneFileTree(), with(&holey{
 						Scripted: singular(),
-						decl:     &node.Function{Name: serveName, Params: []*node.Param{nil, key}},
+						decls:    node.Symbols{&node.Function{Name: serveName, Params: []*node.Param{nil, key}}},
 					})))
 				}, "the store cannot index a nil declaration in any language")
 				assert.Contains(t, got, string(frontendtest.ScriptedID), "the panic names the frontend")
@@ -545,7 +647,7 @@ func TestAssign(t *testing.T) {
 
 				got := assert.Panics(t, func() {
 					_, _, _ = load.Load(t.Context(), mustConfig(oneFileTree(), with(
-						&holey{Scripted: frontendtest.NewScripted(), decl: tt.decl},
+						&holey{Scripted: frontendtest.NewScripted(), decls: node.Symbols{tt.decl}},
 					)))
 				}, "the store cannot index a nil declaration, so the frontend's defect stops the load")
 				assert.That(t, got).
@@ -739,19 +841,19 @@ func (*blanks) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// holey declares the one declaration that the case chooses, such as a
-// function with a nil entry in its signature.
+// holey declares the declarations that the case chooses in one file, such
+// as a function with a nil entry in its signature.
 type holey struct {
 	*frontendtest.Scripted
-	decl symbol.Symbol
+	decls node.Symbols
 }
 
-// Parse declares the one declaration.
+// Parse declares the declarations.
 func (h *holey) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	pkg := u.Graph().Package(coretest.StorePath)
 	pkg.Files = append(pkg.Files, &node.File{
 		Path:  u.Files()[0].Path,
-		Decls: node.Symbols{h.decl},
+		Decls: h.decls,
 	})
 	return nil
 }

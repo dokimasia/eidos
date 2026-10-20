@@ -4,13 +4,16 @@
 package layout_test
 
 import (
+	"errors"
 	"path"
 	"slices"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
@@ -32,6 +35,47 @@ const (
 	rowStubName = "RowStub"
 	rowName     = "Row"
 )
+
+// The directory below the directory of a schema into which the binder of
+// the cases places the code of a binding, and the output directory of a
+// centralised plan of the cases.
+const (
+	boundDir   = "gen"
+	centralDir = "out"
+)
+
+// errNoHandler is the reason of the binder of the cases for every rpc,
+// because the layout never asks a binder for a handler.
+var errNoHandler = errors.New("layout_test: the layout asks no binder for a handler")
+
+// homes is the binder of the cases. The package of the code of a binding
+// is the package of the directory of the placement, joined with sub, and
+// a directory at or below refuse derives none. homes records each
+// placement that it is given.
+type homes struct {
+	sub    string
+	refuse string
+	placed []plugin.Placement
+}
+
+var _ plugin.Binder = (*homes)(nil)
+
+// Handler returns errNoHandler, because the layout asks no binder for a
+// handler.
+func (*homes) Handler(plugin.RPC, plugin.Policy, plugin.Translate) (*emit.Method, error) {
+	return nil, errNoHandler
+}
+
+// Home records schema and returns the package of its directory joined with
+// sub, or an error for a directory at or below refuse.
+func (h *homes) Home(_ symbol.Identity, schema plugin.Placement) (symbol.Identity, error) {
+	h.placed = append(h.placed, schema)
+	dir := path.Dir(schema.Path)
+	if h.refuse != "" && (dir == h.refuse || strings.HasPrefix(dir, h.refuse+"/")) {
+		return symbol.Identity{}, errors.New("layout_test: no binding writes code into " + dir)
+	}
+	return dirPackage(path.Join(dir, h.sub)), nil
+}
 
 // keptFiles is the name table of kept files over a list of entries: what
 // a warm run hands the layout of part of a plan.
@@ -402,6 +446,91 @@ func TestReference(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Empty(t, referentsOf(t, files, referringPath), "the reference stays in its package")
 		})
+
+		t.Run("qualifies a bound reference by the package that the binder returns", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: rowName, Target: rowID, Bound: true}
+			f := newFixture(referring(ref))
+			f.packager, f.binder, f.target = directories{}, &homes{sub: boundDir}, tsxTarget
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			bound := storePkg + "/" + boundDir
+			expect.Equal(t, ref.Package, bound, "the reference takes the package of the binder")
+			expect.Equal(t, referentsOf(t, files, referringPath), []symbol.Identity{dirPackage(bound)},
+				"the referring file refers into the package of the binder")
+		})
+
+		t.Run("leaves a bound reference into the package of its file without a package", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: rowName, Target: rowID, Bound: true, Package: "example.com/row"}
+			f := newFixture(referring(ref))
+			f.packager, f.binder, f.target = directories{}, &homes{}, tsxTarget
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			expect.Equal(t, ref.Package, "", "the code of the binding is in the package of the referring file")
+			expect.Empty(t, referentsOf(t, files, referringPath), "the referring file refers into no other package")
+		})
+
+		t.Run("keeps the name of a bound reference that the plan emits under another name", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{Spelling: rowName, Target: rowID, Bound: true}
+			f := newFixture(referring(ref), rowStub())
+			f.packager, f.binder, f.target = directories{}, &homes{}, tsxTarget
+			_, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, ref.Spelling, rowName, "the reference keeps the name of the binding")
+		})
+
+		t.Run("places the schema of a bound reference below the output directory of a centralised plan",
+			func(t *testing.T) {
+				t.Parallel()
+
+				binder := &homes{}
+				f := newFixture(referring(&emit.TypeRef{Spelling: rowName, Target: rowID, Bound: true}))
+				f.packager, f.binder, f.target = directories{}, binder, tsxTarget
+				f.config = layout.Config{Policy: layout.PolicyCentralised, Dir: centralDir, ImportBase: "example.com"}
+				f.residents = map[string][]plugin.Resident{centralDir + "/" + storePkg: {{File: rowFile}}}
+				_, sink := f.route(t)
+				coretest.AssertCodes(t, sink)
+				assert.Equal(t, binder.placed, []plugin.Placement{{
+					Path: centralDir + "/" + rowFile, Origin: rowID.PackageIdentity(),
+					Residents: []plugin.Resident{{File: rowFile}}, ImportBase: "example.com", BaseDir: centralDir,
+				}}, "the binder receives the placement of the schema where the plan writes its code")
+			})
+
+		refusals := []struct {
+			name   string
+			give   symbol.Identity
+			binder plugin.Binder
+			want   diag.Code
+		}{
+			{
+				name: "reports UntranslatedReference for a bound reference in a plan without a binder",
+				give: rowID, want: layout.UntranslatedReference,
+			},
+			{
+				name: "reports UnderivedPackage for a bound reference whose binder derives no package",
+				give: rowID, binder: &homes{refuse: storePkg}, want: layout.UnderivedPackage,
+			},
+			{
+				name: "reports UnderivedPackage for a bound reference to a target without a workspace source",
+				give: ghostID, binder: &homes{}, want: layout.UnderivedPackage,
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(&emit.TypeRef{Spelling: rowName, Target: tt.give, Bound: true}))
+				f.packager, f.binder, f.target = directories{}, tt.binder, tsxTarget
+				files, sink := f.route(t)
+				assert.Empty(t, files, "the referencing declaration is refused")
+				coretest.AssertCodes(t, sink, tt.want)
+			})
+		}
 	})
 }
 

@@ -45,9 +45,10 @@ const (
 	// twoUses is a template that imports two packages under one name.
 	twoUses = `{{use "a/x" "x"}}{{use "b/x" "x"}}`
 	// rowName and loadName are the names of the unit's struct and
-	// function.
-	rowName  = "Row"
-	loadName = "Load"
+	// function, and fetchName the name of an overload signature.
+	rowName   = "Row"
+	loadName  = "Load"
+	fetchName = "Fetch"
 	// runtimePkg is the import that the fixture's scaffold records.
 	runtimePkg = "stub/runtime"
 	// upHelper is the one helper of the fixture's vocabulary.
@@ -128,6 +129,21 @@ var (
 		Doc: "the width at which the fixture target spells a number",
 	}
 )
+
+// kitMethod is the method that the fixture's binder serves, and kitHomePkg
+// the package that its home returns.
+var (
+	kitMethod  = &emit.Method{Name: "Serve"}
+	kitHomePkg = symbol.Identity{Lang: "stub", Package: "svc/gen", Name: "gen", Kind: symbol.KindPackage}
+)
+
+// kitHandler serves kitMethod for every rpc.
+func kitHandler(plugin.RPC, plugin.Policy, plugin.Translate) (*emit.Method, error) {
+	return kitMethod, nil
+}
+
+// kitHome returns kitHomePkg for every target.
+func kitHome(symbol.Identity, plugin.Placement) (symbol.Identity, error) { return kitHomePkg, nil }
 
 // kitSpoke returns the fixture's text reference for a text shape, and an
 // error for every other shape.
@@ -228,6 +244,37 @@ func TestBackend(t *testing.T) {
 			assert.Equal(t, built, direct, "the kit renders the same files as the hand-built pass")
 		})
 
+		t.Run("renders the declarations of a file in the order that its language evaluates", func(t *testing.T) {
+			t.Parallel()
+
+			evaluated := func(d symbol.Symbol, yield func(string)) {
+				if _, is := d.(*emit.Struct); is {
+					yield(loadName)
+				}
+			}
+			files := kitRender(t, kitBackend(kitName, kitTarget).Evaluated(evaluated).Build())
+			assert.Length(t, files, 1, "the fixture renders one file")
+			assert.ContainsInOrder(t, string(files[0].Body),
+				[]string{"func " + loadName, "type " + strings.ToUpper(rowName)},
+				"the struct follows the function that it evaluates")
+		})
+
+		t.Run("reports UnimplementedOverload for an overload signature without an implementation", func(t *testing.T) {
+			t.Parallel()
+
+			fetch := coretest.ID(coretest.StorePath, fetchName, symbol.KindFunction)
+			u := kitUnit()
+			u.Decls = append(u.Decls, &emit.Function{Origin: fetch, Name: fetchName, Overload: true})
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(u), "the unit is added")
+			b := kitBackend(kitName, kitTarget).Implemented().Build()
+			sink := diag.NewSink()
+			ctx := &plugin.RenderContext{Emit: e, Files: backendtest.Files(e, b), Sink: sink, Plugin: kitName}
+			_, err := b.Render(ctx)
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink, render.UnimplementedOverload)
+		})
+
 		t.Run("renders an unsettled store for a backend without hooks", func(t *testing.T) {
 			t.Parallel()
 
@@ -287,6 +334,14 @@ func TestBackend(t *testing.T) {
 					stray.Key = "golang.width"
 					kitBackend(kitName, kitTarget).Policies(stray).Build()
 				},
+			},
+			{
+				name:  "panics for a binder without a handler",
+				build: func() { kitBackend(kitName, kitTarget).Binder(nil, kitHome).Build() },
+			},
+			{
+				name:  "panics for a binder without a home",
+				build: func() { kitBackend(kitName, kitTarget).Binder(kitHandler, nil).Build() },
 			},
 		}
 		for _, tt := range defects {
@@ -937,6 +992,57 @@ func TestBackend(t *testing.T) {
 		})
 	})
 
+	t.Run("Binder", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("serves the method of the declared handler", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := kitBackend(kitName, kitTarget).Binder(kitHandler, kitHome).Build().
+				Handler(plugin.RPC{}, plugin.Policy{}, nil)
+			assert.NoError(t, err, "the declared handler serves the rpc")
+			assert.Equal(t, got, kitMethod, "the backend serves the method of the handler", assert.ByIdentity())
+		})
+
+		t.Run("serves the package of the declared home", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := kitBackend(kitName, kitTarget).Binder(kitHandler, kitHome).Build().
+				Home(symbol.Identity{}, plugin.Placement{})
+			assert.NoError(t, err, "the declared home returns a package")
+			assert.Equal(t, got, kitHomePkg, "the backend serves the package of the home")
+		})
+	})
+
+	t.Run("Handler", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the canonical method for a backend without a binder", func(t *testing.T) {
+			t.Parallel()
+
+			r := plugin.RPC{
+				ID:       symbol.Identity{Lang: "stub", Package: "svc", Owner: "Store", Name: kitMethod.Name},
+				Callable: rules.Callable{Name: kitMethod.Name},
+			}
+			got, err := kitBackend(kitName, kitTarget).Build().Handler(r, plugin.Policy{}, nil)
+			assert.NoError(t, err, "the canonical method serves an rpc without a failure")
+			expect.Equal(t, got.Origin, r.ID, "the method derives from the rpc")
+			expect.Equal(t, got.Name, r.Callable.Name, "the method has the name of the rpc")
+		})
+	})
+
+	t.Run("Home", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns an error for a backend without a binder", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := kitBackend(kitName, kitTarget).Build().Home(symbol.Identity{Name: rowName}, plugin.Placement{})
+			assert.HasError(t, err, "a backend without a binder has no package for a bound reference")
+			assert.Contains(t, err.Error(), "writes against no binding", "the error names the missing binding")
+		})
+	})
+
 	t.Run("Policies", func(t *testing.T) {
 		t.Parallel()
 
@@ -1351,6 +1457,7 @@ func setters() []setter {
 	split := render.Split(func(u plugin.Unit) []plugin.Unit { return []plugin.Unit{u} })
 	rule := plugin.PackageRule(func(p plugin.Placement) (symbol.Identity, error) { return p.Origin, nil })
 	cluster := render.Cluster(func([]symbol.Symbol) []render.Clustered { return nil })
+	evaluated := render.Evaluated(func(symbol.Symbol, func(string)) {})
 	return []setter{
 		{name: "Version", set: func(b *backend.Builder) *backend.Builder { return b.Version(kitVersion) }},
 		{name: "FileTemplate", set: func(b *backend.Builder) *backend.Builder { return b.FileTemplate(kitFile) }},
@@ -1360,6 +1467,8 @@ func setters() []setter {
 		{name: "Split", set: func(b *backend.Builder) *backend.Builder { return b.Split(split) }},
 		{name: "Packages", set: func(b *backend.Builder) *backend.Builder { return b.Packages(rule) }},
 		{name: "Cluster", set: func(b *backend.Builder) *backend.Builder { return b.Cluster(cluster) }},
+		{name: "Evaluated", set: func(b *backend.Builder) *backend.Builder { return b.Evaluated(evaluated) }},
+		{name: "Implemented", set: func(b *backend.Builder) *backend.Builder { return b.Implemented() }},
 		{name: "Imports", set: func(b *backend.Builder) *backend.Builder { return b.Imports(kitImports) }},
 		{name: "Finalise", set: func(b *backend.Builder) *backend.Builder { return b.Finalise(kitFinalise) }},
 		{name: "Coverage", set: func(b *backend.Builder) *backend.Builder { return b.Coverage(render.Coverage{}) }},
@@ -1368,6 +1477,7 @@ func setters() []setter {
 		{name: "Types", set: func(b *backend.Builder) *backend.Builder { return b.Types(kitSpoke) }},
 		{name: "Supertypes", set: func(b *backend.Builder) *backend.Builder { return b.Supertypes(kitSpoke) }},
 		{name: "MemberIndent", set: func(b *backend.Builder) *backend.Builder { return b.MemberIndent(kitIndent) }},
+		{name: "Binder", set: func(b *backend.Builder) *backend.Builder { return b.Binder(kitHandler, kitHome) }},
 		{
 			name: "TemplateImport",
 			set: func(b *backend.Builder) *backend.Builder {

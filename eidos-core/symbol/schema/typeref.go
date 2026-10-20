@@ -93,6 +93,13 @@ import (
 // resolves the references among them. Only the node model has them. A
 // backend writes an inline body from the spelling of the reference, and
 // binds the imports of its children.
+//
+// Bound marks a reference to code that the code generator of a binding
+// of the plan's target writes for Target, such as a message that
+// protoc-gen-go writes under a gRPC binding. The plan does not emit its
+// referent. The layout qualifies it by the package that the binder of
+// the backend returns for Target. Only the emit model has it, because a
+// spoke of a binding sets it.
 type TypeRef struct {
 	Pos        position.Pos      `eidos:"node"`
 	Spelling   string            `eidos:"both"`      // source text, verbatim
@@ -101,6 +108,7 @@ type TypeRef struct {
 	Form       symbol.TypeForm   `eidos:"both"`      // the structure; FormNamed by default
 	Variance   symbol.Variance   `eidos:"both"`      // FormWildcard: In for a lower bound, Out for an upper one
 	Async      bool              `eidos:"both"`      // FormStream: the elements arrive asynchronously
+	Bound      bool              `eidos:"emit"`      // the referent is code that the binding of the plan's target generates
 	Mutability symbol.Mutability `eidos:"both"`      // List, Array, Tuple, Map and Borrow: whether a holder can write through it
 	Elems      []*TypeRef        `eidos:"both,walk"` // the form's children, in the form's fixed order
 	Split      int               `eidos:"both"`      // FormFunc: the index in Elems where the returns begin

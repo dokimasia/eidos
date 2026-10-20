@@ -57,7 +57,7 @@ type TypeShape struct {
 	Length     int               // Array
 	Split      int               // Func: the index in Elems where the returns begin
 	Elems      []TypeShape       // the form's children, in the form's order
-	Ref        symbol.Identity   // Reference and Sum
+	Ref        symbol.Identity   // Reference and Sum, and the type parameter of Opaque
 	Args       []TypeShape       // Reference type arguments
 }
 
@@ -141,7 +141,10 @@ func IsWellKnown(id symbol.Identity) bool {
 // where the Builtin returns Opaque. The fold of a named reference depends
 // on its target:
 //
-//   - A reference to a type parameter folds to Opaque.
+//   - A reference to a type parameter folds to Opaque, whose Ref is the
+//     identity of the parameter. A reader that classifies a shape reads
+//     an unknown shape, because the argument of the parameter decides it,
+//     and a spoke spells the parameter by its name.
 //   - A reference whose target is an identity of the registry folds to
 //     the well-known reference, as the context of an rpc does.
 //   - A reference whose target the view contains folds by the
@@ -190,7 +193,9 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 	if ref.Target.Kind == symbol.KindTypeParam {
 		// A type parameter's shape is its argument's, which a use of
 		// the parameter does not state, so no read would decide it.
-		return Opaque(ref)
+		s := Opaque(ref)
+		s.Ref = ref.Target
+		return s
 	}
 	if !ref.Target.IsZero() {
 		if IsWellKnown(ref.Target) {

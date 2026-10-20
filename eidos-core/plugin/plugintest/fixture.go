@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -250,6 +251,37 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 		})
 	}, "the generate phase runs without a panic")
 	return Result{Emit: f.store(), Sink: sink, Err: err}
+}
+
+// Layout returns the input of the layout of a plan over the fixture, as a
+// workspace routes the store of a plan whose generators are plugins. The
+// input has the index of the fixture, the residents and the modules of its
+// graph, the families that each plugin declares, and the sealed registry
+// of the schemas of the kernel and of each plugin, which scopes the routing
+// keys of a directive. Its configuration is the zero [layout.Config], which
+// writes each file beside its source. The render of a spec sets the store,
+// the halves of the backend, the target and the sink of the input. Layout
+// seals the graph, as the first phase call does, and it stops the test
+// where a schema does not register.
+func (f *Fixture) Layout(tb assert.TB, plugins ...plugin.Plugin) *layout.Input {
+	tb.Helper()
+
+	outputs := make(map[plugin.ID][]plugin.Output, len(plugins))
+	for _, p := range plugins {
+		outputs[p.Name()] = nil
+		if op, declares := p.(plugin.OutputProvider); declares {
+			outputs[p.Name()] = op.Outputs()
+		}
+	}
+	ix := f.index(tb)
+	residents := layout.Residents(f.Graph)
+	return &layout.Input{
+		Index:      ix,
+		Outputs:    outputs,
+		Directives: schemasOf(tb, plugins),
+		Residents:  func(dir string) []plugin.Resident { return residents[dir] },
+		Modules:    layout.Modules(f.Graph, f.Facts, f.Kernel),
+	}
 }
 
 // bind returns the plugin that p binds in the registry of the fixture, as

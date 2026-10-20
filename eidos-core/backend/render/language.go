@@ -51,6 +51,15 @@ type Clustered struct {
 // singleton.
 type Cluster func(decls []symbol.Symbol) []Clustered
 
+// Evaluated yields the names that the language evaluates when a module
+// runs the declaration d. Each name is the declared name of a declaration
+// of the file that d needs defined before it, such as the base of a class
+// in Python and the superclass of a class in TypeScript. The render
+// ignores a name that no declaration of the file declares, and the name of
+// d itself. It calls Evaluated on the workers of a render, so the function
+// is safe for concurrent use.
+type Evaluated func(d symbol.Symbol, yield func(name string))
+
 // Language is what varies between targets. The pass implements
 // everything else.
 type Language struct {
@@ -94,6 +103,18 @@ type Language struct {
 	// Cluster assigns a unit's declarations to named groups; nil
 	// leaves every declaration a singleton.
 	Cluster Cluster
+	// Evaluated yields the names that a module of the language evaluates
+	// when it runs a declaration. The render then writes each declaration
+	// after the declarations of the file that it evaluates. A language
+	// that sets neither Evaluated nor Implemented keeps the order of the
+	// flush.
+	Evaluated Evaluated
+	// Implemented states that each overloaded name of a file has one
+	// implementation after its overload signatures, as a module of
+	// TypeScript or Python has. The render then skips a block of overload
+	// signatures without an implementation, and each implementation after
+	// the first, under [UnimplementedOverload].
+	Implemented bool
 	// Groups maps each group name a Cluster selects to its template
 	// source.
 	Groups map[GroupName]string

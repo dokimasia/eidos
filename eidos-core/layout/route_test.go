@@ -175,6 +175,7 @@ type fixture struct {
 	config    layout.Config
 	speller   plugin.FileSpeller
 	packager  plugin.Packager
+	binder    plugin.Binder
 	residents map[string][]plugin.Resident
 	modules   []plugin.Module
 	others    plugin.Names
@@ -234,6 +235,7 @@ func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 		Outputs:    f.outputs,
 		Speller:    f.speller,
 		Packager:   f.packager,
+		Binder:     f.binder,
 		Index:      ix,
 		Directives: registry(tb),
 		Modules:    f.modules,
@@ -993,6 +995,48 @@ func TestRoute(t *testing.T) {
 			f.route(t)
 			assert.Length(t, seen, 1, "one file is placed")
 			assert.True(t, seen[0].External, "the test family of stubgen tests its package from outside")
+		})
+
+		t.Run("hands the target no external mark for a file with an origin that tests from inside", func(t *testing.T) {
+			t.Parallel()
+
+			var seen []plugin.Placement
+			u := unitOf(stubgen, families()[stubgen][1], storeFile, coretest.PackageID(storePkg),
+				generated(storeID, "StoreCheck"))
+			u.Inside = []symbol.Identity{storeID}
+			f := newFixture(u)
+			f.outputs[stubgen][1].External = true
+			f.packager = recording{seen: &seen}
+			f.route(t)
+			assert.Length(t, seen, 1, "one file is placed")
+			assert.False(t, seen[0].External, "the check of the store tests its package from inside")
+		})
+
+		t.Run("returns the inside origins of a unit for a file that contains the whole unit", func(t *testing.T) {
+			t.Parallel()
+
+			u := stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))
+			u.Inside = []symbol.Identity{storeID}
+			files, _ := newFixture(u).route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.Equal(t, files[0].Units[0].Inside, []symbol.Identity{storeID},
+				"the routed unit has the inside origins of its source unit")
+		})
+
+		t.Run("returns the inside origins of the declarations that an override moves", func(t *testing.T) {
+			t.Parallel()
+
+			u := stubOf(storeFile, storePkg, generated(storeID, "StoreStub"), generated(rowID, "RowStub"))
+			u.Inside = []symbol.Identity{rowID}
+			f := newFixture(u).on(rowID, written(stubDirective, 1, keyOut, "fakes/"))
+			f.packager = directories{}
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			moved := fakesDir + "/store_stub.go: RowStub"
+			assert.Equal(t, layoutOf(files), []string{moved, referringPath + ": StoreStub"},
+				"the override moves the row stub")
+			expect.Equal(t, files[0].Units[0].Inside, []symbol.Identity{rowID}, "the moved row stub tests from inside")
+			expect.Nil(t, files[1].Units[0].Inside, "the store stub tests from outside")
 		})
 
 		t.Run("hands the target no residents for an input without a residents function", func(t *testing.T) {

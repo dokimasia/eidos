@@ -106,7 +106,9 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	b, f := setup(tb)
 	sink := diag.NewSink()
 	assert.NoError(tb, plugin.Settle(f.Emit, b, nil, sink), "the settle completes")
-	files, err := b.Render(f.Context(b, sink))
+	ctx, err := f.Context(b, sink)
+	assert.NoError(tb, err, "the layout of the fixture routes the settled store")
+	files, err := b.Render(ctx)
 	assert.NoError(tb, err, "the settled fixture renders")
 
 	var excused strings.Builder
@@ -293,11 +295,12 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	}
 
 	sink := diag.NewSink()
-	ctx := f.Context(b, sink)
+	ctx, err := f.Context(b, sink)
+	assert.NoError(tb, err, "the layout of the fixture routes the store")
 	for i := range ctx.Files {
 		emit.Facts(&ctx.Files[i].Header, count)
 	}
-	_, err := b.Render(ctx)
+	_, err = b.Render(ctx)
 	assert.NoError(tb, err, "the render completes")
 	// Per key and not per total: matching counts with one refusal
 	// missing and one undeclared cancel out, and the undeclared half
@@ -344,7 +347,9 @@ func Rendered(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 	b, f := setup(tb)
 	sink := diag.NewSink()
 	assert.NoError(tb, plugin.Settle(f.Emit, b, nil, sink), "the settle completes")
-	files, err := b.Render(f.Context(b, sink))
+	ctx, err := f.Context(b, sink)
+	assert.NoError(tb, err, "the layout of the fixture routes the settled store")
+	files, err := b.Render(ctx)
 	assert.NoError(tb, err,
 		"a file's problem attaches to the sink and the render continues")
 	return files, slices.Collect(sink.All())
@@ -539,8 +544,9 @@ func AssertEmptyRender(tb assert.TB, setup Setup) {
 	var files []plugin.RenderedFile
 	assert.NotPanics(tb, func() {
 		assert.NoError(tb, plugin.Settle(empty.Emit, b, nil, sink), "the settle of an empty store completes")
-		var err error
-		files, err = b.Render(empty.Context(b, sink))
+		ctx, err := empty.Context(b, sink)
+		assert.NoError(tb, err, "the empty store routes")
+		files, err = b.Render(ctx)
 		assert.NoError(tb, err, "the render of an empty store completes")
 	}, "the settle and the render of an empty store run without a panic")
 	assert.Empty(tb, files, "the render of an empty store returns no file")

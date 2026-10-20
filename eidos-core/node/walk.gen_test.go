@@ -205,13 +205,14 @@ func TestWalk(t *testing.T) {
 			subject.Variants = append(subject.Variants, &EnumVariant{})
 			subject.Fields = append(subject.Fields, &Field{})
 			subject.Methods = append(subject.Methods, &Method{})
+			subject.Implements = append(subject.Implements, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 5,
+			assert.Equal(t, seen, 6,
 				"the walk descends into every traversed field")
 		})
 
@@ -222,13 +223,14 @@ func TestWalk(t *testing.T) {
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 			subject.Variants = append(subject.Variants, &SumVariant{})
 			subject.Methods = append(subject.Methods, &Method{})
+			subject.Implements = append(subject.Implements, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 4,
+			assert.Equal(t, seen, 5,
 				"the walk descends into every traversed field")
 		})
 
@@ -517,6 +519,7 @@ func TestWalk(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -531,6 +534,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -832,6 +836,7 @@ func TestWalk(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -850,6 +855,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -1159,6 +1165,7 @@ func TestWalk(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1173,6 +1180,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1387,6 +1395,7 @@ func TestWalk(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1404,6 +1413,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1670,6 +1680,7 @@ func TestWalk(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1687,6 +1698,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1996,6 +2008,7 @@ func TestWalk(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range Declarations(subject) {
 					yielded++
@@ -2010,6 +2023,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				var yielded int
 				for range Declarations(subject) {
 					yielded++

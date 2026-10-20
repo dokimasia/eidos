@@ -137,6 +137,14 @@ type Unit struct {
 	// declarations of each origin. The file template reads it beside each
 	// record. It is nil for a unit whose plugin attached none.
 	Data map[symbol.Identity]any
+	// Inside are the origins whose declarations test the package of the
+	// unit from inside, sorted and distinct, in a unit of a family that
+	// states [Output.External], such as the check of an unexported
+	// declaration. A file with such a declaration does not test from
+	// outside, and a target that writes external test packages splits
+	// the declarations into a file of their own. Inside is nil where
+	// every declaration of the unit tests from outside.
+	Inside []symbol.Identity
 }
 
 // FileKey returns the routing key from which the filename of a unit

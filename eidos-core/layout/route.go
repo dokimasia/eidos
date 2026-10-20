@@ -34,6 +34,9 @@ type Input struct {
 	// Packager is the backend's package half. A nil Packager gives
 	// every file the package of its first unit.
 	Packager plugin.Packager
+	// Binder is the backend's binder of gRPC, which returns the package of
+	// a bound reference. A nil Binder refuses every bound reference.
+	Binder plugin.Binder
 	// Index resolves origins: their source files, their packages and
 	// their validated directives.
 	Index *plugin.Index
@@ -113,7 +116,9 @@ type Routes struct {
 // overloads of one function, and no collision, where the target's package
 // half is a [plugin.Overloader] that overloads. It sets the package of every bare reference and every
 // translated reference that crosses into a file of another package, in
-// place. It returns an error only for a defect in its inputs: a nil store,
+// place. It sets the package of a bound reference to the package that
+// Input.Binder returns for its target. It returns an error only for a
+// defect in its inputs: a nil store,
 // an unsettled store, a missing speller, index or sink, a speller whose
 // parts do not contain the declarations of the unit it split, and a
 // filename that is not one path element.
@@ -547,6 +552,7 @@ func (r *router) name() error {
 			Plugin: b.dest.plugin, Tag: b.dest.tag, Per: b.dest.per, Word: b.dest.word,
 			Key: b.dest.key, Pkg: b.dest.pkg, Decls: b.decls, Origins: r.originsOf(b),
 			Contributors: r.contributorsOf(b), Template: b.dest.template, Data: r.dataOf(b),
+			Inside: r.insideOf(b),
 		}
 		parts := r.in.Speller.SplitUnit(u)
 		if kept := declsOf(parts); kept != len(u.Decls) {
@@ -585,8 +591,9 @@ func (r *router) name() error {
 // packages names each file's package through the target's package
 // half, or gives it its first unit's package where the target has
 // none. It gives each file its header first, so the package half reads
-// the annotations of the header. The family of the first unit states
-// whether the file tests its package from outside. The namespace of the
+// the annotations of the header. The file tests its package from outside
+// where the family of the first unit states it and no unit of the file
+// has an origin in [plugin.Unit.Inside]. The namespace of the
 // names of a file is the namespace that a target with [plugin.NameScoper]
 // returns for its package, and its package otherwise. A target's error
 // leaves the file with the zero package and the zero namespace, and keeps
@@ -602,9 +609,10 @@ func (r *router) packages() {
 			continue
 		}
 		fam, _ := familyOf(r.in.Outputs[first.Plugin], first.Tag)
+		inside := slices.ContainsFunc(f.file.Units, func(u plugin.Unit) bool { return len(u.Inside) > 0 })
 		at := plugin.Placement{
 			Path: f.file.Path, Origin: first.Pkg, Modules: r.in.Modules, Header: f.file.Header.Annotations,
-			External: fam.External,
+			External: fam.External && !inside,
 		}
 		if r.in.Residents != nil {
 			at.Residents = r.in.Residents(path.Dir(f.file.Path))
@@ -845,6 +853,44 @@ func (r *router) contributorsOf(b *batch) []plugin.ID {
 	}
 	slices.Sort(contributors)
 	return slices.Compact(contributors)
+}
+
+// insideOf returns the origins of the declarations of a batch that test
+// their package from inside: the source unit's own list where the batch
+// is one whole unit, and otherwise the origins in [plugin.Unit.Inside] of
+// a contributing unit that a declaration of the batch derives from,
+// sorted and distinct. It returns nil, without allocating, where no
+// contributing unit has such an origin.
+func (r *router) insideOf(b *batch) []symbol.Identity {
+	if b.whole && len(b.more) == 0 {
+		return r.units[b.first].Inside
+	}
+	inside := r.insideFrom(b.first, b.decls, nil)
+	for _, unit := range b.more {
+		inside = r.insideFrom(unit, b.decls, inside)
+	}
+	if len(inside) == 0 {
+		return nil
+	}
+	slices.SortFunc(inside, symbol.Identity.Compare)
+	return slices.Compact(inside)
+}
+
+// insideFrom appends to out the origin of each of decls that the source
+// unit at unit lists in [plugin.Unit.Inside], and returns the extended
+// list. It allocates only where out grows.
+func (r *router) insideFrom(unit int, decls []symbol.Symbol, out []symbol.Identity) []symbol.Identity {
+	listed := r.units[unit].Inside
+	if len(listed) == 0 {
+		return out
+	}
+	for _, d := range decls {
+		origin, _ := emit.OriginOf(d)
+		if _, held := slices.BinarySearchFunc(listed, origin, symbol.Identity.Compare); held {
+			out = append(out, origin)
+		}
+	}
+	return out
 }
 
 // dataOf returns the data of the records of a batch by origin. For a

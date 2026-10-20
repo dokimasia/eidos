@@ -121,6 +121,10 @@ func bareOf(id symbol.Identity) symbol.Identity {
 //     where the frontend reports that its language overloads, so
 //     overloads spell apart, and empty where it does not.
 //     [assigner.disc] states how the receiver and one parameter spell.
+//     The discriminator of the implementation of an overloaded name
+//     starts with [discImplementation]: a function of the package, or a
+//     method of the type, without the mark Overload whose name a marked
+//     callable of the same scope declares.
 //
 // Members get their Host filled beside the identity. A second
 // declaration spelling one identity reports under
@@ -148,6 +152,9 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 			ix:        ix,
 			sink:      sink,
 		}
+		if a.overloads {
+			a.functions = markedFunctions(sp.pkg.Files)
+		}
 		for _, f := range sp.pkg.Files {
 			a.file(f)
 		}
@@ -160,7 +167,10 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 // the language's frontend is a [plugin.Importer], and every indexed
 // identity records path, the file under assignment. Where overloads
 // is set, the language's frontend reports that it overloads, and a
-// callable's discriminator spells its parameters. unit is the unit of
+// callable's discriminator spells its parameters. functions are the
+// names that a marked function of the package declares, and methods
+// the names that a marked method of the type under assignment
+// declares. Each is nil where nothing is marked. unit is the unit of
 // the file under assignment, which a duplicate's finding is recorded
 // on.
 type assigner struct {
@@ -169,6 +179,8 @@ type assigner struct {
 	origin    diag.Origin
 	importer  bool
 	overloads bool
+	functions map[string]bool
+	methods   map[string]bool
 	units     map[*node.File]*unit
 	unit      *unit
 	path      string
@@ -231,7 +243,11 @@ func (a *assigner) claim(
 func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, drop bool) {
 	switch x := s.(type) {
 	case *node.Function:
-		id := a.derive(x, owner, x.Name, symbol.KindFunction, a.disc(nil, x.Params))
+		disc := a.disc(nil, x.Params)
+		if owner == "" && !x.Overload && a.functions[x.Name] {
+			disc = discImplementation + disc
+		}
+		id := a.derive(x, owner, x.Name, symbol.KindFunction, disc)
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		a.signature(childOwner(owner, x.Name), id, dropping, x.TypeParams, x.Params, x.Returns)
@@ -242,8 +258,11 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 			at = x.Receives.Spelling
 		}
 		disc := a.disc(x.Receiver, x.Params)
-		if x.Accessor == symbol.AccessorDelete {
+		switch {
+		case x.Accessor == symbol.AccessorDelete:
 			disc = discDelete
+		case !x.Overload && a.methods[x.Name]:
+			disc = discImplementation + disc
 		}
 		id := a.derive(x, at, x.Name, symbol.KindMethod, disc)
 		var dropping bool
@@ -258,7 +277,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		inner := childOwner(owner, x.Name)
 		a.typeParams(inner, id, dropping, x.TypeParams)
 		a.members(inner, id, dropping, x.Fields)
-		a.members(inner, id, dropping, x.Methods)
+		a.methodsOf(inner, id, dropping, x.Methods)
 		a.members(inner, id, dropping, x.Types)
 		a.members(inner, id, dropping, x.Embeds)
 
@@ -269,7 +288,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		inner := childOwner(owner, x.Name)
 		a.typeParams(inner, id, dropping, x.TypeParams)
 		a.members(inner, id, dropping, x.Fields)
-		a.members(inner, id, dropping, x.Methods)
+		a.methodsOf(inner, id, dropping, x.Methods)
 		a.members(inner, id, dropping, x.Types)
 		a.members(inner, id, dropping, x.Embeds)
 
@@ -280,7 +299,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		inner := childOwner(owner, x.Name)
 		a.members(inner, id, dropping, x.Variants)
 		a.members(inner, id, dropping, x.Fields)
-		a.members(inner, id, dropping, x.Methods)
+		a.methodsOf(inner, id, dropping, x.Methods)
 
 	case *node.EnumVariant:
 		id := a.derive(x, owner, x.Name, symbol.KindEnumVariant, "")
@@ -294,7 +313,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		inner := childOwner(owner, x.Name)
 		a.typeParams(inner, id, dropping, x.TypeParams)
 		a.members(inner, id, dropping, x.Variants)
-		a.members(inner, id, dropping, x.Methods)
+		a.methodsOf(inner, id, dropping, x.Methods)
 
 	case *node.SumVariant:
 		id := a.derive(x, owner, x.Name, symbol.KindSumVariant, "")
@@ -426,6 +445,22 @@ func (a *assigner) members[S symbol.Symbol](owner string, host symbol.Identity, 
 	}
 }
 
+// methodsOf assigns the methods of a type as [assigner.members] does. The
+// names that a marked method of the type declares apply while they assign,
+// so the implementation of an overloaded name takes [discImplementation].
+// The names of an enclosing type apply again after the call. In a language
+// that overloads, a type with a marked method allocates the set of its
+// names.
+func (a *assigner) methodsOf(owner string, host symbol.Identity, drop bool, methods []*node.Method) {
+	outer := a.methods
+	a.methods = nil
+	if a.overloads {
+		a.methods = markedMethods(methods)
+	}
+	a.members(owner, host, drop, methods)
+	a.methods = outer
+}
+
 // derive spells one canonical identity, refusing a nameless
 // declaration of a named kind as the structural defect it is.
 func (a *assigner) derive(
@@ -467,6 +502,44 @@ func embedName(ref *node.TypeRef) string {
 		name = name[:at]
 	}
 	return name
+}
+
+// markedFunctions returns the names that a function of the files with the
+// mark Overload declares, at the top level of a file, and nil where no
+// such function is marked. It allocates the set where a function is
+// marked.
+func markedFunctions(files []*node.File) map[string]bool {
+	var names map[string]bool
+	for _, f := range files {
+		for _, d := range f.Decls {
+			fn, is := d.(*node.Function)
+			if !is || fn == nil || !fn.Overload {
+				continue
+			}
+			if names == nil {
+				names = map[string]bool{}
+			}
+			names[fn.Name] = true
+		}
+	}
+	return names
+}
+
+// markedMethods returns the names that a method of methods with the mark
+// Overload declares, and nil where no method is marked. It allocates the
+// set where a method is marked.
+func markedMethods(methods []*node.Method) map[string]bool {
+	var names map[string]bool
+	for _, m := range methods {
+		if m == nil || !m.Overload {
+			continue
+		}
+		if names == nil {
+			names = map[string]bool{}
+		}
+		names[m.Name] = true
+	}
+	return names
 }
 
 // childOwner extends the dotted owner chain by one type name, joined with
@@ -559,6 +632,14 @@ const (
 	discUntyped        = "_"
 	discDelete         = "del"
 )
+
+// discImplementation starts the discriminator of the implementation of an
+// overloaded name: a callable without the mark Overload whose scope
+// declares a marked callable of its name. The implementation then spells
+// apart from an overload whose parameters spell as its own. A
+// discriminator of parameters starts with a type, a name or a variadic
+// mark, so no other discriminator starts with it.
+const discImplementation = "="
 
 // discType spells one parameter type into a discriminator: the
 // reference's spelling, and an instantiation's arguments after it in

@@ -87,7 +87,8 @@ type Placement struct {
 	// generator states for the file.
 	Header symbol.Annotations
 	// External reports that the family of the first unit of the file tests
-	// its package from outside, as [Output.External] states.
+	// its package from outside, as [Output.External] states, and that no
+	// unit of the file has an origin in [Unit.Inside].
 	External bool
 }
 

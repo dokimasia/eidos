@@ -174,12 +174,13 @@ func TestMirror(t *testing.T) {
 			t.Parallel()
 
 			got := eidos.Mirror(mirrorHost, &node.Method{
-				Name: getMethod, Abstract: true, Final: true, Override: true, HasDefault: true,
+				Name: getMethod, Abstract: true, Final: true, Override: true, HasDefault: true, Overload: true,
 			})
 			expect.False(t, got.Abstract, "the generator writes the implementation of the mirror")
 			expect.False(t, got.Final, "the mirror states no final")
 			expect.False(t, got.Override, "the mirror overrides nothing")
 			expect.False(t, got.HasDefault, "the mirror states no default body")
+			expect.False(t, got.Overload, "the generator writes a body for the mirror")
 		})
 	})
 

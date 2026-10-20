@@ -14,7 +14,12 @@ import (
 
 	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/plugin/plugintest"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The policy of the fixture: a key of the stub target and the choice that
@@ -51,7 +56,8 @@ func TestFixture(t *testing.T) {
 				Policy:    policy,
 			}
 			sink := diag.NewSink()
-			got := f.Context(wellBackend(t), sink)
+			got, err := f.Context(wellBackend(t), sink)
+			assert.NoError(t, err, "the files of the fixture route")
 			expect.Equal(t, got.Policy.Choice(widthKey), wideWidth, "the context has the policy of the fixture")
 			expect.Equal(t, got.Emit, f.Emit, "the context has the store of the fixture", assert.ByIdentity())
 			expect.Equal(t, got.Schedule, f.Schedule, "the context has the schedule of the fixture")
@@ -63,6 +69,30 @@ func TestFixture(t *testing.T) {
 				"the context has the override declarations of the fixture")
 			expect.Equal(t, got.Sink, sink, "the context reports into the sink", assert.ByIdentity())
 			expect.NotEmpty(t, got.Plugin, "the context renders under the identity of the suite")
+		})
+
+		t.Run("routes the store through the layout of the fixture", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(plugin.Unit{
+				Plugin: "gen", Per: plugin.PerPlan, Word: "index", Decls: []symbol.Symbol{&emit.Struct{Name: "Index"}},
+			}), "the unit of gen is added")
+			b, sink := wellBackend(t), diag.NewSink()
+			assert.NoError(t, plugin.Settle(e, b, nil, sink), "the store settles")
+			f := &backendtest.Fixture{Emit: e, Layout: plugintest.New(t).Layout(t)}
+			got, err := f.Context(b, sink)
+			assert.NoError(t, err, "the layout routes the store")
+			expect.Empty(t, got.Files, "the layout refuses the unit of a family that no plugin of the plan declares")
+			coretest.AssertCodes(t, sink, layout.UndeclaredFamily)
+		})
+
+		t.Run("returns the error of the layout for an input that it cannot route", func(t *testing.T) {
+			t.Parallel()
+
+			f := &backendtest.Fixture{Emit: plugin.NewEmit(), Layout: &layout.Input{}}
+			_, err := f.Context(wellBackend(t), diag.NewSink())
+			assert.HasError(t, err, "the layout refuses a store that did not settle")
 		})
 	})
 }

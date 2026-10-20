@@ -43,6 +43,8 @@ type Builder struct {
 	overloads  bool
 	types      func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
 	supertypes func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	handler    func(r plugin.RPC, p plugin.Policy, translate plugin.Translate) (*emit.Method, error)
+	home       func(target symbol.Identity, schema plugin.Placement) (symbol.Identity, error)
 	policies   []plugin.PolicySpec
 	defects    []string
 }
@@ -217,6 +219,26 @@ func (b *Builder) Overloads() *Builder {
 	return b
 }
 
+// Evaluated sets the names that a module of the target's language
+// evaluates when it runs a declaration, so the render writes each
+// declaration after the declarations of its file that it evaluates, as
+// [render.Language.Evaluated] states. Unset, the render keeps the order
+// of the flush, apart from the order that [Builder.Implemented] states.
+func (b *Builder) Evaluated(e render.Evaluated) *Builder {
+	b.lang.Evaluated = e
+	return b
+}
+
+// Implemented declares that each overloaded function name of a file of
+// the target has one implementation after its overload signatures, as a
+// module of TypeScript or Python has. The render then writes the
+// signatures of a name before its implementation, and skips a name
+// without one implementation, as [render.Language.Implemented] states.
+func (b *Builder) Implemented() *Builder {
+	b.lang.Implemented = true
+	return b
+}
+
 // Cluster sets the target's declaration clustering. The group
 // templates its clusters select arrive through [Builder.Groups],
 // and a cluster without them is a defect at Build.
@@ -320,6 +342,24 @@ func (b *Builder) Supertypes(spell func(s rules.TypeShape, p plugin.Policy) (*em
 	return b
 }
 
+// Binder declares the target's binder of gRPC, which the built backend
+// serves as [plugin.Binder]: handler writes the handler of an rpc, and home
+// returns the package of the code that the code generator of a binding
+// writes for a declaration of a schema. A target without it serves the
+// method of [plugin.CanonicalHandler] and has no package for a bound
+// reference. A nil handler or a nil home is a defect at Build.
+func (b *Builder) Binder(
+	handler func(r plugin.RPC, p plugin.Policy, translate plugin.Translate) (*emit.Method, error),
+	home func(target symbol.Identity, schema plugin.Placement) (symbol.Identity, error),
+) *Builder {
+	if handler == nil || home == nil {
+		b.defects = append(b.defects, "declares a binder without a handler or a home")
+		return b
+	}
+	b.handler, b.home = handler, home
+	return b
+}
+
 // Policies declares the target's lowering policies, which the built
 // backend serves as [plugin.PolicyProvider]. It is repeatable, and the
 // specs accumulate. Build checks them as [plugin.NewPolicy] does.
@@ -332,8 +372,8 @@ func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
 // SPI, with the fact coverage that the guard of the render reads, the
 // kinds that the language refuses, which the backend suite checks, the
 // spelling of a supertype of another language, the namespace of the
-// names of a file, whether the language overloads a function, and the
-// convention of a member.
+// names of a file, whether the language overloads a function, the
+// convention of a member, and the binder of gRPC.
 type Backend interface {
 	plugin.Backend
 	render.Coverer
@@ -342,6 +382,7 @@ type Backend interface {
 	plugin.NameScoper
 	plugin.Overloader
 	plugin.MemberRespeller
+	plugin.Binder
 }
 
 // Build freezes the declaration and returns the lowered backend. Its
@@ -359,6 +400,9 @@ type Backend interface {
 //   - PackageAt returns the origin package of the file;
 //   - NameScope returns the package that it is given;
 //   - Overloads reports false;
+//   - Handler returns the method of [plugin.CanonicalHandler];
+//   - Home returns an error that the target generates no code of a
+//     binding;
 //   - Policies returns nil.
 //
 // Build panics on a declaration defect, because a wrong declaration
@@ -370,7 +414,8 @@ type Backend interface {
 //   - an empty name;
 //   - a zero target;
 //   - a kind spelt twice, a kind refused twice, a group spelt twice,
-//     a helper declared twice and a nil vocabulary part;
+//     a helper declared twice, a nil vocabulary part and a binder
+//     without a handler or a home;
 //   - every defect of a policy spec that [plugin.NewPolicy] reports;
 //   - every fault [render.New] joins, such as an empty kind-template
 //     set, a kind both spelt and refused, a template that does not
@@ -399,7 +444,7 @@ func (b *Builder) Build() Backend {
 		name: b.name, target: b.target, syntax: b.syntax,
 		version: b.version, pass: pass, packages: b.packages, scopes: b.scopes, overloads: b.overloads,
 		lower: b.lower, respell: b.respell, member: b.member,
-		types: b.types, supertypes: b.supertypes, policies: b.policies,
+		types: b.types, supertypes: b.supertypes, handler: b.handler, home: b.home, policies: b.policies,
 	}
 }
 
@@ -428,6 +473,10 @@ type builtBackend struct {
 	// backend declares none.
 	types      func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
 	supertypes func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
+	// handler and home are the declared binder, both nil where the backend
+	// declares none.
+	handler func(r plugin.RPC, p plugin.Policy, translate plugin.Translate) (*emit.Method, error)
+	home    func(target symbol.Identity, schema plugin.Placement) (symbol.Identity, error)
 	// policies are the declared lowering policies, in declaration
 	// order.
 	policies []plugin.PolicySpec
@@ -485,6 +534,27 @@ func (b *builtBackend) SpellSupertype(s rules.TypeShape, p plugin.Policy) (*emit
 		return b.SpellType(s, p)
 	}
 	return b.supertypes(s, p)
+}
+
+// Handler implements [plugin.Binder] through the declared handler. A
+// backend without a binder returns the method of [plugin.CanonicalHandler],
+// with the failure that its spoke spells.
+func (b *builtBackend) Handler(r plugin.RPC, p plugin.Policy, translate plugin.Translate) (*emit.Method, error) {
+	if b.handler == nil {
+		return plugin.CanonicalHandler(r, p, b, translate)
+	}
+	return b.handler(r, p, translate)
+}
+
+// Home implements [plugin.Binder] through the declared home. A backend
+// without a binder returns an error that its target generates no code of
+// a binding.
+func (b *builtBackend) Home(target symbol.Identity, schema plugin.Placement) (symbol.Identity, error) {
+	if b.home == nil {
+		return symbol.Identity{}, errors.New("backend: target " + string(b.target) +
+			" writes against no binding, so no code of a binding has a package for " + target.String())
+	}
+	return b.home(target, schema)
 }
 
 // Policies implements [plugin.PolicyProvider]: the declared specs, and

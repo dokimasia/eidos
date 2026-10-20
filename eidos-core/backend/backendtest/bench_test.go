@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -216,6 +217,16 @@ func TestBench(t *testing.T) {
 			result := benchRender(aborting, roomy)
 			assert.Equal(t, result.N, 0, "an aborted render records no number")
 			assert.NotEqual(t, rendered, 0, "and the guard read a real render")
+		})
+
+		t.Run("records nothing for a layout that refuses its input", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				return wellBackend(tb), &backendtest.Fixture{Emit: plugin.NewEmit(), Layout: &layout.Input{}}
+			}
+			result := benchRender(setup, roomy)
+			assert.Equal(t, result.N, 0, "a store that the layout does not route is not measured")
 		})
 
 		t.Run("records nothing for a render returning no file", func(t *testing.T) {

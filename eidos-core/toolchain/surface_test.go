@@ -33,11 +33,13 @@ Constant Limit int = 8
 Row embeds Mixin
 Row extends Base
 Row implements Reader
+Row.Kind implements Stringer
 Row.Kind.A = 1
 Row.Kind.B
 Row.Put(string/, limit: int)
 Row.Touch()
 Row.note? string
+Shape implements Measured
 Shape.Area() float
 Shape.Circle(radius float)
 Shape.Empty()
@@ -262,7 +264,8 @@ func everyKind(path, _ string) []symbol.Symbol {
 		Types: node.Symbols{
 			&node.Enum{
 				Name: "Kind", Visibility: public, Const: true,
-				Variants: []*node.EnumVariant{{Name: "A", Value: "1"}, {Name: "B"}},
+				Variants:   []*node.EnumVariant{{Name: "A", Value: "1"}, {Name: "B"}},
+				Implements: []*node.TypeRef{{Spelling: "Stringer"}},
 			},
 			&node.Struct{Name: "Inner", Visibility: private},
 		},
@@ -282,6 +285,7 @@ func everyKind(path, _ string) []symbol.Symbol {
 	shape := &node.Sum{
 		Name: "Shape", Pos: at, Visibility: public,
 		TypeParams: []*node.TypeParam{{Name: "T"}},
+		Implements: []*node.TypeRef{{Spelling: "Measured"}},
 		Variants: []*node.SumVariant{
 			{Name: "Circle", Fields: []*node.Field{{Name: "radius", Type: &node.TypeRef{Spelling: "float"}}}},
 			{Name: "Empty"},

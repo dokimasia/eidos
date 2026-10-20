@@ -19,7 +19,9 @@
 // [Source] tree through its frontends, registers the keys of the
 // frontends and the plugins, files the classification stamps of the load,
 // and validates the directives of the plugins, as a workspace prepares
-// its first phase call.
+// its first phase call. [Fixture.Layout] returns the input of the layout
+// of a plan over a fixture, so a spec of a backend routes the emitted
+// units as a workspace routes them.
 //
 // # The checks
 //
@@ -67,9 +69,9 @@
 // # Dependency position
 //
 // core/plugintest imports core/plugin, core/backend/render,
-// core/diag, core/directive, core/emit, core/frontend/load, core/meta,
-// core/node, core/output, core/position, core/rules, core/store,
-// core/symbol, the assert module and the Go stdlib. It imports the load
+// core/diag, core/directive, core/emit, core/frontend/load, core/layout,
+// core/meta, core/node, core/output, core/position, core/rules,
+// core/store, core/symbol, the assert module and the Go stdlib. It imports the load
 // for [Loaded] alone, and the SDK facade re-exports no load. It never
 // imports the root package: the harness works directly on the SPI, so a
 // facade-built plugin and a hand-rolled one pass the same checks.

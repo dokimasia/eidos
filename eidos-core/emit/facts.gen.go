@@ -46,6 +46,9 @@ func statedFacts(
 		if x.Async {
 			f(host, symbol.KindFunction, symbol.FactAsync)
 		}
+		if x.Overload {
+			f(host, symbol.KindFunction, symbol.FactOverload)
+		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindFunction, symbol.FactTypeParams)
 		}
@@ -112,6 +115,9 @@ func statedFacts(
 		}
 		if x.Computed {
 			f(host, symbol.KindMethod, symbol.FactComputed)
+		}
+		if x.Overload {
+			f(host, symbol.KindMethod, symbol.FactOverload)
 		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindMethod, symbol.FactTypeParams)
@@ -189,6 +195,9 @@ func statedFacts(
 		if x.Methods.Len() > 0 {
 			f(host, symbol.KindEnum, symbol.FactMethods)
 		}
+		if len(x.Implements) > 0 {
+			f(host, symbol.KindEnum, symbol.FactImplements)
+		}
 		if len(x.Annotations) > 0 {
 			f(host, symbol.KindEnum, symbol.FactAnnotations)
 		}
@@ -223,6 +232,9 @@ func statedFacts(
 		}
 		if x.Methods.Len() > 0 {
 			f(host, symbol.KindSum, symbol.FactMethods)
+		}
+		if len(x.Implements) > 0 {
+			f(host, symbol.KindSum, symbol.FactImplements)
 		}
 		if len(x.Annotations) > 0 {
 			f(host, symbol.KindSum, symbol.FactAnnotations)
@@ -465,6 +477,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactAsync,
+			symbol.FactOverload,
 			symbol.FactTypeParams,
 			symbol.FactMultiReturn,
 			symbol.FactThrows,
@@ -486,6 +499,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactOptional,
 			symbol.FactMutability,
 			symbol.FactComputed,
+			symbol.FactOverload,
 			symbol.FactTypeParams,
 			symbol.FactMultiReturn,
 			symbol.FactThrows,
@@ -514,6 +528,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactUnderlying,
 			symbol.FactFields,
 			symbol.FactMethods,
+			symbol.FactImplements,
 			symbol.FactAnnotations,
 		},
 		symbol.KindEnumVariant: {
@@ -526,6 +541,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactVisibility,
 			symbol.FactTypeParams,
 			symbol.FactMethods,
+			symbol.FactImplements,
 			symbol.FactAnnotations,
 		},
 		symbol.KindSumVariant: {

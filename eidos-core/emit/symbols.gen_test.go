@@ -411,6 +411,7 @@ func TestSymbols(t *testing.T) {
 				subject.VariantsSlot().Append(&EnumVariant{})
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Enum with every child the original has", assert.EquateEmpty())
 			}
@@ -420,6 +421,7 @@ func TestSymbols(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Sum with every child the original has", assert.EquateEmpty())
 			}
@@ -883,6 +885,7 @@ func symbolsList() Symbols {
 		subject.VariantsSlot().Append(&EnumVariant{})
 		subject.FieldsSlot().Append(&Field{})
 		subject.MethodsSlot().Append(&Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		out = append(out, subject)
 	}
 	{
@@ -894,6 +897,7 @@ func symbolsList() Symbols {
 		subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 		subject.VariantsSlot().Append(&SumVariant{})
 		subject.MethodsSlot().Append(&Method{})
+		subject.Implements = append(subject.Implements, &TypeRef{})
 		out = append(out, subject)
 	}
 	{
