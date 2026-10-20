@@ -59,6 +59,8 @@ bounds of their type parameters completes the change.
 | TypeScript backend | `eidos-lang-typescript/backend` | writes a reference to a declaration of the library without an import |
 | Kernel | `eidos-core/rules` | the member walk lists a computed member, and `GapComputed` is removed |
 | Kernel | `eidos-core/frontend/load` | the discriminator of two overloads that it does not tell apart spells the bounds of their type parameters |
+| Kernel | `eidos-core/store` | `Graph.AddDependencyPackage` adds a package of a dependency round to a graph that `New` returns, and `Graph.Dependency` reports it |
+| Kernel | `eidos-core/plugin/plugintest` | `Loaded` adds each dependency package of the load beside the packages that `Source.Packages` lists, through `Fixture.LoadDependencies` |
 | SDK | `eidos-sdk` | the regenerated facade |
 
 ### The embedded library
@@ -273,6 +275,40 @@ first overload of `createElement` becomes
 `createElement([K:keyof HTMLElementTagNameMap]K,ElementCreationOptions?)`. Every other callable
 keeps its discriminator. Overloads whose type parameters are equal too remain a duplicate.
 
+### The fixture of a plugin
+
+A plan admits each dependency package of its language, so the walk of a plugin crosses into the
+library in a run. The fixture of a spec of the plugin contains the same packages:
+
+- `plugintest.Loaded` adds each package that a dependency round loaded, beside the packages that
+  `Source.Packages` lists. A fixture whose source lists its packages and contains the store of the
+  library folds `Map<string, string>` to the map form. Its walk of an interface that extends
+  `Error` is complete.
+- `Fixture.LoadDependencies` adds such a package through `store.Graph.AddDependencyPackage`, so
+  `Graph.Dependency` reports it in a graph that `store.New` returns. A rule of the generate phase
+  then does not run on a declaration of the package, as in a run, and an annotator does.
+
+```go
+package store
+
+// AddDependencyPackage adds a parsed package that a dependency round
+// loaded, as [Graph.AddPackage] adds a package. After [Graph.Freeze],
+// [Graph.Dependency] reports true for the package and each of its
+// declarations.
+//
+// Error modes: the errors of [Graph.AddPackage].
+func (g *Graph) AddDependencyPackage(p *node.Package) error
+```
+
+```go
+package plugintest
+
+// LoadDependencies adds parsed packages that a dependency round loaded to
+// the graph. A rule of the generate phase does not run on their
+// declarations, and an annotator and a rule of the emit phase do.
+func (f *Fixture) LoadDependencies(tb assert.TB, pkgs ...*node.Package) *Fixture
+```
+
 ### Cost
 
 A probe loaded the files of a library as units of the workspace, one unit for each file, on four
@@ -322,6 +358,7 @@ cores.
 | A computed member in the walk | in | a generator of TypeScript implements `[Symbol.asyncDispose]` and `[Symbol.iterator]`, and the backends of the other languages reject or refuse the fact already | none known |
 | The bounds in the discriminator of overloads that collide | in | the overloads are distinct in TypeScript and in Java, and every other identity keeps its spelling | none known |
 | A syntax error of a library member | no finding | the author of the workspace cannot change the library, and the spec of the satellite lists the errors | a grammar release that parses the whole library |
+| The dependency packages in the fixture of a plugin that lists its packages | in | a plan admits them, so a spec sees the fold and the walk of a run | none known |
 
 ## Alternatives
 
@@ -393,6 +430,8 @@ callable of TypeScript, Python and Java would change, also where no other overlo
 - A reference directive of a source file applies to its own file, where TypeScript applies it to
   the program.
 - `GapComputed` is removed, which breaks the kernel and the SDK.
+- An annotator in the fixture of a plugin with a store visits the declarations of the library, as
+  it does in a run, also where the source lists its packages.
 - A refresh of the library also refreshes the two tables of typescript-go and the spec of the syntax
   errors.
 
@@ -412,6 +451,7 @@ None.
 | What | Where |
 |---|---|
 | Issue 48, the members of an interface that extends the library | <https://github.com/dokimasia/eidos/issues/48> |
+| Issue 52, the dependency packages of the fixture of a plugin | <https://github.com/dokimasia/eidos/issues/52> |
 | typescript-go 7.0.2, the bundled library | <https://github.com/microsoft/typescript-go/tree/typescript/v7.0.2/internal/bundled/libs> |
 | typescript-go 7.0.2, the names of the library | <https://github.com/microsoft/typescript-go/blob/typescript/v7.0.2/internal/tsoptions/enummaps.go> |
 | typescript-go 7.0.2, the load of library files | <https://github.com/microsoft/typescript-go/blob/typescript/v7.0.2/internal/compiler/fileloader.go> |

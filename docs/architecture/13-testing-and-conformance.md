@@ -96,7 +96,10 @@ A plugin author who tests over real source builds the fixture with
 registers the keys of the frontends and the plugins, files the
 classification stamps of the load under `meta.LoadClaim`, and validates
 the directives of the plugins, as a workspace prepares its first phase
-call. The reference ensemble builds its fixtures this way.
+call. The fixture contains each package that a dependency round loaded,
+also where the source lists its packages, because a plan admits those
+packages. A rule of the generate phase does not run on their
+declarations. The reference ensemble builds its fixtures this way.
 
 **backendtest**, through `RunBackendSuite(t, setup Setup)`. Over a
 hand-built emit fixture it checks: that the fixture is populated,
