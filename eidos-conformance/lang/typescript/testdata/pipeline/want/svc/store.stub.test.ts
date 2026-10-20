@@ -16,4 +16,5 @@ export class StoreStub implements Store {
     return this.next.put(s);
   }
 }
+
 // acme:provenance sha256:ac80496571161592b4adcc259f394f26bd2685b7b1532346e62adab19fe12ee2

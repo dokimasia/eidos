@@ -13,4 +13,5 @@ mutation Retire($id: ID!) {
     availability
   }
 }
+
 # acme:provenance sha256:06e9d2322f899c1eb4f2c7b1e036181cc28a9280bd6177ff85a59b0caa5982b6

@@ -15,4 +15,5 @@ func (s *StubStore) Get(key string) (Session, error) {
 func (st *StubStore) Put(s Session) error {
 	return st.next.Put(s)
 }
+
 // acme:provenance sha256:1048af0f5c43461293bf923e4cc43ca1595a8dfe1345017541da037f6f664c8a

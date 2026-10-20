@@ -8,4 +8,5 @@ func TransferAudit(from string, to string, cents int64) {
 	record("Transfer", "warn", from, to, cents)
 	Transfer(from, to, cents)
 }
+
 // acme:provenance sha256:c13e2d882ab6ebdc1443cf53365cc01f2c1a75843ea315b730387f257f9f5570

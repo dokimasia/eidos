@@ -8,4 +8,5 @@ subscription Watch($id: ID!) {
     name
   }
 }
+
 # acme:provenance sha256:d17ba91ba12902ce16edf281239310e18f424fd62b6ef179d57ef0f58b87b0e7

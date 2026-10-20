@@ -2,18 +2,6 @@
 // acme:plugin clientgen
 // acme:source svc/store.proto
 
-export interface Chunk {
-  data: Uint8Array;
-}
-
-export interface Event {
-  session?: Session | undefined;
-}
-
-export interface GetRequest {
-  key: string;
-}
-
 /**
  * Session is one signed-in user's state.
  */
@@ -27,21 +15,6 @@ export interface Session {
   labels: Record<string, string>;
   note?: string | undefined;
   credential?: SessionCredential;
-}
-
-/**
- * Store serves sessions.
- */
-export interface StoreClient {
-  get(request: GetRequest): Promise<Session>;
-  watch(request: GetRequest): AsyncIterable<Event>;
-  upload(request: AsyncIterable<Chunk>): Promise<Summary>;
-  chat(request: AsyncIterable<Event>): AsyncIterable<Event>;
-  ping(request: Record<string, never>): Promise<Record<string, never>>;
-}
-
-export interface Summary {
-  size: bigint;
 }
 
 /**
@@ -64,4 +37,32 @@ export interface SessionCredentialKey {
 }
 
 export type SessionCredential = SessionCredentialToken | SessionCredentialKey;
-// acme:provenance sha256:e5839352efd41206f012dcadc0930561709d861a6aed1ad5b7148e39af0a7dc0
+
+export interface GetRequest {
+  key: string;
+}
+
+export interface Event {
+  session?: Session | undefined;
+}
+
+export interface Chunk {
+  data: Uint8Array;
+}
+
+export interface Summary {
+  size: bigint;
+}
+
+/**
+ * Store serves sessions.
+ */
+export interface StoreClient {
+  get(request: GetRequest): Promise<Session>;
+  watch(request: GetRequest): AsyncIterable<Event>;
+  upload(request: AsyncIterable<Chunk>): Promise<Summary>;
+  chat(request: AsyncIterable<Event>): AsyncIterable<Event>;
+  ping(request: Record<string, never>): Promise<Record<string, never>>;
+}
+
+// acme:provenance sha256:faf2a12b7f6b96a8b843afc16cd40c85a32f5df0eebe00fc0fbc1a1337285110

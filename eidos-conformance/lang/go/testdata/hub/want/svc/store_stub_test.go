@@ -22,4 +22,5 @@ func (st *StoreStub) Put(ctx context.Context, s Session) error {
 	audit(ctx)
 	return st.next.Put(ctx, s)
 }
+
 // acme:provenance sha256:0b2e7863c65bb127ed47f8ba42aeecdd4750ca30c93ed500ba5bd24f4b0e8436

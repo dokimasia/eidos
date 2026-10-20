@@ -99,4 +99,5 @@ directive @tag(
 
 "The version of the schema."
 directive @version(number: Int!) on SCHEMA
+
 # acme:provenance sha256:864cef9607237810f8b96ecf879772e431b7e219764010f1e9cd97c639f3ddae

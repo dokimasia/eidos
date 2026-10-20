@@ -136,14 +136,15 @@ func graphqlPaths(t *testing.T, dir string) []string {
 	return paths
 }
 
-// bodyOf returns the text of a written file between the frame that the
+// bodyOf returns the text of a written file inside the frame that the
 // output contract adds: the lines up to the first blank line, and the
-// trailer on the last line.
+// blank line and the trailer at the end.
 func bodyOf(t *testing.T, stamped string) string {
 	t.Helper()
 
 	_, rest, framed := strings.Cut(stamped, frameEnd)
 	assert.True(t, framed, "the written file has a frame")
-	end := strings.LastIndexByte(strings.TrimSuffix(rest, "\n"), '\n')
+	end := strings.LastIndex(strings.TrimSuffix(rest, "\n"), frameEnd)
+	assert.NotEqual(t, end, -1, "the written file has a blank line before its trailer")
 	return rest[:end+1]
 }

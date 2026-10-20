@@ -7,4 +7,5 @@ subscription ($id: ID!) {
     name
   }
 }
+
 # acme:provenance sha256:4f4a2f5be9d038de70680d8c2305df01a2a387c84dda47e0e4221b19e0642317

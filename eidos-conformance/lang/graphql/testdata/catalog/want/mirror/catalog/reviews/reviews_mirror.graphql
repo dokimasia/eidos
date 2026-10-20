@@ -23,4 +23,5 @@ extend type Product {
   "The reviews of the product."
   reviews(first: Int = 10): [Review!]!
 }
+
 # acme:provenance sha256:f6c79c0135c30ad9130afaaec53c3e86c023b0bbb3b2756d3cdb3a7d1c66efcc

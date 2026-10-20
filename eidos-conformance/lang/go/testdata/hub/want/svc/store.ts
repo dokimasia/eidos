@@ -17,4 +17,5 @@ export interface Store {
   get(key: string): Promise<Session>;
   put(s: Session): Promise<void>;
 }
+
 // acme:provenance sha256:0e67a9149f6c9a6430eafaae8490c6b3a4a9da120ffd37136aa87a3c7c284eb6

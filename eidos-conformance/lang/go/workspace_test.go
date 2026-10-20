@@ -21,10 +21,13 @@ import (
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
+	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	eidos "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
+	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
 // These constants name the workspace fixture's trees, the files its
@@ -50,6 +53,42 @@ const (
 	genModule                = "example.com/tools/gen"
 )
 
+// The generator of a test family that tests svc from outside, the word of
+// the family, the file that it writes beside the store, the name of the
+// field of each check, the extension of a Go file, and the lines of the
+// file that declare the external test package of svc, import svc and
+// qualify Session.
+const (
+	checksID       plugin.ID = "checks"
+	checkWord                = "check"
+	checkFile                = "svc/store_check_test.go"
+	subjectName              = "subject"
+	goExt                    = ".go"
+	externalClause           = "package svc_test\n"
+	svcImport                = "\t\"" + acmeModule + "/svc\"\n"
+	subjectField             = "\tSubject svc.Session\n"
+)
+
+// The files of a tree that vendors the module example.com/dep, the pattern
+// that admits every directory of the tree, the generator that writes a
+// probe of each struct, the word of its family, and the probes of the
+// struct of svc and of the struct of the vendored package.
+const (
+	goModFile       = "go.mod"
+	modulesFile     = "vendor/modules.txt"
+	pointFile       = "vendor/example.com/dep/dep.go"
+	vendoredMod     = "module " + acmeModule + "\n\ngo 1.27\n\nrequire example.com/dep v1.0.0\n"
+	vendoredModules = "# example.com/dep v1.0.0\n## explicit; go 1.27\nexample.com/dep\n"
+	vendoredStore   = "package svc\n\nimport \"example.com/dep\"\n\n" +
+		"// Store keeps a point.\ntype Store struct {\n\tAt dep.Point\n}\n"
+	vendoredPoint           = "package dep\n\n// Point is a point.\ntype Point struct {\n\tX int\n}\n"
+	allSources              = "./..."
+	probesID      plugin.ID = "probes"
+	probeWord               = "probe"
+	storeProbe              = "svc/store_probe.go"
+	pointProbe              = "vendor/example.com/dep/dep_probe.go"
+)
+
 // sight is what the peek generator's reader returned: whether it
 // returned the struct the generator matched, how many origins of the
 // export of golang.StubsPlan the generator looked up, and how many of
@@ -64,8 +103,9 @@ type sight struct {
 // svc, the registry plan reads its export and aliases each double in
 // admin, each plan's reader returns only its own directories, a check
 // reads the records, and neither of two workspaces of one repository
-// reads or changes the other's files. The fixture's edit renames a
-// parameter of an interface the stubs plan doubles.
+// reads or changes the other's files. A test file of an external family
+// declares the external test package of its directory. The fixture's edit
+// renames a parameter of an interface the stubs plan doubles.
 func TestWorkspace(t *testing.T) {
 	t.Parallel()
 
@@ -160,6 +200,46 @@ func TestWorkspace(t *testing.T) {
 				"the generator's workspace is unchanged")
 			files.Absent(t, filepath.Join(platform, filepath.FromSlash(registryFile)),
 				"the platform removes the registry plan's file")
+		})
+
+		t.Run("writes a test file of an external family into the external test package of svc", func(t *testing.T) {
+			t.Parallel()
+
+			expect.That(t, files.Read(t, filepath.Join(externalRoot(t), filepath.FromSlash(checkFile)))).
+				Contains(externalClause, "the file declares the external test package of svc").
+				Contains(svcImport, "the file imports the package under test").
+				Contains(subjectField, "the file qualifies the reference into the package under test")
+		})
+
+		t.Run("writes a test file of an external family that go vet passes", func(t *testing.T) {
+			t.Parallel()
+
+			if !toolchain.Require(t, gotesting.New()) {
+				return
+			}
+			root := externalRoot(t)
+			gotesting.AssertVets(t.Context(), t,
+				workspacetest.Generated(t, root, golang.Brand, os.DirFS(workspaceTree), goExt))
+		})
+
+		t.Run("writes no file for a struct of a vendored package", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{
+				goModFile:   files.Text(vendoredMod),
+				storeFile:   files.Text(vendoredStore),
+				modulesFile: files.Text(vendoredModules),
+				pointFile:   files.Text(vendoredPoint),
+			})
+			read := &atomic.Bool{}
+			plan := golang.WorkspacePlans()[0]
+			plan.Sources = workspace.Sources{Packages: []string{allSources}}
+			plan.Generators = []plugin.Generator{probes(read)}
+			runClean(t, root, []workspace.Plan{plan})
+			assert.True(t, read.Load(), "the reader of the plan returns the struct of the vendored package")
+			files.IsFile(t, filepath.Join(root, filepath.FromSlash(storeProbe)), "the rule runs on the struct of svc")
+			files.Absent(t, filepath.Join(root, filepath.FromSlash(pointProbe)),
+				"the rule does not run on the struct of the vendored package")
 		})
 	})
 
@@ -279,6 +359,61 @@ func peek(seen *sight) plugin.Generator {
 			return nil
 		})).
 		Generator()
+}
+
+// checks returns a generator that writes a check of each struct of its
+// scope into a test family whose files test their package from outside.
+// The check has a field of the type of the struct, so the file refers to a
+// declaration of the package under test.
+func checks() plugin.Generator {
+	return eidos.NewPlugin(checksID).
+		Output(plugin.Output{Tag: eidos.TagTest, Per: plugin.PerSource, Word: checkWord, External: true}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			s := m.Struct
+			check := &emit.Struct{Origin: s.ID, Name: checkWord + s.Name, Visibility: symbol.VisibilityPublic}
+			check.Fields.Append(&emit.Field{
+				Name:       subjectName,
+				Visibility: symbol.VisibilityPublic,
+				Type:       &emit.TypeRef{Spelling: s.Name, Target: s.ID},
+			})
+			e.File(eidos.TagTest).Append(check)
+			return nil
+		})).
+		Generator()
+}
+
+// probes returns a generator that writes a probe of each struct of its
+// scope beside the source of the struct. It stores into read whether its
+// reader returns the declaration that the type of the first field of a
+// struct refers to.
+func probes(read *atomic.Bool) plugin.Generator {
+	return eidos.NewPlugin(probesID).
+		Output(plugin.Output{Per: plugin.PerSource, Word: probeWord}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			s := m.Struct
+			if len(s.Fields) > 0 && s.Fields[0].Type != nil {
+				_, found := m.Reader().Lookup(s.Fields[0].Type.Target)
+				read.Store(found)
+			}
+			e.File().Append(&emit.Struct{Origin: s.ID, Name: probeWord + s.Name, Visibility: symbol.VisibilityPublic})
+			return nil
+		})).
+		Generator()
+}
+
+// externalRoot copies the workspace fixture's tree into a new directory,
+// runs the stubs plan with the generator of checks after its own over it,
+// and returns the directory. The generator of the plan registers the
+// schema of the stub directive of the tree. The run is clean.
+func externalRoot(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	copyTree(t, root, workspaceTree)
+	plan := golang.WorkspacePlans()[0]
+	plan.Generators = append(plan.Generators, checks())
+	runClean(t, root, []workspace.Plan{plan})
+	return root
 }
 
 // copyTree copies a testdata tree into root, beside what root already

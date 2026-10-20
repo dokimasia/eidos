@@ -13,4 +13,5 @@ query Lookup($id: ID!) {
     }
   }
 }
+
 # acme:provenance sha256:e6f2edba038a663953b4205d216d7eabaa7c761e4d137ad2ff030025e07f571f
