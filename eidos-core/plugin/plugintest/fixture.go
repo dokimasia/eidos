@@ -100,10 +100,10 @@ func (f *Fixture) Load(tb assert.TB, pkgs ...*node.Package) *Fixture {
 	return f
 }
 
-// LoadDependencies adds parsed packages that a dependency round loaded to
-// the graph, such as the packages of a store. The phase calls treat them as
-// a run treats them: a rule of the generate phase does not run on their
-// declarations, and an annotator and a rule of the emit phase do.
+// LoadDependencies adds parsed packages of a dependency round to the graph.
+// The packages of a store are such packages. A rule of the generate phase
+// does not run on their declarations, and an annotator and a rule of the
+// emit phase do. A run treats them the same way.
 func (f *Fixture) LoadDependencies(tb assert.TB, pkgs ...*node.Package) *Fixture {
 	tb.Helper()
 

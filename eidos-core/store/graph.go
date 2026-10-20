@@ -90,7 +90,7 @@ type Graph struct {
 	// enumeration is deterministic without sorting per call.
 	pkgOrder []*node.Package
 	// dependencies contains the packages that [Graph.AddDependencyPackage]
-	// added. Freeze builds it, and it is nil where no such package arrived.
+	// added. Freeze builds it. It is nil when no such package was added.
 	dependencies map[symbol.Identity]bool
 
 	// directives contains the raw directive instances per subject.
@@ -163,11 +163,11 @@ func (g *Graph) AddPackage(p *node.Package) error {
 	return g.add(p, false)
 }
 
-// AddDependencyPackage adds a parsed package that a dependency round
-// loaded, as [Graph.AddPackage] adds a package. After [Graph.Freeze],
-// [Graph.Dependency] reports true for the package and each of its
-// declarations. A load that builds its graph through [New], such as the
-// fixture of a test, marks the packages of a store this way.
+// AddDependencyPackage adds a parsed package of a dependency round in the
+// same way as [Graph.AddPackage]. After [Graph.Freeze], [Graph.Dependency]
+// reports true for the package and each of its declarations. A load that
+// builds its graph through [New] marks the packages of a store this way.
+// The fixture of a test is such a load.
 //
 // Error modes: the errors of [Graph.AddPackage].
 func (g *Graph) AddDependencyPackage(p *node.Package) error {
@@ -176,8 +176,7 @@ func (g *Graph) AddDependencyPackage(p *node.Package) error {
 
 // Freeze seals the graph and builds its indexes. It is idempotent, and
 // a graph [Sealed] returned is frozen from the start. It also builds the
-// set of the packages that [Graph.AddDependencyPackage] added, where it
-// added one.
+// set of the packages that [Graph.AddDependencyPackage] added.
 //
 // A repeated identity keeps the declaration indexed last. Telling
 // two declarations under one identity apart belongs to the step that
@@ -348,12 +347,12 @@ func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool) {
 // Dependency reports whether a dependency round loaded the package of an
 // identity, untracked. A dependency round loads the packages of a store
 // and the vendored packages that the selection of a frontend does not
-// claim. A package is a dependency package where [RegionInfo.Dependency]
-// marks every region of it, and in a graph [New] returned where
-// [Graph.AddDependencyPackage] added it. Dependency reports false for a
-// package that the regions do not list, for a package that
-// [Graph.AddPackage] added, and before [Graph.Freeze]. It does not decode
-// a region or allocate.
+// claim. A package of a graph [Sealed] returned is a dependency package
+// when [RegionInfo.Dependency] marks every region of it. A package of a
+// graph [New] returned is one when [Graph.AddDependencyPackage] added it.
+// Dependency reports false for a package that the regions do not list, for
+// a package that [Graph.AddPackage] added, and before [Graph.Freeze]. It
+// does not decode a region or allocate.
 func (g *Graph) Dependency(id symbol.Identity) bool {
 	if g.lazy != nil {
 		return g.lazy.dependency(owningPackage(id))
@@ -374,8 +373,8 @@ func (g *Graph) Damaged() error {
 	return g.lazy.damaged()
 }
 
-// add adds a parsed package, and marks it as a dependency package where
-// dependency is set. It returns the errors of [Graph.AddPackage].
+// add adds a parsed package and marks it as a dependency package when
+// dependency is true. It returns the errors of [Graph.AddPackage].
 func (g *Graph) add(p *node.Package, dependency bool) error {
 	if p == nil {
 		return errors.New("store: no package to add")
