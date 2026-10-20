@@ -32,7 +32,7 @@ require (
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9 // indirect
 	github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed // indirect
 	github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20 // indirect
-	github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4 // indirect
+	github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260716134002-a9b348f0a2b9 // indirect

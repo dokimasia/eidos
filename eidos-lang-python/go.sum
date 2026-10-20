@@ -2,8 +2,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20 h1:tlt0HOA7wJXw+l6LtHqHb+m3ievfQCAnE4dnrN+6v+I=
 github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20/go.mod h1:iHCOyeR+7461i52Odey1nLJnBiY0bqXQKKv46ild+9s=
-github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4 h1:8BLAplFETeMqYVHoKvEtDSrQhqdXCvQKTDSVNBBy+6k=
-github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4/go.mod h1:JSxh+6CN/ncWDvjQShtpELPRGTKqiOpJtpFIVlLNeeM=
+github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a h1:FbiFjcBUms1PG3wyCMwHvNJ14Op0j3D3xV1ZsJMSZQg=
+github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a/go.mod h1:JSxh+6CN/ncWDvjQShtpELPRGTKqiOpJtpFIVlLNeeM=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
 github.com/mattn/go-pointer v0.0.1/go.mod h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnUbNvJZAlc=
 github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=

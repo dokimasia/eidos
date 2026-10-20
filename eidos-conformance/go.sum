@@ -18,8 +18,8 @@ github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed h1:gYntEuyR
 github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed/go.mod h1:cvFaMOmeFDhTssYmr3kYNqCDl4dtmTc6d3NkG9O7zPo=
 github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20 h1:tlt0HOA7wJXw+l6LtHqHb+m3ievfQCAnE4dnrN+6v+I=
 github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20/go.mod h1:iHCOyeR+7461i52Odey1nLJnBiY0bqXQKKv46ild+9s=
-github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4 h1:8BLAplFETeMqYVHoKvEtDSrQhqdXCvQKTDSVNBBy+6k=
-github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4/go.mod h1:JSxh+6CN/ncWDvjQShtpELPRGTKqiOpJtpFIVlLNeeM=
+github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a h1:FbiFjcBUms1PG3wyCMwHvNJ14Op0j3D3xV1ZsJMSZQg=
+github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a/go.mod h1:JSxh+6CN/ncWDvjQShtpELPRGTKqiOpJtpFIVlLNeeM=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
