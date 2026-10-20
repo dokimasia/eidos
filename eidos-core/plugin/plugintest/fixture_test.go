@@ -455,6 +455,53 @@ func TestFixture(t *testing.T) {
 		})
 	})
 
+	t.Run("LoadDependencies", func(t *testing.T) {
+		t.Parallel()
+
+		gamma := coretest.Struct(coretest.CachePath, "Gamma")
+
+		t.Run("adds packages that the graph reports as dependency packages", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.New(t).LoadDependencies(t, coretest.Package(coretest.CachePath, gamma))
+			f.Graph.Freeze()
+			assert.True(t, f.Graph.Dependency(gamma.ID), "the graph marks the declaration of the dependency package")
+		})
+
+		t.Run("dispatches no rule of the generate phase on a declaration of a dependency package", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			f.LoadDependencies(t, coretest.Package(coretest.CachePath, gamma))
+			var visited []string
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+					visited = append(visited, m.Struct.Name)
+					return nil
+				})).
+				Generator()
+			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
+			assert.Equal(t, visited, []string{"Alpha", "Beta"}, "the generator visits the sources of the fixture alone")
+		})
+
+		t.Run("dispatches an annotator on a declaration of a dependency package", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			f.LoadDependencies(t, coretest.Package(coretest.CachePath, gamma))
+			var visited []string
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
+					visited = append(visited, m.Struct.Name)
+					return nil
+				})).
+				Annotator()
+			assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
+			assert.Permutation(t, visited, []string{"Alpha", "Beta", "Gamma"},
+				"the annotator visits the dependency package too")
+		})
+	})
+
 	t.Run("Key", func(t *testing.T) {
 		t.Parallel()
 

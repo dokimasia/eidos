@@ -170,6 +170,40 @@ func TestGraph(t *testing.T) {
 		})
 	})
 
+	t.Run("AddDependencyPackage", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("adds a package the graph then contains", func(t *testing.T) {
+			t.Parallel()
+
+			decl := coretest.Struct(coretest.CachePath, "Cache")
+			g := store.New()
+			assert.NoError(t, g.AddDependencyPackage(coretest.Package(coretest.CachePath, decl)),
+				"the dependency package is admitted")
+			g.Freeze()
+
+			_, held := g.Lookup(decl.ID)
+			assert.True(t, held, "the graph contains what AddDependencyPackage added")
+		})
+
+		t.Run("returns DuplicatePackage for a package that AddPackage added", func(t *testing.T) {
+			t.Parallel()
+
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath)), "the first add is admitted")
+
+			err := g.AddDependencyPackage(coretest.Package(coretest.StorePath))
+			assertRefused(t, err, store.DuplicatePackage)
+		})
+
+		t.Run("returns FrozenWrite for a write after Freeze", func(t *testing.T) {
+			t.Parallel()
+
+			err := coretest.Frozen(t).AddDependencyPackage(coretest.Package(coretest.CachePath))
+			assertRefused(t, err, store.FrozenWrite)
+		})
+	})
+
 	t.Run("Sealed", func(t *testing.T) {
 		t.Parallel()
 
@@ -484,6 +518,51 @@ func TestGraph(t *testing.T) {
 			assert.False(t, g.Dependency(coretest.PackageID(coretest.StorePath)),
 				"a graph without regions has no dependency round")
 		})
+
+		lib := coretest.Struct(coretest.CachePath, "Cache")
+		added := []struct {
+			name string
+			give symbol.Identity
+			want bool
+		}{
+			{
+				name: "reports true for a declaration of a package that AddDependencyPackage added",
+				give: lib.ID,
+				want: true,
+			},
+			{
+				name: "reports true for a package that AddDependencyPackage added",
+				give: coretest.PackageID(coretest.CachePath),
+				want: true,
+			},
+			{
+				name: "reports false for a package that AddPackage added beside a dependency package",
+				give: coretest.PackageID(coretest.StorePath),
+			},
+		}
+		for _, tt := range added {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				g := store.New()
+				assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath)), "the package is admitted")
+				assert.NoError(t, g.AddDependencyPackage(coretest.Package(coretest.CachePath, lib)),
+					"the dependency package is admitted")
+				g.Freeze()
+				assert.Equal(t, g.Dependency(tt.give), tt.want,
+					"a package is a dependency package where AddDependencyPackage added it")
+			})
+		}
+
+		t.Run("reports false for a dependency package before Freeze", func(t *testing.T) {
+			t.Parallel()
+
+			g := store.New()
+			assert.NoError(t, g.AddDependencyPackage(coretest.Package(coretest.CachePath)),
+				"the dependency package is admitted")
+			assert.False(t, g.Dependency(coretest.PackageID(coretest.CachePath)),
+				"the mark of a dependency package applies from the seal on")
+		})
 	})
 
 	t.Run("ByKind", func(t *testing.T) {
@@ -633,6 +712,14 @@ func TestGraphAllocs(t *testing.T) {
 	expect.True(t, holds, "Holds reports the loaded declaration")
 	expect.NoError(t, err, "a loaded graph decodes nothing, so nothing is damaged")
 	expect.False(t, dependency, "a loaded graph has no dependency round")
+	dependent := store.New()
+	assert.NoError(t, dependent.AddDependencyPackage(coretest.Package(coretest.CachePath)),
+		"the dependency package is admitted")
+	dependent.Freeze()
+	marked := coretest.PackageID(coretest.CachePath)
+	assert.MaxAllocs(t, func() { dependency = dependent.Dependency(marked) }, 0,
+		"Dependency allocates nothing for a package that AddDependencyPackage added")
+	assert.True(t, dependency, "Dependency reports the added dependency package")
 	var held bool
 	assert.MaxAllocs(t, func() { _, held = g.Lookup(hit) }, 0, "Lookup allocates nothing")
 	assert.True(t, held, "Lookup finds the loaded declaration")

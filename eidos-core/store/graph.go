@@ -25,9 +25,10 @@ const kindSlots = math.MaxUint8 + 1
 // Graph is the run's node declarations.
 //
 // A graph comes from one of two constructors. [New] returns an empty
-// graph that a load fills through [Graph.AddPackage] and the attach
-// methods and seals with [Graph.Freeze]. [Sealed] returns a frozen graph
-// over a [Source]'s regions, which decode on first use.
+// graph that a load fills through [Graph.AddPackage],
+// [Graph.AddDependencyPackage] and the attach methods and seals with
+// [Graph.Freeze]. [Sealed] returns a frozen graph over a [Source]'s
+// regions, which decode on first use.
 //
 // # Concurrency
 //
@@ -88,6 +89,9 @@ type Graph struct {
 	// pkgOrder lists the same packages in identity order, so an
 	// enumeration is deterministic without sorting per call.
 	pkgOrder []*node.Package
+	// dependencies contains the packages that [Graph.AddDependencyPackage]
+	// added. Freeze builds it, and it is nil where no such package arrived.
+	dependencies map[symbol.Identity]bool
 
 	// directives contains the raw directive instances per subject.
 	// The seal sorts them and builds the directive index beside the
@@ -143,6 +147,9 @@ type loadedPackage struct {
 	// decls lists the identity-bearing declarations, in identity
 	// order. Freeze releases it once the indexes contain them.
 	decls []node.Declaration
+	// dependency is set for a package that [Graph.AddDependencyPackage]
+	// added.
+	dependency bool
 }
 
 // AddPackage adds a parsed package.
@@ -153,35 +160,24 @@ type loadedPackage struct {
 // A nil package and a package that names no identity return a plain
 // error, because only a defect produces either.
 func (g *Graph) AddPackage(p *node.Package) error {
-	if p == nil {
-		return errors.New("store: no package to add")
-	}
-	if p.ID.IsZero() {
-		return errors.New("store: the package names no identity, so nothing can index it")
-	}
+	return g.add(p, false)
+}
 
-	g.seal.RLock()
-	defer g.seal.RUnlock()
-
-	if g.frozen {
-		return &RefusedError{Code: FrozenWrite, Msg: p.ID.String() + " is added after Freeze"}
-	}
-	entry := &loadedPackage{pkg: p}
-	if _, held := g.packages.LoadOrStore(p.ID, entry); held {
-		return &RefusedError{Code: DuplicatePackage, Msg: p.ID.String() + " is added twice"}
-	}
-
-	// The walk runs here, on the frontend's goroutine, so the one
-	// traversal every declaration needs parallelizes with loading, and
-	// Freeze ranges flat slices. The entry is filled after it is
-	// stored, which no reader can observe: a duplicate add never reads
-	// it, and Freeze orders after every add through the seal.
-	entry.decls = g.collect(p)
-	return nil
+// AddDependencyPackage adds a parsed package that a dependency round
+// loaded, as [Graph.AddPackage] adds a package. After [Graph.Freeze],
+// [Graph.Dependency] reports true for the package and each of its
+// declarations. A load that builds its graph through [New], such as the
+// fixture of a test, marks the packages of a store this way.
+//
+// Error modes: the errors of [Graph.AddPackage].
+func (g *Graph) AddDependencyPackage(p *node.Package) error {
+	return g.add(p, true)
 }
 
 // Freeze seals the graph and builds its indexes. It is idempotent, and
-// a graph [Sealed] returned is frozen from the start.
+// a graph [Sealed] returned is frozen from the start. It also builds the
+// set of the packages that [Graph.AddDependencyPackage] added, where it
+// added one.
 //
 // A repeated identity keeps the declaration indexed last. Telling
 // two declarations under one identity apart belongs to the step that
@@ -231,6 +227,12 @@ func (g *Graph) Freeze() {
 		for _, entry := range loaded {
 			g.byPkg[entry.pkg.ID] = entry.pkg
 			g.pkgOrder = append(g.pkgOrder, entry.pkg)
+			if entry.dependency {
+				if g.dependencies == nil {
+					g.dependencies = map[symbol.Identity]bool{}
+				}
+				g.dependencies[entry.pkg.ID] = true
+			}
 			for _, decl := range entry.decls {
 				g.byKind[decl.Kind()] = append(g.byKind[decl.Kind()], decl)
 			}
@@ -347,11 +349,16 @@ func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool) {
 // identity, untracked. A dependency round loads the packages of a store
 // and the vendored packages that the selection of a frontend does not
 // claim. A package is a dependency package where [RegionInfo.Dependency]
-// marks every region of it. Dependency reports false for a package that
-// the regions do not list, and for every package of a graph [New]
-// returned. It does not decode a region or allocate.
+// marks every region of it, and in a graph [New] returned where
+// [Graph.AddDependencyPackage] added it. Dependency reports false for a
+// package that the regions do not list, for a package that
+// [Graph.AddPackage] added, and before [Graph.Freeze]. It does not decode
+// a region or allocate.
 func (g *Graph) Dependency(id symbol.Identity) bool {
-	return g.lazy != nil && g.lazy.dependency(owningPackage(id))
+	if g.lazy != nil {
+		return g.lazy.dependency(owningPackage(id))
+	}
+	return g.dependencies[owningPackage(id)]
 }
 
 // Damaged returns the first failure of a [Source] to decode a region of
@@ -365,6 +372,36 @@ func (g *Graph) Damaged() error {
 		return nil
 	}
 	return g.lazy.damaged()
+}
+
+// add adds a parsed package, and marks it as a dependency package where
+// dependency is set. It returns the errors of [Graph.AddPackage].
+func (g *Graph) add(p *node.Package, dependency bool) error {
+	if p == nil {
+		return errors.New("store: no package to add")
+	}
+	if p.ID.IsZero() {
+		return errors.New("store: the package names no identity, so nothing can index it")
+	}
+
+	g.seal.RLock()
+	defer g.seal.RUnlock()
+
+	if g.frozen {
+		return &RefusedError{Code: FrozenWrite, Msg: p.ID.String() + " is added after Freeze"}
+	}
+	entry := &loadedPackage{pkg: p, dependency: dependency}
+	if _, held := g.packages.LoadOrStore(p.ID, entry); held {
+		return &RefusedError{Code: DuplicatePackage, Msg: p.ID.String() + " is added twice"}
+	}
+
+	// The walk runs here, on the frontend's goroutine, so the one
+	// traversal every declaration needs parallelizes with loading, and
+	// Freeze ranges flat slices. The entry is filled after it is
+	// stored, which no reader can observe: a duplicate add never reads
+	// it, and Freeze orders after every add through the seal.
+	entry.decls = g.collect(p)
+	return nil
 }
 
 // collect returns one package's identity-bearing declarations in

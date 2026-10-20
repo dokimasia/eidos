@@ -38,21 +38,26 @@ type Source struct {
 	// Plugins are the plugins whose keys the fixture registers and whose
 	// directives it validates.
 	Plugins []plugin.Plugin
-	// Packages are the paths of the packages that the fixture contains, and
-	// nil contains every package of the load.
+	// Packages are the paths of the packages of the tree that the fixture
+	// contains, and nil contains every package of the load. The fixture
+	// contains each package that a dependency round loaded in either case,
+	// as a plan admits it.
 	Packages []string
 }
 
 // Loaded loads the source into a fixture, as a workspace prepares its first
 // phase call. It loads the tree under the context of tb, and adds the
-// packages of the source to the graph of the fixture. It registers the
-// kernel's keys, the keys of each frontend under its language and the keys
-// of each plugin under its name, and seals the registry. It registers the
-// kernel's schemas and the schemas of each plugin. It files the
-// classification stamps of each declaration of the packages under
-// [meta.LoadClaim]. It validates the directives of each declaration whose
-// schema it registered, and binds each reference through the rules of the
-// language of the subject in the scope of the file of the subject.
+// packages of the source to the graph of the fixture. It adds each package
+// that a dependency round loaded through [Fixture.LoadDependencies], so a
+// walk crosses into it and a rule of the generate phase skips it, as in a
+// plan. It registers the kernel's keys, the keys of each frontend under its
+// language and the keys of each plugin under its name, and seals the
+// registry. It registers the kernel's schemas and the schemas of each
+// plugin. It files the classification stamps of each declaration of the
+// packages under [meta.LoadClaim]. It validates the directives of each
+// declaration whose schema it registered, and binds each reference through
+// the rules of the language of the subject in the scope of the file of the
+// subject.
 //
 // The registry is sealed, so a test that needs the keys of another plugin
 // lists the plugin in Plugins instead of calling [Key] afterwards.
@@ -94,11 +99,16 @@ func Loaded(tb assert.TB, s Source) *Fixture {
 	view := rules.NewView(reader, f.Facts, nil, f.Kernel)
 	found := map[string]bool{}
 	for pkg := range g.Packages() {
-		if s.Packages != nil && !slices.Contains(s.Packages, pkg.ID.Package) {
+		dependency := g.Dependency(pkg.ID)
+		if !dependency && s.Packages != nil && !slices.Contains(s.Packages, pkg.ID.Package) {
 			continue
 		}
 		found[pkg.ID.Package] = true
-		f.Load(tb, pkg)
+		if dependency {
+			f.LoadDependencies(tb, pkg)
+		} else {
+			f.Load(tb, pkg)
+		}
 		for d := range node.Declarations(pkg) {
 			id := d.Identity()
 			for i, st := range g.StampsOf(id) {

@@ -38,6 +38,18 @@ const (
 	sealedDoc     = "a key that a test registers after the seal"
 )
 
+// The scripted tree of the dependency cases. Its package app imports the
+// package ext/lib, which a dependency round loads from the store of the
+// scripted language.
+const (
+	appFile    = "app/main.zz"
+	appPackage = "app"
+	appSource  = "package app\nimport ext " + libPackage + "\ntype App ext.Lib\n"
+	libFile    = "ext/lib/lib.zz"
+	libPackage = "ext/lib"
+	libSource  = "package " + libPackage + "\ntype Lib string\n"
+)
+
 // keyedFront is the scripted frontend that registers its classification
 // key through its own role.
 type keyedFront struct{ *frontendtest.Scripted }
@@ -77,6 +89,34 @@ func TestSource(t *testing.T) {
 			f := plugintest.Loaded(t, source([]string{storePackage}))
 			assert.Equal(t, packagesOf(f), []string{storePackage}, "the graph has the named package")
 		})
+
+		t.Run("adds each dependency package of the load beside the packages that the source names", func(t *testing.T) {
+			t.Parallel()
+
+			f := plugintest.Loaded(t, dependentSource([]string{appPackage}))
+			assert.Equal(t, packagesOf(f), []string{appPackage, libPackage},
+				"the graph has the named package and the package of the store")
+		})
+
+		dependencies := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "marks a dependency package of the load as a dependency", give: libPackage, want: true},
+			{name: "marks no package of the tree as a dependency", give: appPackage},
+		}
+		for _, tt := range dependencies {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := plugintest.Loaded(t, dependentSource([]string{appPackage}))
+				f.Graph.Freeze()
+				pkg := symbol.Identity{Lang: frontendtest.ScriptedLang, Package: tt.give, Kind: symbol.KindPackage}
+				assert.Equal(t, f.Graph.Dependency(pkg), tt.want,
+					"the fixture marks the packages of a dependency round")
+			})
+		}
 
 		t.Run("files the classification stamps of the load", func(t *testing.T) {
 			t.Parallel()
@@ -170,6 +210,21 @@ func source(packages []string) plugintest.Source {
 		Brand:     frontendtest.Brand,
 		Frontends: []plugin.Frontend{keyedFront{frontendtest.NewScripted()}},
 		Plugins:   []plugin.Plugin{tabling{}},
+		Packages:  packages,
+	}
+}
+
+// dependentSource returns the scripted source of the dependency cases,
+// which contains the packages in packages and the store of the scripted
+// language with the package ext/lib.
+func dependentSource(packages []string) plugintest.Source {
+	return plugintest.Source{
+		Tree: fstest.MapFS{appFile: {Data: []byte(appSource)}},
+		Stores: map[string]fs.FS{
+			frontendtest.ScriptedStore: fstest.MapFS{libFile: {Data: []byte(libSource)}},
+		},
+		Brand:     frontendtest.Brand,
+		Frontends: []plugin.Frontend{frontendtest.NewScriptedDependent()},
 		Packages:  packages,
 	}
 }

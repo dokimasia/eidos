@@ -100,6 +100,17 @@ func (f *Fixture) Load(tb assert.TB, pkgs ...*node.Package) *Fixture {
 	return f
 }
 
+// LoadDependencies adds parsed packages that a dependency round loaded to
+// the graph, such as the packages of a store. The phase calls treat them as
+// a run treats them: a rule of the generate phase does not run on their
+// declarations, and an annotator and a rule of the emit phase do.
+func (f *Fixture) LoadDependencies(tb assert.TB, pkgs ...*node.Package) *Fixture {
+	tb.Helper()
+
+	assert.Total(tb, f.Graph.AddDependencyPackage, pkgs, "the fixture dependency package is admitted")
+	return f
+}
+
 // Attach records raw directive instances on a subject, before the first
 // phase call seals the graph.
 func (f *Fixture) Attach(

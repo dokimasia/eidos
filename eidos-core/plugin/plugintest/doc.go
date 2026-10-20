@@ -13,15 +13,18 @@
 // phase over it and return the [Result] to assert on. Nothing
 // renders. The checks compare the emitted units as encoded bytes,
 // with the contributors of each unit, so determinism is checkable
-// without a backend.
+// without a backend. [Fixture.LoadDependencies] adds the packages of a
+// store, on whose declarations a rule of the generate phase does not run,
+// as in a run.
 //
 // [Loaded] builds a fixture from real source instead: it loads a
 // [Source] tree through its frontends, registers the keys of the
 // frontends and the plugins, files the classification stamps of the load,
 // and validates the directives of the plugins, as a workspace prepares
-// its first phase call. [Fixture.Layout] returns the input of the layout
-// of a plan over a fixture, so a spec of a backend routes the emitted
-// units as a workspace routes them.
+// its first phase call. It adds each package that a dependency round
+// loaded, beside the packages that the source lists. [Fixture.Layout]
+// returns the input of the layout of a plan over a fixture, so a spec of
+// a backend routes the emitted units as a workspace routes them.
 //
 // # The checks
 //
