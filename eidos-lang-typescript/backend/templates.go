@@ -26,10 +26,11 @@ const (
 	// and its methods with their bodies. Each member has its own doc
 	// block and decorators, and its keywords in the order of the
 	// TypeScript grammar. An optional member has a ? after its key. An
-	// abstract method is a signature alone. An index signature takes
-	// static and readonly alone. A constructing method renders in the
-	// constructor form with its accessibility alone, without a name and
-	// without results, because a TypeScript constructor has neither.
+	// abstract method and an overload signature are a signature alone. An
+	// index signature takes static and readonly alone. A constructing
+	// method renders in the constructor form with its accessibility alone,
+	// without a name and without results, because a TypeScript constructor
+	// has neither.
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{memberdocs .Doc}}{{memberdecorators .Annotations}}" +
@@ -38,10 +39,10 @@ const (
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{memberdecorators .Annotations}}" +
 		"{{if .Indexer}}  {{indexmods .}}{{indexsig .}}{{else if .Constructs}}" +
-		"  {{ctormods .}}constructor({{params .Params}}) {\n{{memberbody .}}  }{{else}}" +
+		"  {{ctormods .}}constructor({{params .Params}}){{if .Overload}};{{else}} {\n{{memberbody .}}  }{{end}}{{else}}" +
 		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{if .Optional}}?{{end}}" +
 		"{{typeparams .TypeParams}}({{params .Params}}){{returns .}}" +
-		"{{if .Abstract}};{{else}} {\n{{memberbody .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{if or .Abstract .Overload}};{{else}} {\n{{memberbody .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// InterfaceTemplate renders an interface with its type parameters
@@ -63,11 +64,12 @@ const (
 		"({{params .Params}}){{returns .}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
-	// FunctionTemplate renders a module-level function with its body.
-	// The function is async where the model marks it, and its type
-	// parameters follow the name.
+	// FunctionTemplate renders a module-level function with its body, and
+	// an overload signature without one. The function is async where the
+	// model marks it, and its type parameters follow the name.
 	FunctionTemplate = "{{docs .Doc}}{{mods .}}function {{.Name}}{{typeparams .TypeParams}}" +
-		"({{params .Params}}){{returns .}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
+		"({{params .Params}}){{returns .}}{{if .Overload}};{{else}} {\n{{body .}}}{{end}}" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate renders a type alias with its type parameters after
 	// the name.

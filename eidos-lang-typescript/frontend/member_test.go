@@ -33,11 +33,29 @@ func TestMember(t *testing.T) {
 	t.Run("classBody", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("leaves out a method's implementation after its overload signatures", func(t *testing.T) {
+		t.Run("lowers the implementation of a method after its overload signatures", func(t *testing.T) {
 			t.Parallel()
 
 			c := classOf(t, "  fill(a: string): void;\n  fill(a: number): void;\n  fill(a: any): void {}\n")
-			assert.Equal(t, methodNames(c.Methods), []string{"fill", "fill"}, "the two signatures callers see")
+			assert.Equal(t, methodNames(c.Methods), []string{"fill", "fill", "fill"},
+				"the two signatures and the implementation")
+			assert.Equal(t, overloadMarks(c.Methods), []bool{true, true, false}, "the signatures are marked")
+		})
+
+		t.Run("marks no abstract method signature as an overload signature", func(t *testing.T) {
+			t.Parallel()
+
+			c := classOf(t, "  abstract fill(a: string): void;\n  abstract fill(a: number): void;\n")
+			assert.Equal(t, overloadMarks(c.Methods), []bool{false, false}, "abstract signatures are no overloads")
+		})
+
+		t.Run("marks the overload signatures of a static name apart from an instance method", func(t *testing.T) {
+			t.Parallel()
+
+			c := classOf(t, "  static make(a: string): C;\n  static make(a: any): C { return new C(); }\n"+
+				"  make(a: number): void;\n")
+			assert.Equal(t, overloadMarks(c.Methods), []bool{true, false, false},
+				"the static signature and implementation are a name of their own")
 		})
 
 		t.Run("applies a decorator to the member after it", func(t *testing.T) {
@@ -58,13 +76,16 @@ func TestMember(t *testing.T) {
 				assert.Equal(t, m.Returns[0].Type.Spelling, "number", "the value")
 			})
 
-		t.Run("reports UnaddressedCarrier for a carrier on an overloaded method's implementation", func(t *testing.T) {
+		t.Run("attaches a carrier on an overloaded method's implementation to the method", func(t *testing.T) {
 			t.Parallel()
 
-			_, found := parsedSource(t, "export class C {\n  fill(a: string): void;\n  "+carrierLine+
+			gb, found := parsedSource(t, "export class C {\n  fill(a: string): void;\n  "+carrierLine+
 				"  fill(a: any): void {}\n}\n")
-			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
-				"the implementation declares nothing")
+			assert.Empty(t, found, "the implementation is a method")
+			assert.Length(t, gb.Attachments(), 1, "one directive")
+			implementation, onMethod := gb.Attachments()[0].Subject.(*node.Method)
+			assert.True(t, onMethod, "on a method")
+			assert.False(t, implementation.Overload, "on the implementation")
 		})
 
 		t.Run("reports UnaddressedCarrier for a carrier on a static block", func(t *testing.T) {
@@ -511,6 +532,16 @@ func fieldNames(fields []*node.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
 		out = append(out, f.Name)
+	}
+	return out
+}
+
+// overloadMarks returns whether each of methods is marked as an overload
+// signature, in order.
+func overloadMarks(methods []*node.Method) []bool {
+	out := make([]bool, 0, len(methods))
+	for _, m := range methods {
+		out = append(out, m.Overload)
 	}
 	return out
 }

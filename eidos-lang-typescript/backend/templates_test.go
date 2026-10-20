@@ -125,6 +125,40 @@ func TestTemplates(t *testing.T) {
 				"export function load(): Row {\n"+bodyStub+"}\n", "the function shape")
 		})
 
+		t.Run("writes an overload signature of a function without a body", func(t *testing.T) {
+			t.Parallel()
+
+			f := &emit.Function{
+				Name: "load", Overload: true, Params: emit.SlotOf(&emit.Param{Name: "id", Type: ref("number")}),
+				Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
+			}
+			assert.Equal(t, execute(t, kind(symbol.KindFunction), f),
+				"export function load(id: number): Row;\n", "the signature and a semicolon")
+		})
+
+		t.Run("writes an overload signature of a method without a body", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Box"}
+			s.Methods.Append(&emit.Method{
+				Name: "fill", Overload: true, Params: emit.SlotOf(&emit.Param{Name: "size", Type: ref("number")}),
+			})
+			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
+				"export class Box {\n  fill(size: number): void;\n}\n", "the signature and a semicolon")
+		})
+
+		t.Run("writes an overload signature of a constructor without a body", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Store"}
+			s.Methods.Append(&emit.Method{
+				Name: "make", Constructs: true, Overload: true,
+				Params: emit.SlotOf(&emit.Param{Name: "db", Type: ref("Db")}),
+			})
+			assert.Contains(t, execute(t, kind(symbol.KindStruct), s), "  constructor(db: Db);\n",
+				"the constructor form and a semicolon")
+		})
+
 		t.Run("writes an alias", func(t *testing.T) {
 			t.Parallel()
 

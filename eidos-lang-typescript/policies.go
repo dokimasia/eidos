@@ -5,8 +5,8 @@ package typescript
 
 import "go.dokimi.dev/eidos/sdk/plugin"
 
-// The lowering policies of the TypeScript target. Each policy chooses
-// between TypeScript's own type and the type that a JSON payload
+// The lowering policies of the TypeScript target. Each policy but [GRPC]
+// chooses between TypeScript's own type and the type that a JSON payload
 // delivers. Config selects a choice for every plan or for one plan, and
 // the param of the policy's name on the typescript directive overrides
 // the choice for one declaration.
@@ -30,6 +30,18 @@ const (
 	// declare a duration type of its own, so the default is the string
 	// that a JSON payload delivers.
 	Duration plugin.PolicyKey = "typescript.duration"
+	// GRPC chooses the gRPC binding of the code that a plan writes against
+	// a protobuf service: none, or Connect-ES, whose code uses the messages
+	// of protobuf-es.
+	GRPC plugin.PolicyKey = "typescript.grpc"
+)
+
+// The choices of [GRPC]. Under [GRPCNone] a reference to a protobuf
+// declaration spells as eidos translates the declaration. Under
+// [GRPCConnect] it spells as protobuf-es names the declaration.
+const (
+	GRPCNone    plugin.Choice = "none"
+	GRPCConnect plugin.Choice = "connect-es"
 )
 
 // The choices of the TypeScript policies. Each choice is the TypeScript
@@ -52,18 +64,19 @@ const (
 	timestampDoc = "the spelling of a point in time"
 	bytesDoc     = "the spelling of bytes"
 	durationDoc  = "the spelling of a span of time"
+	grpcDoc      = "the gRPC binding of the code that a plan writes against a protobuf service"
 )
 
-// Policies returns the specs of the five TypeScript policies. The
+// Policies returns the specs of the six TypeScript policies. The
 // defaults of four are TypeScript's own types: bigint, undefined, Date and
 // Uint8Array. The default of the duration is string, because TypeScript
-// does not declare a duration type. The backend declares them through the
-// backend kit.
+// does not declare a duration type, and the default of the binding of gRPC
+// is none. The backend declares them through the backend kit.
 //
 // # Allocation contract
 //
 // Policies allocates the list of specs and the list of choices of each
-// spec: six allocations.
+// spec: seven allocations.
 func Policies() []plugin.PolicySpec {
 	return []plugin.PolicySpec{
 		{Key: Int64, Choices: []plugin.Choice{BigInt, String, Number}, Default: BigInt, Doc: int64Doc},
@@ -71,5 +84,6 @@ func Policies() []plugin.PolicySpec {
 		{Key: Timestamp, Choices: []plugin.Choice{Date, String}, Default: Date, Doc: timestampDoc},
 		{Key: Bytes, Choices: []plugin.Choice{Uint8Array, String}, Default: Uint8Array, Doc: bytesDoc},
 		{Key: Duration, Choices: []plugin.Choice{String, Number}, Default: String, Doc: durationDoc},
+		{Key: GRPC, Choices: []plugin.Choice{GRPCNone, GRPCConnect}, Default: GRPCNone, Doc: grpcDoc},
 	}
 }

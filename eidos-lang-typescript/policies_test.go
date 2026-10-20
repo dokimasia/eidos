@@ -55,6 +55,10 @@ func TestPolicies(t *testing.T) {
 				name: "returns duration with string as its default", key: typescript.Duration,
 				spelling: "typescript.duration", choices: []plugin.Choice{"string", "number"}, def: "string",
 			},
+			{
+				name: "returns grpc with none as its default", key: typescript.GRPC,
+				spelling: "typescript.grpc", choices: []plugin.Choice{"none", "connect-es"}, def: "none",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -73,10 +77,10 @@ func TestPolicies(t *testing.T) {
 			})
 		}
 
-		t.Run("returns five policies", func(t *testing.T) {
+		t.Run("returns six policies", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Length(t, typescript.Policies(), 5, "int64, absent, timestamp, bytes and duration")
+			assert.Length(t, typescript.Policies(), 6, "int64, absent, timestamp, bytes, duration and grpc")
 		})
 	})
 }

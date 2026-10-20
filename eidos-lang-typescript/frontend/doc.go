@@ -48,10 +48,12 @@
 //
 // A class is a Struct, abstract where it states it, with its superclass
 // and interfaces. An interface is an Interface, an enum an Enum, const
-// where it states it, and a type alias an Alias. A function is one
-// Function for each overload signature, and the implementation of an
-// overloaded function declares nothing, because TypeScript hides it from
-// callers. A const is a Constant, and let and var are mutable Variables. A
+// where it states it, and a type alias an Alias. A function is a Function.
+// A function signature of a name that its scope declares more than once is
+// an overload signature with the mark Overload, and the implementation
+// after the signatures is a Function without the mark. A method signature
+// of a class is an overload signature in the same way. A const is a
+// Constant, and let and var are mutable Variables. A
 // decorator is an annotation of its declaration, with its arguments
 // verbatim. An anonymous default-exported class or function declares
 // under the name default. typescript.generator stamps a generator
@@ -160,8 +162,7 @@
 // directive to the class or the member that it decorates, and it remains
 // an annotation. A marker whose path is not a directive name, or whose
 // argument does not lift, reports under [BadMarker]. A marker on a
-// parameter or on the implementation of an overloaded method reports under
-// [UnaddressedCarrier].
+// parameter reports under [UnaddressedCarrier].
 //
 // # Classification
 //

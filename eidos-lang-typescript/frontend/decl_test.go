@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
@@ -16,6 +17,11 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
+
+// overloadedFunction declares two overload signatures of f and the
+// implementation after them.
+const overloadedFunction = "export function f(a: string): void;\nexport function f(a: number): void;\n" +
+	"export function f(a: any): void {}\n"
 
 // Each declaration kind maps to one model kind, so the shape every
 // kind lowers to is pinned.
@@ -67,28 +73,49 @@ func TestDecl(t *testing.T) {
 			named[*node.Struct](t, declsOf(t, "export default class {}\n"), "default")
 		})
 
-		t.Run("leaves out a function's implementation after its overload signatures", func(t *testing.T) {
+		t.Run("marks each function signature of an overloaded name as an overload signature", func(t *testing.T) {
 			t.Parallel()
 
-			decls := declsOf(t, "export function f(a: string): void;\nexport function f(a: number): void;\n"+
-				"export function f(a: any): void {}\n")
-			assert.Length(t, decls, 2, "one Function per signature, and none for the implementation")
+			decls := declsOf(t, overloadedFunction)
+			assert.Length(t, decls, 3, "the two signatures and the implementation")
+			expect.True(t, named[*node.Function](t, decls[:1], "f").Overload, "the first signature")
+			expect.True(t, named[*node.Function](t, decls[1:2], "f").Overload, "the second signature")
+		})
+
+		t.Run("lowers the implementation after the overload signatures without the mark", func(t *testing.T) {
+			t.Parallel()
+
+			decls := declsOf(t, overloadedFunction)
+			assert.Length(t, decls, 3, "the two signatures and the implementation")
+			assert.False(t, named[*node.Function](t, decls[2:], "f").Overload, "the implementation")
 		})
 
 		t.Run("keeps a function without overload signatures", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Length(t, declsOf(t, "export function f(a: string): void {}\n"), 1, "the function itself")
+			decls := declsOf(t, "export function f(a: string): void {}\n")
+			assert.Length(t, decls, 1, "the function itself")
+			assert.False(t, named[*node.Function](t, decls, "f").Overload, "a function of one declaration")
 		})
 
-		t.Run("reports UnaddressedCarrier for a carrier on an overloaded function's implementation",
+		t.Run("marks no lone ambient function signature as an overload signature", func(t *testing.T) {
+			t.Parallel()
+
+			decls := declsOf(t, "export declare function f(a: string): void;\n")
+			assert.False(t, named[*node.Function](t, decls, "f").Overload, "the declaration of an ambient function")
+		})
+
+		t.Run("attaches a carrier on an overloaded function's implementation to the implementation",
 			func(t *testing.T) {
 				t.Parallel()
 
-				_, found := parsedSource(t, "export function f(a: string): void;\n"+carrierLine+
+				gb, found := parsedSource(t, "export function f(a: string): void;\n"+carrierLine+
 					"export function f(a: any): void {}\n")
-				assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
-					"the implementation declares nothing")
+				assert.Empty(t, found, "the implementation is a declaration")
+				assert.Length(t, gb.Attachments(), 1, "one directive")
+				implementation, onFunction := gb.Attachments()[0].Subject.(*node.Function)
+				assert.True(t, onFunction, "on a function")
+				assert.False(t, implementation.Overload, "on the implementation")
 			})
 
 		t.Run("reports UnaddressedCarrier for a carrier on a top-level statement", func(t *testing.T) {

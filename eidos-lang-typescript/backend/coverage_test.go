@@ -66,6 +66,18 @@ func TestCoverage(t *testing.T) {
 				kind: symbol.KindEnum, fact: symbol.FactMethods, want: render.Refuses,
 			},
 			{
+				name: "returns Refuses for an enum's contracts",
+				kind: symbol.KindEnum, fact: symbol.FactImplements, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for a sum's contracts",
+				kind: symbol.KindSum, fact: symbol.FactImplements, want: render.Renders,
+			},
+			{
+				name: "returns Renders for an overload signature of a function",
+				kind: symbol.KindFunction, fact: symbol.FactOverload, want: render.Renders,
+			},
+			{
 				name: "returns Refuses for a function's throws",
 				kind: symbol.KindFunction, fact: symbol.FactThrows, want: render.Refuses,
 			},

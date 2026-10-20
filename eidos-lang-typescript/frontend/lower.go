@@ -360,8 +360,9 @@ func (l *lowering) anonymousDefault(value treesitter.Node) bool {
 }
 
 // statements lowers the declarations of one statement list into a
-// container. The lowering leaves out the implementation of a function
-// after its overload signatures, because TypeScript hides it from callers.
+// container. A function signature of a name that the list declares more
+// than once is an overload signature, and the implementation after the
+// signatures is a function of its own.
 func (l *lowering) statements(list treesitter.Node, c container) {
 	overloaded := l.overloaded(list)
 	for stmt := range list.NamedChildren() {
@@ -509,11 +510,11 @@ func (l *lowering) visibility(c container, exported bool, name string) symbol.Vi
 	return symbol.VisibilityPackage
 }
 
-// overloaded returns the names for which a statement list declares
-// overload signatures, which are function signatures without a body, so
-// the lowering leaves out the implementation after them.
+// overloaded returns the names that two or more callables of a statement
+// list declare: function signatures without a body and functions with
+// one. Each function signature of such a name is an overload signature.
 func (l *lowering) overloaded(list treesitter.Node) map[string]bool {
-	out := map[string]bool{}
+	counts := map[string]int{}
 	for decl := range list.NamedChildren() {
 		if decl.Kind() == l.v.exportStatement {
 			decl = decl.Child(l.v.fieldDeclaration)
@@ -521,8 +522,15 @@ func (l *lowering) overloaded(list treesitter.Node) map[string]bool {
 		if decl.Kind() == l.v.ambientDeclaration {
 			decl = decl.FirstOf(l.v.functionSignature)
 		}
-		if decl.Kind() == l.v.functionSignature {
-			out[l.nameText(decl.Child(l.v.fieldName))] = true
+		switch decl.Kind() {
+		case l.v.functionSignature, l.v.functionDeclaration, l.v.generatorFunctionDeclaration:
+			counts[l.nameText(decl.Child(l.v.fieldName))]++
+		}
+	}
+	out := make(map[string]bool, len(counts))
+	for name, n := range counts {
+		if n > 1 {
+			out[name] = true
 		}
 	}
 	return out

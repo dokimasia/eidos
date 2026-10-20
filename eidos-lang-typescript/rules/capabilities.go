@@ -169,7 +169,9 @@ func (r Rules) Properties(s *node.Struct, v rules.View) []rules.Property {
 }
 
 // Constructors returns the public constructor signatures of a class, one
-// per overload. A class without a constructor has the constructors of
+// per overload. The implementation of overloaded constructors is no
+// signature that callers see, so the list leaves it out. A class without a
+// constructor has the constructors of
 // the class that it extends, with the type arguments of the extends
 // clause substituted. A class whose chain ends at a global error class,
 // such as Error, has the constructor that TypeScript's standard library
@@ -209,7 +211,9 @@ func (r Rules) Constructors(s *node.Struct, v rules.View) []rules.Callable {
 				continue
 			}
 			declared = true
-			if m.Visibility != symbol.VisibilityPublic && m.Visibility != symbol.VisibilityUnknown {
+			if m.Visibility != symbol.VisibilityPublic && m.Visibility != symbol.VisibilityUnknown ||
+				rules.IsImplementation(m, s.Methods) {
+
 				continue
 			}
 			c, _ := b.CallableOf(m)

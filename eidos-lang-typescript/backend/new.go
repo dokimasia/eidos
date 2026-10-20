@@ -18,14 +18,17 @@ const memberIndent = "  "
 // New returns the TypeScript rendering backend: the module's declared
 // pieces composed through the kernel's kit into a [backend.Backend]. Its
 // spoke is [spell.Type], which spells a type of another language under
-// the target's lowering policies, [typescript.Policies]. Rendered files
-// finalise through the shared normalizer, which strips trailing
-// whitespace and blank-line runs and keeps the templates' spelling
-// otherwise, because the module does not include a printer and
+// the target's lowering policies, [typescript.Policies], and its binder of
+// gRPC is [spell.Handler] with [spell.Home]. TypeScript overloads a
+// function, writes one implementation after the overload signatures of a
+// name, and evaluates what [Evaluated] yields when a module runs.
+// Rendered files finalise through the shared normalizer, which strips
+// trailing whitespace and blank-line runs and keeps the templates'
+// spelling otherwise, because the module does not include a printer and
 // hermeticity refuses a printer that the machine provides.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the seven kind templates: 1,794 allocations.
+// and the seven kind templates: 1,836 allocations.
 func New() backend.Backend {
 	return backend.New(typescript.Name, typescript.Target, typescript.Syntax()).
 		Version(typescript.Version).
@@ -35,9 +38,13 @@ func New() backend.Backend {
 		Coverage(Coverage()).
 		Funcs(Funcs).
 		Naming(spell.Filename).
+		Overloads().
+		Implemented().
+		Evaluated(Evaluated).
 		Packages(spell.Package).
 		Respell(spell.Name).
 		Types(spell.Type).
+		Binder(spell.Handler, spell.Home).
 		Policies(typescript.Policies()...).
 		Lower(Lower).
 		Scaffold(Scaffold).

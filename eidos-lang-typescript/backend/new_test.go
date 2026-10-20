@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -51,10 +52,10 @@ const (
 // corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the seven kind templates. The five lowering policies
-	// add eight: their specs, the kit's list of them, and the check of
-	// the specs that Build makes.
-	newAllocs = 1_794
+	// template and the seven kind templates. The six lowering policies
+	// add nine: their specs, the kit's list of them, and the check of the
+	// specs that Build makes.
+	newAllocs = 1_836
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 8,851,050, and the budget is a round number about
@@ -194,6 +195,39 @@ func TestNew(t *testing.T) {
 			assert.Equal(t, files[0].Path, builderPath, "the file is beside the source module, as a plan routes it")
 			assert.Contains(t, string(files[0].Body), "import type { Account } from './catalog';\n",
 				"the file imports the class from the source module")
+		})
+
+		t.Run("returns a backend that writes the overload signatures of a function before its implementation",
+			func(t *testing.T) {
+				t.Parallel()
+
+				body, findings := rendered(t, loader("unknown", false), loader("number", true))
+				assert.Empty(t, findings, "the file renders clean")
+				assert.ContainsInOrder(t, body, []string{
+					"export function load(id: number): Row;\n", "export function load(id: unknown): Row {\n",
+				}, "the signature right before the implementation")
+			})
+
+		t.Run("returns a backend that skips the overload signatures of a function without an implementation",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, findings := rendered(t, declared(rowName), loader("number", true))
+				assert.Length(t, findings, 1, "one finding")
+				assert.Equal(t, findings[0].Code, render.UnimplementedOverload,
+					"TypeScript requires the implementation")
+			})
+
+		t.Run("returns a backend that writes a class after the class that it extends", func(t *testing.T) {
+			t.Parallel()
+
+			base := declared(baseName)
+			derived := declared(holderName)
+			derived.Extends = []*emit.TypeRef{{Spelling: baseName, Target: base.Origin}}
+			body, findings := rendered(t, derived, base)
+			assert.Empty(t, findings, "the file renders clean")
+			assert.ContainsInOrder(t, body, []string{"export class " + baseName, "extends " + baseName},
+				"TypeScript defines a class before a class extends it")
 		})
 
 		t.Run("returns a backend that names the settled class in a list", func(t *testing.T) {
@@ -361,5 +395,19 @@ func declared(name string) *emit.Struct {
 	return &emit.Struct{
 		Origin: symbol.Identity{Lang: typescript.Lang, Package: unitModule, Name: name, Kind: symbol.KindStruct},
 		Name:   name,
+	}
+}
+
+// loader returns the function load of the unit's module, which takes an id
+// of the type param and returns a Row, marked as an overload signature
+// where signature is set.
+func loader(param string, signature bool) *emit.Function {
+	return &emit.Function{
+		Origin: symbol.Identity{
+			Lang: typescript.Lang, Package: unitModule, Name: loadName, Kind: symbol.KindFunction, Disc: param,
+		},
+		Name: loadName, Overload: signature,
+		Params:  emit.SlotOf(&emit.Param{Name: "id", Type: ref(param)}),
+		Returns: emit.SlotOf(&emit.Return{Type: ref(rowName)}),
 	}
 }

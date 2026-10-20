@@ -131,28 +131,25 @@ func TestDecorator(t *testing.T) {
 				"the parameter has the decorator as an annotation")
 		})
 
-		unaddressed := []struct {
-			name string
-			give string
-		}{
-			{
-				name: "reports UnaddressedCarrier for a marker of a parameter",
-				give: "  run(" + stubMarker + " a: string): void {}\n",
-			},
-			{
-				name: "reports UnaddressedCarrier for a marker of an overloaded method's implementation",
-				give: "  run(a: string): void;\n  " + stubMarker + "\n  run(a: any): void {}\n",
-			},
-		}
-		for _, tt := range unaddressed {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("reports UnaddressedCarrier for a marker of a parameter", func(t *testing.T) {
+			t.Parallel()
 
-				gb, found := parsedSource(t, "export class C {\n"+tt.give+"}\n")
-				assert.Contains(t, codesOf(found), frontend.UnaddressedCarrier, "the marker attaches nowhere")
-				expect.Empty(t, gb.Attachments(), "the marker attaches nothing")
-			})
-		}
+			gb, found := parsedSource(t, "export class C {\n  run("+stubMarker+" a: string): void {}\n}\n")
+			assert.Contains(t, codesOf(found), frontend.UnaddressedCarrier, "the marker attaches nowhere")
+			expect.Empty(t, gb.Attachments(), "the marker attaches nothing")
+		})
+
+		t.Run("attaches a marker of an overloaded method's implementation to the method", func(t *testing.T) {
+			t.Parallel()
+
+			gb, found := parsedSource(t, "export class C {\n  run(a: string): void;\n  "+stubMarker+
+				"\n  run(a: any): void {}\n}\n")
+			assert.Empty(t, found, "the implementation is a method")
+			assert.Length(t, gb.Attachments(), 1, "the marker attaches its directive")
+			implementation, onMethod := gb.Attachments()[0].Subject.(*node.Method)
+			assert.True(t, onMethod, "on a method")
+			assert.False(t, implementation.Overload, "on the implementation")
+		})
 	})
 
 	t.Run("marker", func(t *testing.T) {

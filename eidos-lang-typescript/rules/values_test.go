@@ -861,6 +861,12 @@ func TestValues(t *testing.T) {
 			{name: "reports false for a nil reference", give: func(assert.TB, *fixture) *node.TypeRef {
 				return nil
 			}},
+			{
+				name: "reports false for a type of another module without a target",
+				give: func(assert.TB, *fixture) *node.TypeRef {
+					return &node.TypeRef{Spelling: "Moment", Package: "moment"}
+				},
+			},
 		}
 		for _, tt := range nones {
 			t.Run(tt.name, func(t *testing.T) {

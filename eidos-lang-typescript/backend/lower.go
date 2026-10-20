@@ -28,8 +28,10 @@ const variantSep = "_"
 // declarations. A sum becomes one interface per variant and a
 // union alias keeping the sum's name: each interface leads with
 // the discriminant property typed to the variant's literal name,
-// takes the variant's payload as its properties behind it, and
-// restates the sum's type parameters. The alias's target joins the
+// takes the variant's payload as its properties behind it, extends
+// the contracts of the sum, and restates the sum's type parameters.
+// Each interface has its own copy of the contracts, because the
+// settle rewrites a reference in place. The alias's target joins the
 // interfaces with the union bar, restating the parameters as
 // arguments.
 //
@@ -52,22 +54,38 @@ const variantSep = "_"
 // refuses, because TypeScript decorates classes alone. A payload entry
 // without a name refuses, because a property has one. Lower also returns
 // an error for a payload entry named like the discriminant, because the
-// variant interface would declare that property twice. A class or an
-// interface passes through unchanged unless [members] returns an error for
-// it. A declaration with the deleter of a property refuses through
-// [lowering.DeleteAccessor], because TypeScript writes a getter and a
-// setter alone. Everything else passes through unchanged.
+// variant interface would declare that property twice. A class puts the
+// overload signatures of each method name right before the implementation
+// of the name, through [lowering.GroupOverloads], because TypeScript
+// requires the implementation right after its signatures. A class or an
+// interface passes through otherwise unchanged unless [members] returns an
+// error for it. A declaration with the deleter of a property refuses
+// through [lowering.DeleteAccessor], because TypeScript writes a getter
+// and a setter alone. Everything else passes through unchanged.
+//
+// TypeScript admits a variance annotation on a type parameter of a class,
+// of an interface, and of an alias of an object type or a function type.
+// Lower therefore gives a function, a method and an alias of any other
+// target a copy of its type parameters without the variance, as it gives
+// the union alias of a sum. An object type opens with a brace, as an inline
+// type, an index signature and a mapped type of TypeScript do. TypeScript
+// infers the variance of every generic type from its structure, so each
+// declaration keeps its meaning.
 //
 // # Allocation contract
 //
-// A declaration that passes through allocates nothing. A sum allocates
+// A declaration that passes through allocates nothing, apart from the list
+// that [lowering.GroupOverloads] allocates for a class whose overloads
+// stand apart, and the copy of the type parameters that states a variance
+// where TypeScript admits none. A sum allocates
 // the list of outputs, the union alias, its target and the joined
 // union: four allocations. Each variant adds seven: its interface, the
 // two steps of its name (the join and the final spelling), its list of
 // fields, the discriminant field, its type and the quoted literal. A sum
 // of two variants allocates 18 times. A generic sum adds, per variant,
 // the copy of its type parameters and the variant's spelling with its
-// type arguments. A refusal allocates its error.
+// type arguments. A sum with contracts adds, per variant, the copy of its
+// contracts. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if err := lowering.DeleteAccessor(typescript.Lang, s); err != nil {
 		return nil, err
@@ -75,9 +93,26 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	var sum *emit.Sum
 	switch d := s.(type) {
 	case *emit.Struct:
+		if methods := d.Methods.Items(); len(methods) > 1 {
+			d.Methods.Replace(lowering.GroupOverloads(methods)...)
+		}
+		for _, m := range d.Methods.Items() {
+			m.TypeParams = invariant(m.TypeParams)
+		}
 		return nil, members(d.Name, d.Fields.Items(), d.Methods.Items(), true)
 	case *emit.Interface:
+		for _, m := range d.Methods.Items() {
+			m.TypeParams = invariant(m.TypeParams)
+		}
 		return nil, members(d.Name, d.Fields.Items(), d.Methods.Items(), false)
+	case *emit.Function:
+		d.TypeParams = invariant(d.TypeParams)
+		return nil, nil
+	case *emit.Alias:
+		if d.Target == nil || d.Target.Form != symbol.FormFunc && !strings.HasPrefix(d.Target.Spelling, objectOpen) {
+			d.TypeParams = invariant(d.TypeParams)
+		}
+		return nil, nil
 	case *emit.Sum:
 		sum = d
 	default:
@@ -108,17 +143,34 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		Comment:    sum.Comment,
 		Name:       sum.Name,
 		Visibility: sum.Visibility,
-		TypeParams: sum.TypeParams,
+		TypeParams: invariant(sum.TypeParams),
 		Target:     &emit.TypeRef{Spelling: strings.Join(parts, " | ")},
 	}), nil
+}
+
+// invariant returns the type parameters ps where none of them states a
+// variance, and a copy of ps without the variance otherwise, for a
+// declaration on which TypeScript admits no variance annotation. The copy
+// leaves ps unchanged, because another declaration can share the list.
+func invariant(ps []*emit.TypeParam) []*emit.TypeParam {
+	if !slices.ContainsFunc(ps, func(p *emit.TypeParam) bool { return p.Variance != symbol.VarianceInvariant }) {
+		return ps
+	}
+	out := lowering.CopyTypeParams(ps)
+	for _, p := range out {
+		p.Variance = symbol.VarianceInvariant
+	}
+	return out
 }
 
 // members returns an error for two members of one name in a class or an
 // interface host, where both members are static or neither is. TypeScript
 // allows one property, one getter and one setter of each name, and a
 // property and a method cannot share a name. In a class, members also
-// returns an error for two methods of one name unless both are abstract.
-// The backend renders a body for each method that is not abstract, and
+// returns an error for two methods of one name that are no overload
+// signatures, unless both are abstract, and for the overload signatures
+// of a name without an implementation. The backend renders a body for
+// each method that is neither abstract nor an overload signature, and
 // TypeScript allows one implementation of each name. TypeScript reads two
 // method signatures of one name in an interface as overloads. An index
 // signature has no name, so members skips it. host is the name of the
@@ -147,10 +199,16 @@ func members(host string, fields []*emit.Field, methods []*emit.Method, class bo
 				return refuse("%s declares two getters named %s, and TypeScript declares one", host, m.Name)
 			case m.Accessor == symbol.AccessorSet:
 				return refuse("%s declares two setters named %s, and TypeScript declares one", host, m.Name)
-			case class && (!m.Abstract || !earlier.Abstract):
+			case class && !m.Overload && !earlier.Overload && (!m.Abstract || !earlier.Abstract):
 				return refuse("%s declares two methods named %s, and a method of a class has one implementation",
 					host, m.Name)
 			}
+		}
+		if class && m.Overload && !m.Abstract && !slices.ContainsFunc(methods, func(other *emit.Method) bool {
+			return !other.Overload && !other.Indexer && other.Name == m.Name && other.Level == m.Level
+		}) {
+
+			return refuse("%s declares the overload signatures of %s and no implementation", host, m.Name)
 		}
 	}
 	return nil
@@ -179,6 +237,7 @@ func variantInterface(
 		Name:       name,
 		Visibility: sum.Visibility,
 		TypeParams: lowering.CopyTypeParams(sum.TypeParams),
+		Extends:    lowering.CopyTypeRefs(sum.Implements),
 	}
 	payload := v.Fields.Items()
 	fields := make([]*emit.Field, 0, 1+len(payload))

@@ -17,7 +17,10 @@ import (
 // parameter renders behind its equals sign. Field tags are an idiom of Go
 // and refuse. The methods of a class render as its members, where the
 // methods of an enum and of a sum refuse, because neither has members in
-// TypeScript. An index signature and a constructor take a narrower set of
+// TypeScript. A TypeScript enum implements nothing, so the contracts of an
+// enum refuse. Each variant interface of a sum extends the contracts of
+// the sum. An overload signature renders without a body before the
+// implementation of its name. An index signature and a constructor take a narrower set of
 // modifiers than a method, and their keyword helpers refuse the rest.
 // Nothing promotes members, so the coverage refuses an embed with every
 // fact on it. A field that another type receives refuses, because the
@@ -52,6 +55,7 @@ func Coverage() render.Coverage {
 			symbol.FactSealed:           render.Refuses,
 			symbol.FactPermits:          render.Refuses,
 			symbol.FactOverride:         render.Renders,
+			symbol.FactOverload:         render.Renders,
 			symbol.FactDefaultBody:      render.Refuses,
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Renders,
@@ -90,6 +94,7 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindEnum: {
 				symbol.FactAnnotations: render.Refuses,
+				symbol.FactImplements:  render.Refuses, // an enum implements nothing
 			},
 			symbol.KindEnumVariant: {
 				symbol.FactAnnotations: render.Refuses,

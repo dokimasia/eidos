@@ -48,6 +48,8 @@ const (
 // is the spoke of the TypeScript target in the cross-language hub, and it
 // spells each form this way:
 //
+//   - a type parameter as its name, through [spoke.Param], at every depth
+//     of a shape;
 //   - an integer of 8 to 32 bits and every float as number, and an
 //     integer of 64 bits or of the platform's width as the choice of
 //     [typescript.Int64];
@@ -78,6 +80,12 @@ const (
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which TypeScript writes in angle brackets.
 //
+// Under the binding connect-es of [typescript.GRPC], a well-known type of
+// protobuf spells as its type of @bufbuild/protobuf/wkt, as Timestamp, the
+// well-known context as the HandlerContext of Connect-ES, and a protobuf
+// declaration as a bound reference under the name of protobuf-es, which the
+// layout qualifies by the module that [Home] returns.
+//
 // Inside a list, an optional, a union and an intersection, the spoke
 // writes a union, an intersection and a function type in parentheses.
 // Inside a list, it also writes an immutable list or tuple in
@@ -85,10 +93,11 @@ const (
 // import.
 //
 // Type refuses a synchronous stream, a wildcard with a lower bound, an
-// inline type and an opaque type, because TypeScript has no spelling of
-// them. It refuses an integer of another width and an array of an
-// unstated length. It refuses a form whose child it refuses, and the
-// error contains the source spelling of the child.
+// inline type and an opaque type of another reference than a type
+// parameter, because TypeScript has no spelling of them. It refuses an
+// integer of another width and an array of an unstated length. It refuses
+// a form whose child it refuses, and the error contains the source
+// spelling of the child.
 //
 // # Allocation contract
 //
@@ -108,7 +117,16 @@ func Type(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 // tsType spells one shape by the rules of [Type], and returns a refusal
 // without the language's prefix.
 func tsType(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
+	if t, param := spoke.Param(s); param {
+		return t, nil
+	}
 	spell := func(c rules.TypeShape) (*emit.TypeRef, error) { return tsType(c, p) }
+	// A zero policy declares no key, and its binding is the default none.
+	if binding, _ := p.Lookup(typescript.GRPC); binding == typescript.GRPCConnect {
+		if name := strings.TrimPrefix(s.Spelling, protobufDot); knownTypes[name] {
+			return &emit.TypeRef{Spelling: strings.TrimPrefix(name, knownScope), Package: knownModule}, nil
+		}
+	}
 	switch s.Form {
 	case symbol.FormScalar:
 		return scalar(s, p)
@@ -329,15 +347,70 @@ func wildcard(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 // well-known context takes.
 const abortSignal = "AbortSignal"
 
+// The context of a handler of Connect-ES and its module, which the
+// well-known context takes under the binding connect-es.
+const (
+	handlerContext = "HandlerContext"
+	connectModule  = "@connectrpc/connect"
+)
+
+// protobufLang is the language of the declarations that the binding
+// connect-es names as protobuf-es names them.
+const protobufLang symbol.Lang = "protobuf"
+
+// The dot that opens a fully-qualified protobuf name, the scope of the
+// well-known types of protobuf, the module from which protobuf-es imports
+// them, and the separator of the names of a nested declaration in the
+// code of protobuf-es.
+const (
+	protobufDot = "."
+	knownScope  = "google.protobuf."
+	knownModule = "@bufbuild/protobuf/wkt"
+	nestedSep   = "_"
+)
+
+// knownTypes are the full names of the well-known types of protobuf, which
+// protobuf-es imports from [knownModule] under their names. The spoke only
+// reads the set.
+var knownTypes = map[string]bool{
+	"google.protobuf.Timestamp": true, "google.protobuf.Duration": true, "google.protobuf.Empty": true,
+	"google.protobuf.Any": true, "google.protobuf.Struct": true, "google.protobuf.Value": true,
+	"google.protobuf.ListValue": true, "google.protobuf.NullValue": true, "google.protobuf.FieldMask": true,
+	"google.protobuf.DoubleValue": true, "google.protobuf.FloatValue": true, "google.protobuf.Int64Value": true,
+	"google.protobuf.UInt64Value": true, "google.protobuf.Int32Value": true, "google.protobuf.UInt32Value": true,
+	"google.protobuf.BoolValue": true, "google.protobuf.StringValue": true, "google.protobuf.BytesValue": true,
+}
+
 // reference spells a reference or a sum: the well-known timestamp and
 // duration as the choices of [typescript.Timestamp] and
 // [typescript.Duration], the well-known empty value as a record without
 // keys, the well-known error as Error, the well-known context as
 // AbortSignal, and every other referent as a translated reference under
-// its flat name, with its translated arguments.
+// its flat name, with its translated arguments. Under the binding
+// connect-es of [typescript.GRPC] the well-known context is the
+// HandlerContext of Connect-ES, and a protobuf declaration is a bound
+// reference under the name that protobuf-es gives it: the names of its
+// owners and its own name, joined by underscores, as Session_State. A
+// oneof refuses, because protobuf-es declares a oneof as a field of its
+// message and no type.
 func reference(
 	s rules.TypeShape, p plugin.Policy, spell func(rules.TypeShape) (*emit.TypeRef, error),
 ) (*emit.TypeRef, error) {
+	if binding, _ := p.Lookup(typescript.GRPC); binding == typescript.GRPCConnect {
+		switch {
+		case s.Ref == rules.WellKnownContext:
+			return &emit.TypeRef{Spelling: handlerContext, Package: connectModule}, nil
+		case s.Ref.Lang == protobufLang && s.Ref.Kind == symbol.KindSum:
+			return nil, fmt.Errorf("protobuf-es declares the oneof %s as a field of its message and no type",
+				s.Ref.Name)
+		case s.Ref.Lang == protobufLang:
+			name := s.Ref.Name
+			if s.Ref.Owner != "" {
+				name = strings.ReplaceAll(s.Ref.Owner, symbol.OwnerSep, nestedSep) + nestedSep + name
+			}
+			return &emit.TypeRef{Spelling: name, Target: s.Ref, Bound: true}, nil
+		}
+	}
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
 		return &emit.TypeRef{Spelling: string(p.Choice(typescript.Timestamp))}, nil

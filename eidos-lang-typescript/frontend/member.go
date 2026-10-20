@@ -30,17 +30,21 @@ const (
 
 // classBody lowers the members of a class into a struct: its methods and
 // overload signatures, its fields, the fields that the parameter
-// properties of its constructor declare, and its index signatures. The
-// lowering leaves out the implementation of a method after its overload
-// signatures, because TypeScript hides it from callers. A decorator
-// applies to the member after it. A static block declares nothing.
-// classBody refuses a marker on the implementation of an overloaded
-// method, because the implementation declares nothing.
+// properties of its constructor declare, and its index signatures. A
+// method signature of a name that the class declares more than once at one
+// level is an overload signature, and the implementation after the
+// signatures is a method of its own. An abstract method signature is
+// abstract and no overload signature. A decorator applies to the member
+// after it. A static block declares nothing.
 func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
-	overloaded := map[string]bool{}
+	type member struct {
+		name   string
+		static bool
+	}
+	counts := map[member]int{}
 	for m := range body.NamedChildren() {
-		if m.Kind() == l.v.methodSignature {
-			overloaded[l.nameText(m.Child(l.v.fieldName))] = true
+		if m.Kind() == l.v.methodSignature || m.Kind() == l.v.methodDefinition {
+			counts[member{name: l.nameText(m.Child(l.v.fieldName)), static: m.HasToken(keywordStatic)}]++
 		}
 	}
 	var pending []treesitter.Node
@@ -49,15 +53,11 @@ func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 		case l.v.decorator:
 			pending = append(pending, m)
 			continue
-		case l.v.methodDefinition:
-			if overloaded[l.nameText(m.Child(l.v.fieldName))] {
-				l.refuse(m, "an overloaded method's implementation")
-				l.refuseMarkers(pending, "an overloaded method's implementation")
-				break
-			}
-			l.method(m, st, pending)
-		case l.v.methodSignature, l.v.abstractMethodSignature:
-			l.method(m, st, pending)
+		case l.v.methodSignature:
+			key := member{name: l.nameText(m.Child(l.v.fieldName)), static: m.HasToken(keywordStatic)}
+			l.method(m, st, pending, counts[key] > 1)
+		case l.v.methodDefinition, l.v.abstractMethodSignature:
+			l.method(m, st, pending, false)
 		case l.v.publicFieldDefinition:
 			if f := l.field(m, pending); f != nil {
 				st.Fields = append(st.Fields, f)
@@ -74,13 +74,15 @@ func (l *lowering) classBody(body treesitter.Node, st *node.Struct) {
 }
 
 // method lowers one method, overload signature or abstract signature and
-// the decorators before it into a struct. The parameter properties of a
-// constructor also declare fields of the struct.
-func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators []treesitter.Node) {
+// the decorators before it into a struct, marked as an overload signature
+// where overload is set. The parameter properties of a constructor also
+// declare fields of the struct.
+func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators []treesitter.Node, overload bool) {
 	built := l.methodOf(m, decorators, false)
 	if built == nil {
 		return
 	}
+	built.Overload = overload
 	if built.Constructs {
 		st.Fields = append(st.Fields, l.parameterProperties(m.Child(l.v.fieldParameters), built.Params)...)
 	}

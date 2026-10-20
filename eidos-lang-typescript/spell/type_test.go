@@ -77,7 +77,19 @@ var (
 	callback = rules.TypeShape{
 		Form: symbol.FormFunc, Spelling: "func(string)", Split: 1, Elems: []rules.TypeShape{text},
 	}
+	// paramShape is the shape that the fold gives a reference to the type
+	// parameter paramName of page.
+	paramShape = rules.TypeShape{
+		Form:     symbol.FormOpaque,
+		Spelling: paramName,
+		Ref: symbol.Identity{
+			Lang: sourceLang, Package: "svc", Owner: pageName, Name: paramName, Kind: symbol.KindTypeParam,
+		},
+	}
 )
+
+// paramName is the name of the type parameter of the cases.
+const paramName = "T"
 
 // typeCall is one spelling that the allocation test and the benchmark
 // measure: the shape, its ceiling and the spelling that it returns.
@@ -165,6 +177,14 @@ func TestType(t *testing.T) {
 				want: &emit.TypeRef{
 					Spelling: "Session[]", Form: symbol.FormList,
 					Elems: []*emit.TypeRef{{Spelling: sessionName, Target: session}},
+				},
+			},
+			{name: "returns the name of a type parameter", give: paramShape, want: &emit.TypeRef{Spelling: paramName}},
+			{
+				name: "returns a list of a type parameter",
+				give: rules.TypeShape{Form: symbol.FormList, Spelling: "[]T", Elems: []rules.TypeShape{paramShape}},
+				want: &emit.TypeRef{
+					Spelling: paramName + "[]", Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: paramName}},
 				},
 			},
 			{
@@ -526,6 +546,67 @@ func TestType(t *testing.T) {
 			assert.Equal(t, got.Spelling, "Record", "a number key indexes a record")
 		})
 
+		request := symbol.Identity{Lang: "protobuf", Package: "acme.svc", Name: "GetRequest", Kind: symbol.KindStruct}
+		nested := symbol.Identity{
+			Lang: "protobuf", Package: "acme.svc", Owner: "Session.Grant", Name: "Kind", Kind: symbol.KindEnum,
+		}
+		connect := map[plugin.PolicyKey]plugin.Choice{typescript.GRPC: typescript.GRPCConnect}
+		bindings := []struct {
+			name string
+			give rules.TypeShape
+			want *emit.TypeRef
+		}{
+			{
+				name: "returns the type of the well-known types of protobuf-es for a well-known type",
+				give: rules.Reference(".google.protobuf.Timestamp", rules.WellKnownTimestamp),
+				want: &emit.TypeRef{Spelling: "Timestamp", Package: "@bufbuild/protobuf/wkt"},
+			},
+			{
+				name: "returns the HandlerContext of Connect-ES for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext),
+				want: &emit.TypeRef{Spelling: "HandlerContext", Package: "@connectrpc/connect"},
+			},
+			{
+				name: "returns a bound reference for a message",
+				give: rules.Reference("GetRequest", request),
+				want: &emit.TypeRef{Spelling: "GetRequest", Target: request, Bound: true},
+			},
+			{
+				name: "joins the names of the owners of a nested declaration with underscores",
+				give: rules.Reference("Kind", nested),
+				want: &emit.TypeRef{Spelling: "Session_Grant_Kind", Target: nested, Bound: true},
+			},
+		}
+		for _, tt := range bindings {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spell.Type(tt.give, policy(t, connect))
+				assert.NoError(t, err, "the binding connect-es spells the reference")
+				assert.Equal(t, got, tt.want, "the reference")
+			})
+		}
+
+		t.Run("returns an error for a oneof under connect-es", func(t *testing.T) {
+			t.Parallel()
+
+			oneof := symbol.Identity{
+				Lang: "protobuf", Package: "acme.svc", Owner: "Session", Name: "auth", Kind: symbol.KindSum,
+			}
+			_, err := spell.Type(rules.TypeShape{Form: symbol.FormSum, Ref: oneof}, policy(t, connect))
+			assert.HasError(t, err, "protobuf-es declares a oneof as a field and no type")
+			assert.Equal(t, err.Error(), "typescript: protobuf-es declares the oneof auth as a field of its message "+
+				"and no type", "the error names the oneof")
+		})
+
+		t.Run("returns the translated reference of a message without a binding", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := spell.Type(rules.Reference("GetRequest", request), policy(t, nil))
+			assert.NoError(t, err, "the reference spells")
+			assert.Equal(t, got, &emit.TypeRef{Spelling: "GetRequest", Target: request}, "the flat name")
+		})
+
 		refusals := []struct {
 			name string
 			give rules.TypeShape
@@ -723,16 +804,6 @@ func BenchmarkType(b *testing.B) {
 			})
 		}
 	})
-}
-
-// policy returns the TypeScript target's policy with the choices that
-// chosen selects.
-func policy(tb testing.TB, chosen map[plugin.PolicyKey]plugin.Choice) plugin.Policy {
-	tb.Helper()
-
-	p, err := plugin.NewPolicy(typescript.Target, typescript.Policies(), chosen)
-	assert.NoError(tb, err, "the TypeScript policies resolve")
-	return p
 }
 
 // typeCalls returns the spellings that the allocation test and the

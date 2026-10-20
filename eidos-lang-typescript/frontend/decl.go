@@ -32,10 +32,10 @@ const (
 // statement that wraps it, an export or a declare, whose comments belong
 // to the declaration. A declaration in an ambient context is stamped
 // typescript.ambient. A declaration that the signature depth leaves out
-// takes its comments with it. The implementation of a function after its
-// overload signatures declares nothing at any depth. Neither does a
-// declaration whose name does not parse, nor a statement, so a carrier on
-// one of them is refused.
+// takes its comments with it. A function signature of a name that
+// overloaded contains is marked as an overload signature. A declaration
+// whose name does not parse declares nothing, and neither does a
+// statement, so a carrier on one of them is refused.
 func (l *lowering) declaration(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	overloaded map[string]bool,
 ) {
@@ -58,9 +58,6 @@ func (l *lowering) declaration(n treesitter.Node, c container, exported bool, ou
 	case name == "":
 		l.refuse(outermost, "a declaration whose name does not parse")
 		return
-	case k != l.v.functionSignature && function && overloaded[name]:
-		l.refuse(outermost, "an overloaded function's implementation")
-		return
 	case l.u.Depth() == plugin.DepthSignatures && !l.visible(c, exported, name):
 		l.skip(outermost)
 		return
@@ -78,7 +75,9 @@ func (l *lowering) declaration(n treesitter.Node, c container, exported bool, ou
 	case l.v.typeAliasDeclaration:
 		decl = l.alias(n, name, vis, parts, comment)
 	default:
-		decl = l.function(n, name, vis, parts, comment)
+		fn := l.function(n, name, vis, parts, comment)
+		fn.Overload = k == l.v.functionSignature && overloaded[name]
+		decl = fn
 	}
 	if decl == nil {
 		return

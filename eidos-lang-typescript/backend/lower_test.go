@@ -52,6 +52,13 @@ const (
 	digitPrefix   = "9"
 )
 
+// measuredName is the contract that the cases give the fixture sum.
+const measuredName = "Measured"
+
+// covariantParam is a covariant type parameter, which a source with
+// variance annotations states. Each case takes a copy of it through new.
+var covariantParam = emit.TypeParam{Name: typeParam, Variance: symbol.VarianceOut}
+
 // lowerAllocs is a sum of two variants: the list of outputs, the union
 // alias, its target and the joined union, and per variant its
 // interface, the two steps of its name, its list of fields, the
@@ -72,6 +79,19 @@ func TestLower(t *testing.T) {
 			out, err := backend.Lower(&emit.Struct{Name: rowName})
 			assert.NoError(t, err, "a struct is not lowered")
 			assert.Empty(t, out, "a nil list keeps the declaration unchanged")
+		})
+
+		t.Run("puts the overload signatures of a class method before its implementation", func(t *testing.T) {
+			t.Parallel()
+
+			host := classOf(nil, []*emit.Method{{Name: areaName}, {Name: areaName, Overload: true}})
+			out, err := backend.Lower(host)
+			assert.NoError(t, err, "the class states one implementation of area")
+			assert.Empty(t, out, "the class passes through")
+			methods := host.Methods.Items()
+			assert.Length(t, methods, 2, "the signature and the implementation")
+			expect.True(t, methods[0].Overload, "the signature comes first")
+			expect.False(t, methods[1].Overload, "the implementation comes after it")
 		})
 
 		t.Run("returns an error for a class with the deleter of a property", func(t *testing.T) {
@@ -178,6 +198,29 @@ func TestLower(t *testing.T) {
 				"each interface instantiated")
 		})
 
+		t.Run("extends the sum's contracts on each interface", func(t *testing.T) {
+			t.Parallel()
+
+			sum := sumOf()
+			sum.Implements = []*emit.TypeRef{ref(measuredName)}
+			assert.Equal(t, variantOf(t, sum, 1).Extends, sum.Implements, "the contracts of the second variant")
+		})
+
+		t.Run("gives each interface its own copy of the sum's contracts", func(t *testing.T) {
+			t.Parallel()
+
+			sum := sumOf()
+			sum.Implements = []*emit.TypeRef{ref(measuredName)}
+			out := lowered(t, sum)
+			circle, isCircle := out[0].(*emit.Interface)
+			assert.True(t, isCircle, "the first variant lowers to an interface")
+			empty, isEmpty := out[1].(*emit.Interface)
+			assert.True(t, isEmpty, "the second variant lowers to an interface")
+			assert.NoDuplicates(t, func() ([]*emit.TypeRef, error) {
+				return []*emit.TypeRef{sum.Implements[0], circle.Extends[0], empty.Extends[0]}, nil
+			}, "the settle rewrites each reference of an output once", assert.ByIdentity())
+		})
+
 		withMethods := sumOf()
 		withMethods.Methods.Append(&emit.Method{Name: areaName})
 		decorated := sumOf()
@@ -243,6 +286,25 @@ func TestLower(t *testing.T) {
 				}),
 				want: "two getters named area",
 			},
+			{
+				name: "returns an error for a class with two setters of one name",
+				give: classOf(nil, []*emit.Method{
+					{Name: areaName, Accessor: symbol.AccessorSet}, {Name: areaName, Accessor: symbol.AccessorSet},
+				}),
+				want: "two setters named area",
+			},
+			{
+				name: "returns an error for the overload signatures of a class method without an implementation",
+				give: classOf(nil, []*emit.Method{{Name: areaName, Overload: true}}),
+				want: "the overload signatures of area and no implementation",
+			},
+			{
+				name: "returns an error for two implementations of an overloaded class method",
+				give: classOf(nil, []*emit.Method{
+					{Name: areaName, Overload: true}, {Name: areaName}, {Name: areaName},
+				}),
+				want: "two methods named area",
+			},
 		}
 		for _, tt := range members {
 			t.Run(tt.name, func(t *testing.T) {
@@ -272,6 +334,18 @@ func TestLower(t *testing.T) {
 				name: "passes a class with two abstract methods of one name",
 				give: classOf(nil, []*emit.Method{{Name: areaName, Abstract: true}, {Name: areaName, Abstract: true}}),
 			},
+			{
+				name: "passes a class with the overload signatures of a method and its implementation",
+				give: classOf(nil, []*emit.Method{{Name: areaName, Overload: true}, {Name: areaName}}),
+			},
+			{
+				name: "passes a class with the abstract overload signatures of a method",
+				give: classOf(nil, []*emit.Method{{Name: areaName, Overload: true, Abstract: true}}),
+			},
+			{
+				name: "passes a class with an index signature beside a method",
+				give: classOf(nil, []*emit.Method{{Name: "[]", Indexer: true}, {Name: areaName}}),
+			},
 		}
 		for _, tt := range passed {
 			t.Run(tt.name, func(t *testing.T) {
@@ -282,6 +356,133 @@ func TestLower(t *testing.T) {
 				assert.Empty(t, out, "the declaration passes through unchanged")
 			})
 		}
+
+		// Each case returns a declaration and the type parameters that
+		// TypeScript writes for it, which the lowering can replace, so each
+		// case builds its own declaration.
+		variances := []struct {
+			name string
+			give func() (symbol.Symbol, *[]*emit.TypeParam)
+			want symbol.Variance
+		}{
+			{
+				name: "leaves out the variance of a type parameter of a function",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					f := &emit.Function{Name: areaName, TypeParams: []*emit.TypeParam{new(covariantParam)}}
+					return f, &f.TypeParams
+				},
+				want: symbol.VarianceInvariant,
+			},
+			{
+				name: "leaves out the variance of a type parameter of a class method",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					m := &emit.Method{Name: areaName, TypeParams: []*emit.TypeParam{new(covariantParam)}}
+					return classOf(nil, []*emit.Method{m}), &m.TypeParams
+				},
+				want: symbol.VarianceInvariant,
+			},
+			{
+				name: "leaves out the variance of a type parameter of an interface method",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					m := &emit.Method{Name: areaName, TypeParams: []*emit.TypeParam{new(covariantParam)}}
+					return interfaceOf(nil, []*emit.Method{m}), &m.TypeParams
+				},
+				want: symbol.VarianceInvariant,
+			},
+			{
+				name: "leaves out the variance of a type parameter of an alias of a tuple",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					a := &emit.Alias{
+						Name: rowName, TypeParams: []*emit.TypeParam{new(covariantParam)},
+						Target: &emit.TypeRef{Spelling: "readonly [T, T]", Form: symbol.FormTuple},
+					}
+					return a, &a.TypeParams
+				},
+				want: symbol.VarianceInvariant,
+			},
+			{
+				name: "leaves out the variance of a type parameter of an alias without a target",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					a := &emit.Alias{Name: rowName, TypeParams: []*emit.TypeParam{new(covariantParam)}}
+					return a, &a.TypeParams
+				},
+				want: symbol.VarianceInvariant,
+			},
+			{
+				name: "keeps the variance of a type parameter of an alias of a function type",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					a := &emit.Alias{
+						Name: rowName, TypeParams: []*emit.TypeParam{new(covariantParam)},
+						Target: &emit.TypeRef{Spelling: "() => T", Form: symbol.FormFunc},
+					}
+					return a, &a.TypeParams
+				},
+				want: symbol.VarianceOut,
+			},
+			{
+				name: "keeps the variance of a type parameter of an alias of an object type",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					a := &emit.Alias{
+						Name: rowName, TypeParams: []*emit.TypeParam{new(covariantParam)},
+						Target: &emit.TypeRef{Spelling: "{ value: T }", Form: symbol.FormInline},
+					}
+					return a, &a.TypeParams
+				},
+				want: symbol.VarianceOut,
+			},
+			{
+				name: "keeps the variance of a type parameter of an alias of a mapped type",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					a := &emit.Alias{
+						Name: rowName, TypeParams: []*emit.TypeParam{new(covariantParam)},
+						Target: &emit.TypeRef{Spelling: "{ [K in Keys]: T }"},
+					}
+					return a, &a.TypeParams
+				},
+				want: symbol.VarianceOut,
+			},
+			{
+				name: "keeps the variance of a type parameter of a class",
+				give: func() (symbol.Symbol, *[]*emit.TypeParam) {
+					s := classOf(nil, nil)
+					s.TypeParams = []*emit.TypeParam{new(covariantParam)}
+					return s, &s.TypeParams
+				},
+				want: symbol.VarianceOut,
+			},
+		}
+		for _, tt := range variances {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				d, params := tt.give()
+				out, err := backend.Lower(d)
+				assert.NoError(t, err, "TypeScript states the declaration")
+				assert.Empty(t, out, "the declaration stays in place")
+				assert.Length(t, *params, 1, "the declaration keeps its type parameter")
+				assert.Equal(t, (*params)[0].Variance, tt.want, "the variance that TypeScript writes")
+			})
+		}
+
+		t.Run("leaves out the variance of a type parameter of the union alias of a sum", func(t *testing.T) {
+			t.Parallel()
+
+			alias := unionOf(t, sumOf(new(covariantParam)))
+			assert.Length(t, alias.TypeParams, 1, "the alias takes the parameter of the sum")
+			assert.Equal(t, alias.TypeParams[0].Variance, symbol.VarianceInvariant,
+				"TypeScript admits no variance annotation on an alias of a union")
+		})
+
+		t.Run("copies the type parameters whose variance it leaves out", func(t *testing.T) {
+			t.Parallel()
+
+			params := []*emit.TypeParam{new(covariantParam)}
+			f := &emit.Function{Name: areaName, TypeParams: params}
+			_, err := backend.Lower(f)
+			assert.NoError(t, err, "TypeScript states the function")
+			expect.Equal(t, params[0].Variance, symbol.VarianceOut, "another declaration can share the parameter")
+			expect.NotEqual(t, f.TypeParams[0], params[0], "the function has a copy", assert.ByIdentity())
+		})
 	})
 }
 
