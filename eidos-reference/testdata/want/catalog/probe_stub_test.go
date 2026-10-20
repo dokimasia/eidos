@@ -29,4 +29,5 @@ func TestProbeStubCheck(t *testing.T) {
 		t.Errorf("Check records %d calls instead of one", len(stub.CheckCalls))
 	}
 }
+
 // reference:provenance sha256:ba06c88a77d6d47dee233873615f4a4383e42411b5ac8fc45875a421785eab98

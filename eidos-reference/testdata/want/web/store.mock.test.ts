@@ -21,4 +21,5 @@ export class StoreMock implements Store {
     this.putFunc!(p);
   }
 }
+
 // reference:provenance sha256:9a31b20ac64ae2ddc7a4fb8fba699c10d57c9943b943aee67171d804541b8c7a

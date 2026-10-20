@@ -15,4 +15,5 @@ export class OrdersMock implements Orders {
     return this.countFunc!(filter);
   }
 }
+
 // reference:provenance sha256:0140e6d99bac72c38b8b6e16d495c7f18032d32db606f8f800aa11ca85bc3586

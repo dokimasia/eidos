@@ -253,4 +253,5 @@ func TestAddressBuilder(t *testing.T) {
 		}
 	})
 }
+
 // reference:provenance sha256:93f877765b30427237edf312fcc186de363d301daa6e80960061d718548e660f

@@ -32,4 +32,5 @@ func NewHost() *HostBuilder {
 func NewHostFrom(v Host) *HostBuilder {
 	return &HostBuilder{value: v}
 }
+
 // reference:provenance sha256:6fb110fa383049426e9b3fc2a426b716a036126cb110b22792fba02bf6094041

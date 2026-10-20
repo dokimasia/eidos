@@ -42,4 +42,5 @@ func NewRetryPolicy() *RetryPolicyBuilder {
 func NewRetryPolicyFrom(v RetryPolicy) *RetryPolicyBuilder {
 	return &RetryPolicyBuilder{value: v}
 }
+
 // reference:provenance sha256:016c954b73ae9dac8bfd46c4ee3d19be29e7bacb0ec8403666baa6a49e0604ad

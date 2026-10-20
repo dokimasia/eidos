@@ -37,4 +37,5 @@ export interface StoreGetCall {
 export interface StorePutCall {
   p: Product;
 }
+
 // reference:provenance sha256:86e6b19d6390e6fcf9bccde55b0f3396709ee10608ee27e4bec9afc1b2704366

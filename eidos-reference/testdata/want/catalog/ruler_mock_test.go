@@ -18,4 +18,5 @@ type RulerMock struct {
 func (r *RulerMock) Length(item string) measure.Meters {
 	return r.LengthFunc(item)
 }
+
 // reference:provenance sha256:bc12a498ec6f5ee4d1fc2d7cca9ac24cac88ddf513e405376e2d26401a79a8ba

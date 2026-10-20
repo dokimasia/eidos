@@ -8,4 +8,5 @@ import type { Product } from './store';
 
 /** tsc checks that a CacheStub is a Cache. */
 export const checkCacheStub: Cache<Product> = new CacheStub<Product>();
+
 // reference:provenance sha256:bfff95dec7f475c7b8729fa2676cba4125d4ecd331ca52e3e9a341071da9e9a9

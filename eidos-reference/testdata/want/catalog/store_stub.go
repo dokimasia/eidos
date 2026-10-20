@@ -43,4 +43,5 @@ func (s *StoreStub) Put(ctx context.Context, p *Product) error {
 	s.PutCalls = append(s.PutCalls, StorePutCall{Ctx: ctx, P: p})
 	return s.PutFunc(ctx, p)
 }
+
 // reference:provenance sha256:d4d12d66b8773ab14dbdfc19cb0d2fffeda16e38d36247cde62d6268894338b5

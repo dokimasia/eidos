@@ -69,4 +69,5 @@ func (v *Priority) UnmarshalText(text []byte) error {
 	*v = parsed
 	return nil
 }
+
 // reference:provenance sha256:8a3a308a7c2194a9f2d74a74c60d6d206dda8361878f517992e1baf77bbfe24a

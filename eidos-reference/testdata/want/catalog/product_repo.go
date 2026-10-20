@@ -54,4 +54,5 @@ func (p *ProductRepo) Delete(ctx context.Context, id string) error {
 	log.Printf("audit: %s", "Product.Delete")
 	return nil
 }
+
 // reference:provenance sha256:714437dd994a4e8af03803e883f1644c83aac05723fde4e7e73aca04b56ba1ef

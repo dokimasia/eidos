@@ -98,4 +98,5 @@ func TestStatusEnum(t *testing.T) {
 		}
 	})
 }
+
 // reference:provenance sha256:8972ce2b8c0a52b3e9f7ce2d9a0c4689ecffe32a682a561ea6c391333575c2a6

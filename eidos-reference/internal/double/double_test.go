@@ -60,6 +60,8 @@ const (
 	// appendName and lenName are predeclared functions of Go.
 	appendName = "append"
 	lenName    = "len"
+	// blankName is the blank identifier, which a body cannot read.
+	blankName = "_"
 )
 
 // mirrored is what Of returned for one interface.
@@ -193,6 +195,19 @@ func TestDouble(t *testing.T) {
 			got := double.Copy(storeName+doubleSuffix, i)
 			assert.Equal(t, got[0].Params.Items()[1].Name, clashParam,
 				"the second parameter of Put takes a number, because the first parameter of Put is a1")
+		})
+
+		t.Run("names a blank parameter by its position", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: storeName}
+			i.Methods.Append(&emit.Method{
+				Name:   putName,
+				Params: emit.SlotOf(&emit.Param{Name: blankName, Type: &emit.TypeRef{Spelling: intType}}),
+			})
+			got := double.Copy(storeName+doubleSuffix, i)
+			assert.Equal(t, got[0].Params.Items()[0].Name, unnamedParam,
+				"the blank parameter of Put takes the name of its position, which the body passes on")
 		})
 
 		t.Run("renames a parameter and a result with the name of a predeclared identifier of Go", func(t *testing.T) {

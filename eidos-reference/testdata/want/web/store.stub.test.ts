@@ -7,4 +7,5 @@ import { StoreStub } from './store.stub';
 
 /** tsc checks that a StoreStub is a Store. */
 export const checkStoreStub: Store = new StoreStub();
+
 // reference:provenance sha256:0feea02633ea1224630c6bc3b60aa5965d1476ac2384d7d964b941d220fa82ec

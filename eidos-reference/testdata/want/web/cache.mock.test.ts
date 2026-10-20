@@ -22,4 +22,5 @@ export class CacheMock<T extends Product> implements Cache<T> {
     this.putFunc!(key, p);
   }
 }
+
 // reference:provenance sha256:454804709ff7863aa347795126c9c1cb4a03019cb643dc8d669a4417706e4bc0

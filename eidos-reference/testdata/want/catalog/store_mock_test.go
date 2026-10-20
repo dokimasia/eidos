@@ -25,4 +25,5 @@ func (s *StoreMock) Get(ctx context.Context, id string) (*Product, error) {
 func (s *StoreMock) Put(ctx context.Context, p *Product) error {
 	return s.PutFunc(ctx, p)
 }
+
 // reference:provenance sha256:8b1519c80ea46a68c74037efb17701a81e7256e9f87db6ce4e00537652ccf595
