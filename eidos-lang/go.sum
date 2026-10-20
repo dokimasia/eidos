@@ -1,5 +1,7 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20 h1:tlt0HOA7wJXw+l6LtHqHb+m3ievfQCAnE4dnrN+6v+I=
+github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20/go.mod h1:iHCOyeR+7461i52Odey1nLJnBiY0bqXQKKv46ild+9s=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
 github.com/mattn/go-pointer v0.0.1/go.mod h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnUbNvJZAlc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

@@ -36,8 +36,8 @@
 // names does not contain. Where the set contains every candidate, it
 // numbers the last candidate from 0. A backend chooses the name of a
 // receiver or a parameter of a method through it. [Params] names each
-// parameter of an emitted method that has no name through it, so a
-// generated body passes every parameter on by its name.
+// parameter of an emitted method that has no name or the name _ through
+// it, so a generated body passes every parameter on by its name.
 //
 // # Allocation contract
 //

@@ -179,6 +179,47 @@ func UniqueMethods(lang, host string, methods []*emit.Method) error {
 	return nil
 }
 
+// DeleteAccessor returns an error under the prefix of lang for the first
+// method with the delete accessor that s is or contains: the method that s
+// is, or a method of the struct, the interface, the enum or the sum that s
+// is, and of each type that they nest. Python is the one language that
+// deletes a property, so the backend of every other language calls it and
+// the settle withholds the declaration. It returns nil for every other
+// declaration.
+//
+// # Allocation contract
+//
+// DeleteAccessor allocates nothing. An error allocates its message.
+func DeleteAccessor(lang symbol.Lang, s symbol.Symbol) error {
+	var methods []*emit.Method
+	var nested []symbol.Symbol
+	switch d := s.(type) {
+	case *emit.Method:
+		methods = []*emit.Method{d}
+	case *emit.Struct:
+		methods, nested = d.Methods.Items(), d.Types.Items()
+	case *emit.Interface:
+		methods, nested = d.Methods.Items(), d.Types.Items()
+	case *emit.Enum:
+		methods = d.Methods.Items()
+	case *emit.Sum:
+		methods = d.Methods.Items()
+	default:
+		return nil
+	}
+	for _, m := range methods {
+		if m.Accessor == symbol.AccessorDelete {
+			return fmt.Errorf("%s: a property has no deleter in %s, and %s states one", lang, lang, m.Name)
+		}
+	}
+	for _, t := range nested {
+		if err := DeleteAccessor(lang, t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // foldThrows calls fold for one callable with failures, and clears the
 // failures once fold returns nil. A callable without failures is left
 // unchanged, and an error of fold is returned unchanged. It returns an

@@ -420,6 +420,81 @@ func TestLowering(t *testing.T) {
 			assert.Contains(t, err.Error(), "rust: method area", "the error has the prefix of the language")
 		})
 	})
+
+	t.Run("DeleteAccessor", func(t *testing.T) {
+		t.Parallel()
+
+		deleter := func() *emit.Method { return &emit.Method{Name: "area", Accessor: symbol.AccessorDelete} }
+		holding := func(m *emit.Method) *emit.Struct {
+			s := &emit.Struct{Name: shapeHost}
+			s.Methods.Append(m)
+			return s
+		}
+		refused := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{name: "returns an error for a method with the delete accessor", give: deleter()},
+			{name: "returns an error for a struct with a deleter", give: holding(deleter())},
+			{
+				name: "returns an error for an interface with a deleter",
+				give: func() symbol.Symbol {
+					i := &emit.Interface{Name: shapeHost}
+					i.Methods.Append(deleter())
+					return i
+				}(),
+			},
+			{
+				name: "returns an error for an enum with a deleter",
+				give: func() symbol.Symbol {
+					e := &emit.Enum{Name: shapeHost}
+					e.Methods.Append(deleter())
+					return e
+				}(),
+			},
+			{
+				name: "returns an error for a sum with a deleter",
+				give: func() symbol.Symbol {
+					s := &emit.Sum{Name: shapeHost}
+					s.Methods.Append(deleter())
+					return s
+				}(),
+			},
+			{
+				name: "returns an error for a deleter of a nested type",
+				give: func() symbol.Symbol {
+					outer := &emit.Struct{Name: shapeHost}
+					outer.Types.Append(holding(deleter()))
+					return outer
+				}(),
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := lowering.DeleteAccessor(rustLang, tt.give)
+				assert.HasError(t, err, "the language deletes no property")
+				assert.Contains(t, err.Error(), "rust: a property has no deleter", "the error names the language")
+			})
+		}
+
+		passed := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{name: "returns nil for a getter", give: &emit.Method{Name: "area", Accessor: symbol.AccessorGet}},
+			{name: "returns nil for a struct without a deleter", give: holding(&emit.Method{Name: "area"})},
+			{name: "returns nil for a function", give: &emit.Function{Name: "area"}},
+		}
+		for _, tt := range passed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NoError(t, lowering.DeleteAccessor(rustLang, tt.give), "the declaration deletes no property")
+			})
+		}
+	})
 }
 
 // Each copy allocates what it returns, the steps of a sum and of a
@@ -465,6 +540,11 @@ func TestLoweringAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { err = lowering.UniqueMethods(rustLang, shapeHost, many) }, uniqueAllocs,
 		"UniqueMethods allocates the set past the stack's room")
 	assert.NoError(t, err, "UniqueMethods passes distinct names")
+	host := &emit.Struct{Name: shapeHost}
+	host.Methods.Append(few...)
+	assert.MaxAllocs(t, func() { err = lowering.DeleteAccessor(rustLang, host) }, 0,
+		"DeleteAccessor allocates nothing for a host without a deleter")
+	assert.NoError(t, err, "DeleteAccessor passes a host without a deleter")
 }
 
 // BenchmarkLowering measures each copy a backend's lowering makes of a
@@ -563,6 +643,18 @@ func BenchmarkLowering(b *testing.B) {
 				assert.NoError(b, err, "UniqueMethods passes distinct names")
 			})
 		}
+	})
+
+	b.Run("DeleteAccessor", func(b *testing.B) {
+		host := &emit.Struct{Name: shapeHost}
+		host.Methods.Append(methods(stackMethods)...)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = lowering.DeleteAccessor(rustLang, host)
+		}
+		assert.NoError(b, err, "DeleteAccessor passes a host without a deleter")
 	})
 }
 

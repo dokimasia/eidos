@@ -6,6 +6,7 @@ module go.dokimi.dev/eidos/lang
 go 1.27.2
 
 require (
+	github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20
 	github.com/tree-sitter/go-tree-sitter v0.25.0
 	github.com/tree-sitter/tree-sitter-java v0.23.5
 	github.com/tree-sitter/tree-sitter-rust v0.24.2

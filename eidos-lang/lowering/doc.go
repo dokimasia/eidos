@@ -11,7 +11,8 @@
 // name. [Callables] lowers the declared failures of every callable that a
 // declaration contains, through a fold of the language, and
 // [UniqueMethods] is the check of a host that a language without
-// overloads makes first.
+// overloads makes first. [DeleteAccessor] refuses the deleter of a
+// property in every language that has none.
 //
 // # Allocation contract
 //

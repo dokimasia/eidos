@@ -47,6 +47,9 @@ const (
 	// constructionAllocs is a construction with arguments: the list of
 	// the spelled arguments the walk passes to Construction.
 	constructionAllocs = 1
+	// funcAllocs is a function with results: the list of the spelled
+	// results the walk passes to Func.
+	funcAllocs = 1
 )
 
 // leaves is the fixture leaf spelling: a target named scripted, whose
@@ -158,8 +161,28 @@ func (s *scripted) Construction(ref *emit.TypeRef, args []string) (string, error
 	return "new " + typ + "(" + strings.Join(args, ", ") + ")", nil
 }
 
-// unspelling is a target that refuses callees, conversions, composites
-// and addresses, so each of the walk's error paths runs against it.
+// Func spells a function as the type that Type spells and its results
+// after return in braces, and as the type and empty braces without
+// results.
+func (s *scripted) Func(ref *emit.TypeRef, results []string) (string, error) {
+	typ, err := s.Type(ref)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return typ + " {}", nil
+	}
+	return typ + " { return " + strings.Join(results, ", ") + " }", nil
+}
+
+// Make spells the empty value of a type as a call of make on the type.
+func (*scripted) Make(_ *emit.TypeRef, typ string) (string, error) {
+	return "make(" + typ + ")", nil
+}
+
+// unspelling is a target that refuses callees, conversions, composites,
+// addresses, constructions, functions and makes, so each of the walk's
+// error paths runs against it.
 type unspelling struct{ scripted }
 
 // Callee returns an error: the target has no callee form.
@@ -185,6 +208,16 @@ func (unspelling) Address(emit.Value, string) (string, error) {
 // Construction returns an error: the target has no construction form.
 func (unspelling) Construction(*emit.TypeRef, []string) (string, error) {
 	return "", errors.New("scripted: no construction form")
+}
+
+// Func returns an error: the target has no function form.
+func (unspelling) Func(*emit.TypeRef, []string) (string, error) {
+	return "", errors.New("scripted: no function form")
+}
+
+// Make returns an error: the target has no make form.
+func (unspelling) Make(*emit.TypeRef, string) (string, error) {
+	return "", errors.New("scripted: no make form")
 }
 
 // passthrough is a target that composes nothing: each method returns a
@@ -219,6 +252,12 @@ func (passthrough) Address(_ emit.Value, spelled string) (string, error) { retur
 func (passthrough) Construction(ref *emit.TypeRef, _ []string) (string, error) {
 	return ref.Spelling, nil
 }
+
+// Func returns the type's spelling.
+func (passthrough) Func(ref *emit.TypeRef, _ []string) (string, error) { return ref.Spelling, nil }
+
+// Make returns the type's spelling that the walk passed.
+func (passthrough) Make(_ *emit.TypeRef, typ string) (string, error) { return typ, nil }
 
 // The Go, Java, Rust and TypeScript backends spell their values through
 // Value and Leaves. The walk's order, its recursion and its refusals
@@ -309,6 +348,21 @@ func TestValue(t *testing.T) {
 				give: emit.Construction(ref("svc", "Set")),
 				want: "new Set()",
 			},
+			{
+				name: "writes a function that returns its results",
+				give: emit.Func(ref("svc", "Handler"), integer("1"), emit.Literal(emit.LiteralNil, "")),
+				want: "Handler { return 1, null }",
+			},
+			{
+				name: "writes a function without results",
+				give: emit.Func(ref("svc", "Hook")),
+				want: "Hook {}",
+			},
+			{
+				name: "writes a make of its type",
+				give: emit.Make(ref("svc", "Feed")),
+				want: "make(Feed)",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -319,6 +373,15 @@ func TestValue(t *testing.T) {
 				assert.Equal(t, got, tt.want, "the spelling")
 			})
 		}
+
+		t.Run("records the import of the type of a make", func(t *testing.T) {
+			t.Parallel()
+
+			target := &scripted{}
+			_, err := scaffold.Value(target, emit.Make(ref("feed", "Feed")))
+			assert.NoError(t, err, "the make spells")
+			assert.Equal(t, target.imported, []string{"feed"}, "the make imports the package of its type")
+		})
 
 		t.Run("passes Address the value it takes the address of", func(t *testing.T) {
 			t.Parallel()
@@ -419,6 +482,18 @@ func TestValue(t *testing.T) {
 				name: "returns a value error for a broken value inside a construction",
 				give: emit.Construction(ref("svc", "Set"), emit.Value{}), want: "no spelling",
 			},
+			{
+				name: "returns a value error for a function without a type",
+				give: emit.Value{Kind: emit.ValueFunc}, want: "a function value has no type",
+			},
+			{
+				name: "returns a value error for a broken result inside a function",
+				give: emit.Func(ref("svc", "Handler"), emit.Value{}), want: "no spelling",
+			},
+			{
+				name: "returns a value error for a make without a type",
+				give: emit.Value{Kind: emit.ValueMake}, want: "a make value has no type",
+			},
 		}
 		for _, tt := range walkErrors {
 			t.Run(tt.name, func(t *testing.T) {
@@ -472,6 +547,16 @@ func TestValue(t *testing.T) {
 				name:   "returns the target's error for a construction it has no form for",
 				give:   emit.Construction(ref("svc", "Set")),
 				target: &unspelling{}, want: "no construction form",
+			},
+			{
+				name:   "returns the target's error for a function it has no form for",
+				give:   emit.Func(ref("svc", "Handler")),
+				target: &unspelling{}, want: "no function form",
+			},
+			{
+				name:   "returns the target's error for a make it has no form for",
+				give:   emit.Make(ref("svc", "Feed")),
+				target: &unspelling{}, want: "no make form",
 			},
 		}
 		for _, tt := range targetErrors {
@@ -595,6 +680,17 @@ func TestValueAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, empty) }, 0,
 		"Value allocates nothing for a construction without arguments")
 	assert.Equal(t, got, "Set", "Value spells the construction without arguments")
+	handler, hook := emit.Func(ref("svc", "Handler"), integer("1")), emit.Func(ref("svc", "Hook"))
+	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, handler) }, funcAllocs,
+		"Value allocates the list of the results of a function")
+	assert.Equal(t, got, "Handler", "Value spells the function")
+	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, hook) }, 0,
+		"Value allocates nothing for a function without results")
+	assert.Equal(t, got, "Hook", "Value spells the function without results")
+	feed := emit.Make(ref("svc", "Feed"))
+	assert.MaxAllocs(t, func() { got, err = scaffold.Value(passthrough{}, feed) }, 0,
+		"Value allocates nothing for a make")
+	assert.Equal(t, got, "Feed", "Value spells the make")
 	assert.NoError(t, err, "Value spells every tree")
 	assert.MaxAllocs(t, func() { got, err = plain.Literal(lit) }, 0,
 		"Literal allocates nothing for a number without a number spelling")
@@ -621,6 +717,11 @@ func BenchmarkValue(b *testing.B) {
 			name: "a construction", give: emit.Construction(ref("svc", "Set"), integer("1")),
 			allocs: constructionAllocs, want: "Set",
 		},
+		{
+			name: "a function", give: emit.Func(ref("svc", "Handler"), integer("1")),
+			allocs: funcAllocs, want: "Handler",
+		},
+		{name: "a make", give: emit.Make(ref("svc", "Feed")), want: "Feed"},
 	}
 	b.Run("Value", func(b *testing.B) {
 		for _, tt := range trees {
