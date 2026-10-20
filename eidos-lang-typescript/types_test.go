@@ -34,8 +34,9 @@ var (
 		typescript.TypeArray, typescript.TypeReadonlyArray, typescript.TypeRecord, typescript.TypePartial,
 		typescript.TypeMap, typescript.TypeReadonlyMap, typescript.TypeSet, typescript.TypeReadonlySet,
 		typescript.TypePromise,
-		typescript.TypeDate, typescript.TypeUint8Array, typescript.TypeAsyncIterable,
+		typescript.TypeDate, typescript.TypeUint8Array, typescript.TypeIterable, typescript.TypeAsyncIterable,
 		typescript.TypeAsyncIterableIterator, typescript.TypeAsyncGenerator, typescript.TypeAbortSignal,
+		typescript.TypeErrorOptions,
 	}, errorClasses...)
 )
 

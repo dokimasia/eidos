@@ -26,6 +26,8 @@ const (
 	FuncDocs = render.HelperDocs
 	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
 	// FuncSpellValue is the template name of [Speller.SpellValue].
@@ -85,6 +87,15 @@ const (
 	argsOpener   = "<"
 	argsCloser   = ">"
 	qualifierSep = "."
+)
+
+// groupOpen and groupClose enclose the element of a list where
+// [typescript.Grouped] reports true for it. listMark follows the element
+// of a list.
+const (
+	groupOpen  = "("
+	groupClose = ")"
+	listMark   = "[]"
 )
 
 // constBinding and letBinding are the keywords that open a module-level
@@ -361,6 +372,11 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 // not initialize a rest parameter. An unnamed parameter gets the discard
 // name, with a number from the second unnamed parameter on.
 //
+// The type of a rest parameter is the type of one argument, and Params
+// writes a list of that element. The element is in parentheses where
+// [typescript.Grouped] reports true for it. A rest parameter of the union
+// string|number reads ...parts: (string|number)[].
+//
 // Params allocates the spelling of each parameter, the joined list of
 // more than one parameter, and what the spelling of each type allocates.
 // Two parameters allocate three times, and an empty list allocates
@@ -392,7 +408,11 @@ func (s Speller) Params(ps *emit.Slot[*emit.Param]) (string, error) {
 			case p.Optional:
 				return "", refuse("a rest parameter is optional by shape, and %s states it", name)
 			}
-			parts = append(parts, "..."+name+": "+typ+"[]"+textfmt.Inline(p.Comment))
+			open, closer := "", ""
+			if typescript.Grouped(symbol.FormList, p.Type) {
+				open, closer = groupOpen, groupClose
+			}
+			parts = append(parts, "..."+name+": "+open+typ+closer+listMark+textfmt.Inline(p.Comment))
 			continue
 		}
 		if p.Optional && p.Default != "" {
@@ -541,13 +561,14 @@ func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)
 // set, the import set of one file. Every helper takes
 // a fixed list of arguments, because text/template allocates the list of
 // a variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty-five helpers in four allocations,
+// Funcs allocates the map of twenty-six helpers in four allocations,
 // and the nine bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:             Docs,
 		FuncMemberDocs:       MemberDocs,
+		FuncWrapDocs:         WrapDocs,
 		FuncSpell:            s.Spell,
 		FuncSpellValue:       s.SpellValue,
 		FuncTypeParams:       s.TypeParams,
@@ -586,6 +607,15 @@ func Docs(lines []string) string {
 // an interface or an enum. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.BlockDocs(lines, "/**", " * ", " */", memberIndent)
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that [Docs]
+// and [MemberDocs] write. A TSDoc block tag is the first element of its
+// line, and the text of a comment may contain Markdown, so the wrap starts
+// no line with a tag or with a block opener of CommonMark. It allocates
+// what [textfmt.Wrap] allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupTags|textfmt.MarkupMarkdown)
 }
 
 // PropKey writes the property key of the field f, as [MethodKey] writes

@@ -54,10 +54,9 @@ var (
 // order of t.Elems. Restate writes a list as T[], a tuple as [A, B] and a
 // map as an object type of one index signature, each with readonly where
 // t is immutable. It writes a union, an intersection and a function type,
-// whose parameters are p0, p1 and so on. A union, an intersection and a
-// function type inside a list, a union or an intersection are in
-// parentheses where TypeScript binds them otherwise. It is the
-// restatement of TypeScript for [spellref.SpellRestated].
+// whose parameters are p0, p1 and so on. A child is in parentheses where
+// [Grouped] reports true for it. Restate is the restatement of TypeScript
+// for [spellref.SpellRestated].
 //
 // Error modes:
 //   - A reference with fewer spellings than its form takes returns an
@@ -182,34 +181,46 @@ func writeJoined(b *strings.Builder, t *emit.TypeRef, elems []string, sep string
 	}
 }
 
-// writeChild writes the spelling of one child of a composite of the form
-// outer into b. It writes the child in parentheses where TypeScript would
-// bind the child otherwise: a union, an intersection, a function type and
-// a read-only collection inside a list, a function type inside a union,
-// and a union or a function type inside an intersection.
+// writeChild writes the spelling text of the type child into b. It puts
+// the text in parentheses where [Grouped] reports true for outer and
+// child.
 func writeChild(b *strings.Builder, outer symbol.TypeForm, child *emit.TypeRef, text string) {
-	grouped := false
-	if child != nil {
-		switch outer {
-		case symbol.FormList:
-			grouped = child.Form == symbol.FormUnion || child.Form == symbol.FormIntersection ||
-				child.Form == symbol.FormFunc ||
-				(child.Form == symbol.FormList || child.Form == symbol.FormTuple) &&
-					child.Mutability == symbol.MutabilityImmutable
-		case symbol.FormUnion:
-			grouped = child.Form == symbol.FormFunc
-		case symbol.FormIntersection:
-			grouped = child.Form == symbol.FormUnion || child.Form == symbol.FormFunc
-		default:
-			// A tuple, a map and a function type separate their children
-			// with commas and colons, so no child needs parentheses.
-		}
-	}
-	if !grouped {
+	if !Grouped(outer, child) {
 		b.WriteString(text)
 		return
 	}
 	b.WriteString(groupOpen)
 	b.WriteString(text)
 	b.WriteString(groupClose)
+}
+
+// Grouped reports whether the type child needs parentheses inside a
+// composite of the form outer. It reports true for these children:
+//
+//   - a union, an intersection, a function type and a read-only
+//     collection inside a list;
+//   - a function type inside a union;
+//   - a union or a function type inside an intersection.
+//
+// TypeScript parses each of them differently without the parentheses. A
+// tuple, a map and a function type separate their children with commas
+// and colons, so Grouped reports false for their children. It also
+// reports false for a nil child. Grouped allocates nothing.
+func Grouped(outer symbol.TypeForm, child *emit.TypeRef) bool {
+	if child == nil {
+		return false
+	}
+	switch outer {
+	case symbol.FormList:
+		return child.Form == symbol.FormUnion || child.Form == symbol.FormIntersection ||
+			child.Form == symbol.FormFunc ||
+			(child.Form == symbol.FormList || child.Form == symbol.FormTuple) &&
+				child.Mutability == symbol.MutabilityImmutable
+	case symbol.FormUnion:
+		return child.Form == symbol.FormFunc
+	case symbol.FormIntersection:
+		return child.Form == symbol.FormUnion || child.Form == symbol.FormFunc
+	default:
+		return false
+	}
 }

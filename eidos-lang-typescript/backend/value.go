@@ -13,6 +13,31 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// The spellings of an arrow function, which is the function value of
+// TypeScript.
+const (
+	// arrowOpen opens an arrow function without parameters, because
+	// TypeScript assigns a function of fewer parameters to a function
+	// type.
+	arrowOpen = "() => "
+	// emptyBody is the body of an arrow function without results.
+	emptyBody = "{}"
+	// objectOpen opens an object literal. TypeScript reads a brace after
+	// the arrow as a block, so an arrow function returns an object
+	// literal in parentheses.
+	objectOpen = "{"
+	// tupleOpen and tupleClose enclose the results of a function of two
+	// or more results, and resultSep separates them. The arrow type of
+	// such a function returns a tuple.
+	tupleOpen  = "["
+	tupleClose = "]"
+	resultSep  = ", "
+	// newKeyword and abstractKeyword open the spelling of a constructor
+	// type. An arrow function is no value of a constructor type.
+	newKeyword      = "new"
+	abstractKeyword = "abstract"
+)
+
 // leaves is TypeScript's spelling of the literal leaves. A number
 // keeps its text, and a string quotes in TypeScript's own grammar.
 // The vocabulary has one absent value and TypeScript has two, so the
@@ -112,4 +137,52 @@ func (t target) Construction(ref *emit.TypeRef, args []string) (string, error) {
 		return "", err
 	}
 	return "new " + class + "(" + strings.Join(args, ", ") + ")", nil
+}
+
+// Func spells an arrow function of a function type that returns the
+// result, as () => 0. A function without results has an empty body, as
+// () => {}. A function of two or more results returns them as a tuple,
+// because the arrow type of such a function returns a tuple. Func does
+// not write parameters or a type, so the file does not import anything
+// for the function. An object literal that the function returns is in
+// parentheses. A type that is not a function type refuses, and so does a
+// constructor type, because an arrow function constructs nothing.
+func (t target) Func(ref *emit.TypeRef, results []string) (string, error) {
+	switch {
+	case ref.Form != symbol.FormFunc:
+		return "", render.RefuseValue(t.Lang(),
+			"TypeScript writes an arrow function of a function type, and %s is not one", ref.Spelling)
+	case strings.HasPrefix(ref.Spelling, newKeyword) || strings.HasPrefix(ref.Spelling, abstractKeyword):
+		return "", render.RefuseValue(t.Lang(),
+			"an arrow function constructs nothing, and %s is a constructor type", ref.Spelling)
+	}
+	switch len(results) {
+	case 0:
+		return arrowOpen + emptyBody, nil
+	case 1:
+		if strings.HasPrefix(results[0], objectOpen) {
+			return arrowOpen + groupOpen + results[0] + groupClose, nil
+		}
+		return arrowOpen + results[0], nil
+	default:
+		return arrowOpen + tupleOpen + strings.Join(results, resultSep) + tupleClose, nil
+	}
+}
+
+// Make refuses: TypeScript has no make.
+func (t target) Make(_ *emit.TypeRef, typ string) (string, error) {
+	return "", render.RefuseValue(t.Lang(), "TypeScript has no make of %s", typ)
+}
+
+// Value spells one value of the value tree as TypeScript, through a
+// target that imports into set what the references and the callees of
+// the value name. The value builtin calls it, so a template writes a
+// value as a body of the same file writes it. A value that TypeScript has
+// no form for returns a [render.ValueError].
+//
+// Value allocates what [scaffold.Value] allocates: the text of each part
+// of the value that it joins, and the relative specifier of the module of
+// a callee of another module. A literal does not allocate.
+func Value(v emit.Value, set *render.ImportSet) (string, error) {
+	return scaffold.Value(target{set: set}, v)
 }

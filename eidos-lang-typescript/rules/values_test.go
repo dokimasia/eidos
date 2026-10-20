@@ -27,10 +27,18 @@ const (
 	undefinedWord = "undefined"
 )
 
+// causeHint is the hint of the value cases of the top types and the error
+// classes, as the name of a parameter cause gives it.
+const causeHint = "cause"
+
 // The allocations of the value derivations above zero.
 const (
 	// stringPairAllocs counts the two hinted texts of a string's pair.
 	stringPairAllocs = 2
+	// errorPairAllocs counts the pair of Error: the hinted texts of the two
+	// messages, the reference to the class, and the list of arguments of
+	// each construction.
+	errorPairAllocs = 2 + 1 + 2
 	// listPairAllocs counts a list's pair. The pair allocates the
 	// reference to the list with its list of children and its element,
 	// the hinted texts of the two elements, and the list of entries of
@@ -133,6 +141,11 @@ func TestValues(t *testing.T) {
 				name: "derives the pair of the target of an alias", host: shapesName, field: "plain",
 				sample:    emit.Number(emit.LiteralFloat, "1.5", 64),
 				alternate: emit.Number(emit.LiteralFloat, "2.5", 64),
+			},
+			{
+				name: "derives a pair of strings from the hint for unknown", host: shapesName, field: "anything",
+				sample:    emit.Literal(emit.LiteralString, "anything-a"),
+				alternate: emit.Literal(emit.LiteralString, "anything-b"),
 			},
 		}
 		for _, tt := range literals {
@@ -438,7 +451,6 @@ func TestValues(t *testing.T) {
 				name: "refuses a type that refers to itself below the depth", host: shapesName, field: "deep",
 				want: rules.RefusedDepth,
 			},
-			{name: "refuses a keyword type", host: shapesName, field: "anything", want: rules.RefusedNoLiteral},
 			{name: "refuses the empty tuple", host: shapesName, field: "empty", want: rules.RefusedNoLiteral},
 			{
 				name: "refuses a tuple with a member that refuses", host: shapesName, field: "broken",
@@ -478,11 +490,15 @@ func TestValues(t *testing.T) {
 			{
 				name: "refuses a union whose members derive nothing with the first member's reason",
 				give: &node.TypeRef{Form: symbol.FormUnion, Elems: []*node.TypeRef{
-					{Spelling: "Gone", Package: outsideLib}, {Spelling: "unknown"},
+					{Spelling: "Gone", Package: outsideLib}, {Spelling: typescript.TypeNever},
 				}},
 				want: rules.RefusedUnresolved,
 			},
 			{name: "refuses a nil reference", give: nil, want: rules.RefusedNoLiteral},
+			{
+				name: "refuses a keyword type",
+				give: &node.TypeRef{Spelling: typescript.TypeNever}, want: rules.RefusedNoLiteral,
+			},
 			{
 				name: "refuses a map without a key",
 				give: &node.TypeRef{Form: symbol.FormMap},
@@ -492,13 +508,13 @@ func TestValues(t *testing.T) {
 				name: "refuses a map whose value refuses",
 				give: &node.TypeRef{
 					Form:  symbol.FormMap,
-					Elems: []*node.TypeRef{{Spelling: stringName}, {Spelling: "unknown"}},
+					Elems: []*node.TypeRef{{Spelling: stringName}, {Spelling: typescript.TypeNever}},
 				},
 				want: rules.RefusedNoLiteral,
 			},
 			{
 				name: "refuses a list whose element refuses",
-				give: &node.TypeRef{Form: symbol.FormList, Elems: []*node.TypeRef{{Spelling: "unknown"}}},
+				give: &node.TypeRef{Form: symbol.FormList, Elems: []*node.TypeRef{{Spelling: typescript.TypeNever}}},
 				want: rules.RefusedNoLiteral,
 			},
 			{
@@ -513,14 +529,16 @@ func TestValues(t *testing.T) {
 			},
 			{
 				name: "refuses a Set whose element refuses",
-				give: &node.TypeRef{Spelling: typescript.TypeSet, Args: []*node.TypeRef{{Spelling: "unknown"}}},
+				give: &node.TypeRef{
+					Spelling: typescript.TypeSet, Args: []*node.TypeRef{{Spelling: typescript.TypeNever}},
+				},
 				want: rules.RefusedNoLiteral,
 			},
 			{
 				name: "refuses a Map whose key refuses",
 				give: &node.TypeRef{
 					Spelling: typescript.TypeMap,
-					Args:     []*node.TypeRef{{Spelling: "unknown"}, {Spelling: numberName}},
+					Args:     []*node.TypeRef{{Spelling: typescript.TypeNever}, {Spelling: numberName}},
 				},
 				want: rules.RefusedNoLiteral,
 			},
@@ -528,7 +546,7 @@ func TestValues(t *testing.T) {
 				name: "refuses a Map whose value refuses",
 				give: &node.TypeRef{
 					Spelling: typescript.TypeMap,
-					Args:     []*node.TypeRef{{Spelling: stringName}, {Spelling: "unknown"}},
+					Args:     []*node.TypeRef{{Spelling: stringName}, {Spelling: typescript.TypeNever}},
 				},
 				want: rules.RefusedNoLiteral,
 			},
@@ -539,6 +557,56 @@ func TestValues(t *testing.T) {
 
 				sample, _ := tsrules.New().DeriveSamples(tt.give, "", rules.View{})
 				assert.Equal(t, sample, rules.Refused(tt.want), "the sample refuses with the reason")
+			})
+		}
+
+		errorRef := &node.TypeRef{Spelling: typescript.TypeError}
+		typeErrorRef := &node.TypeRef{Spelling: typescript.TypeTypeError}
+		aggregateRef := &node.TypeRef{Spelling: typescript.TypeAggregateError}
+		anyList := &emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: typescript.TypeAny}}}
+		noErrors := emit.Composite(anyList)
+		hinted := []struct {
+			name          string
+			give          *node.TypeRef
+			wantSample    emit.Value
+			wantAlternate emit.Value
+		}{
+			{
+				name:          "derives a pair of strings from the hint for any",
+				give:          &node.TypeRef{Spelling: typescript.TypeAny},
+				wantSample:    emit.Literal(emit.LiteralString, "cause-a"),
+				wantAlternate: emit.Literal(emit.LiteralString, "cause-b"),
+			},
+			{
+				name:          "derives a construction of Error with a message from the hint",
+				give:          errorRef,
+				wantSample:    emit.Construction(rules.EmitRef(errorRef), emit.Literal(emit.LiteralString, "cause-a")),
+				wantAlternate: emit.Construction(rules.EmitRef(errorRef), emit.Literal(emit.LiteralString, "cause-b")),
+			},
+			{
+				name: "derives a construction of a native error class with a message from the hint",
+				give: typeErrorRef,
+				wantSample: emit.Construction(rules.EmitRef(typeErrorRef),
+					emit.Literal(emit.LiteralString, "cause-a")),
+				wantAlternate: emit.Construction(rules.EmitRef(typeErrorRef),
+					emit.Literal(emit.LiteralString, "cause-b")),
+			},
+			{
+				name: "derives a construction of AggregateError with an empty array before the message",
+				give: aggregateRef,
+				wantSample: emit.Construction(rules.EmitRef(aggregateRef), noErrors,
+					emit.Literal(emit.LiteralString, "cause-a")),
+				wantAlternate: emit.Construction(rules.EmitRef(aggregateRef), noErrors,
+					emit.Literal(emit.LiteralString, "cause-b")),
+			},
+		}
+		for _, tt := range hinted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				sample, alternate := tsrules.New().DeriveSamples(tt.give, causeHint, rules.View{})
+				expect.Equal(t, sample, rules.Of(tt.wantSample), "the sample derives from the hint")
+				expect.Equal(t, alternate, rules.Of(tt.wantAlternate), "the alternate derives from the hint")
 			})
 		}
 
@@ -1085,6 +1153,7 @@ func valuesCalls(tb assert.TB) []allocCall {
 	list := &node.TypeRef{Spelling: "string[]", Form: symbol.FormList, Elems: []*node.TypeRef{str}}
 	set := &node.TypeRef{Spelling: typescript.TypeSet, Args: []*node.TypeRef{str}}
 	byName := &node.TypeRef{Spelling: typescript.TypeMap, Args: []*node.TypeRef{str, number}}
+	errorType := &node.TypeRef{Spelling: typescript.TypeError}
 	codes := &node.TypeRef{Spelling: "Codes", Target: codesID}
 	var (
 		sample rules.Sample
@@ -1111,6 +1180,13 @@ func valuesCalls(tb assert.TB) []allocCall {
 			call: func() { sample, _ = r.DeriveSamples(set, "s", f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Kind, emit.ValueConstruction, "DeriveSamples constructs the Set")
+			},
+		},
+		{
+			name: "DeriveSamples", caseName: "an Error", allocs: errorPairAllocs,
+			call: func() { sample, _ = r.DeriveSamples(errorType, "s", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueConstruction, "DeriveSamples constructs the Error")
 			},
 		},
 		{

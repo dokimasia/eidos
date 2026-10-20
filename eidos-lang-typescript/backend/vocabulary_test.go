@@ -4,11 +4,13 @@
 package backend_test
 
 import (
+	"strings"
 	"testing"
 	"text/template"
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -87,16 +89,26 @@ const (
 	// partsAllocs is three parameters: each one's spelling, the list of
 	// parts, which Go places on the heap past two, and the joined list.
 	partsAllocs = 3 + 1 + 1
+	// restAllocs is the spelling of a rest parameter, which writes the
+	// list of its element in the same concatenation.
+	restAllocs = 1
 	// resultTupleAllocs is two results: the joined tuple, and the
 	// annotation.
 	resultTupleAllocs = 1 + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-five
+	// funcsAllocs is the vocabulary of a file: the map of twenty-six
 	// helpers, four allocations, and the speller's nine bound helpers.
 	funcsAllocs = 4 + 9
 	// joinedKeywordsAllocs is two keywords joined behind an accessibility,
 	// one join each.
 	joinedKeywordsAllocs = 1 + 1
+	// wrapDocsAllocs is the wrap of a single-spaced text: the list of its
+	// lines, each of which is a part of the text.
+	wrapDocsAllocs = 1
 )
+
+// filledLine is a word as wide as the documentation, so the wrap starts a
+// line with the word after it.
+var filledLine = strings.Repeat("a", textfmt.DocsWidth)
 
 // The vocabulary is what every kind template spells through, so
 // each helper's output is pinned byte for byte, and every import a
@@ -724,6 +736,17 @@ func TestVocabulary(t *testing.T) {
 				want: "...rest: number[]",
 			},
 			{
+				name: "writes the union element of a rest parameter in parentheses",
+				give: []*emit.Param{{
+					Name: "parts", Variadic: symbol.VariadicPositional,
+					Type: &emit.TypeRef{
+						Spelling: "string|number", Form: symbol.FormUnion,
+						Elems: []*emit.TypeRef{ref("string"), ref("number")},
+					},
+				}},
+				want: "...parts: (string|number)[]",
+			},
+			{
 				name: "writes an unnamed parameter under the discard name",
 				give: []*emit.Param{{Type: ref("string")}},
 				want: "_: string",
@@ -931,6 +954,24 @@ func TestVocabulary(t *testing.T) {
 
 			assert.Equal(t, backend.Docs([]string{"One.", "Two."}), "/**\n * One.\n * Two.\n */\n",
 				"one gutter line per line")
+		})
+	})
+
+	t.Run("WrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps a block tag on the line before it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" @see next"), []string{filledLine + " @see", "next"},
+				"a TSDoc block tag is the first element of its line")
+		})
+
+		t.Run("keeps a list marker on the line before it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" - next"), []string{filledLine + " -", "next"},
+				"the text of a TSDoc comment may contain Markdown")
 		})
 	})
 
@@ -1767,6 +1808,7 @@ func vocabularyCalls() []allocCall {
 		&emit.Param{Name: idName, Type: bare}, &emit.Param{Name: nameParam, Type: bare},
 		&emit.Param{Name: countParam, Type: bare},
 	))
+	rest := new(emit.SlotOf(&emit.Param{Name: countParam, Type: bare, Variadic: symbol.VariadicPositional}))
 	one := new(emit.SlotOf(&emit.Return{Type: bare}))
 	pair := new(emit.SlotOf(&emit.Return{Type: bare}, &emit.Return{Type: ref(stringType)}))
 	async := &emit.Function{Name: "load", Async: true, Returns: *one}
@@ -1785,11 +1827,13 @@ func vocabularyCalls() []allocCall {
 	prop := &emit.Field{Name: keyName, Mutability: symbol.MutabilityImmutable}
 	sig, binding := &emit.Method{Name: "load"}, &emit.Variable{Name: countParam}
 	annotations := symbol.Annotations{{Name: logDecorate}}
+	wrapped := filledLine + " next"
 	var (
 		spellerOut backend.Speller
 		out        string
 		err        error
 		funcs      template.FuncMap
+		lines      []string
 	)
 	spells := func(want string) func(tb assert.TB) {
 		return func(tb assert.TB) {
@@ -1844,6 +1888,10 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.Params(three) }, check: spells("id: number, name: number, count: number"),
 		},
 		{
+			name: "Params", caseName: "a rest parameter", allocs: restAllocs,
+			call: func() { out, err = s.Params(rest) }, check: spells("..." + countParam + ": number[]"),
+		},
+		{
 			name: "Returns", caseName: "an async function returning a value", allocs: textAllocs,
 			call: func() { out, err = s.Returns(async) }, check: spells(": Promise<number>"),
 		},
@@ -1862,11 +1910,18 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 25, "Funcs returns the twenty-five helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 26, "Funcs returns the twenty-six helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/**\n * " + rowDoc + "\n */\n"),
+		},
+		{
+			name: "WrapDocs", allocs: wrapDocsAllocs,
+			call: func() { lines = backend.WrapDocs(wrapped) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
+			},
 		},
 		{
 			name: "MemberDocs", allocs: textAllocs,

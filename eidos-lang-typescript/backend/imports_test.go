@@ -63,8 +63,21 @@ func TestImports(t *testing.T) {
 			var set render.ImportSet
 			set.AddType(codecModule, codecName)
 			set.AddNamed(codecModule, decodeName)
-			assert.Equal(t, backend.Imports(&set), "import { Codec, decode } from './codec';\n\n",
-				"a type-only binding beside a value one imports as a value")
+			assert.Equal(t, backend.Imports(&set), "import { type Codec, decode } from './codec';\n\n",
+				"the type-only specifier of the value import has the type modifier")
+		})
+
+		t.Run("writes the type modifier before a renamed type-only specifier of a value import", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.BindItem(storeModule, rowName, true)
+			local := set.BindItem(legacyModule, rowName, true)
+			set.BindItem(legacyModule, joinName, false)
+			assert.Equal(t, local, rowName+"2", "the second Row binds under a numbered name")
+			assert.Equal(t, backend.Imports(&set),
+				"import { type Row as Row2, join } from './legacy';\nimport type { Row } from './store';\n\n",
+				"the modifier comes before the exported name")
 		})
 
 		t.Run("writes the value import alone for a path bound bare beside a value", func(t *testing.T) {
