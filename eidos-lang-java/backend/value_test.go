@@ -37,6 +37,24 @@ const (
 	qualifiedOut = "java.util.List"
 )
 
+// The allocations of a value.
+const (
+	// literalAllocs is an integer literal in the int range, which Java
+	// writes as its text.
+	literalAllocs = 0
+	// callAllocs is a call of a static method with one argument, in a file
+	// that imports the class already: the qualified name of the method,
+	// and the text of the call.
+	callAllocs = 2
+	// funcAllocs is a function with one parameter and one result: the list
+	// of the spelled results, and the text of the lambda.
+	funcAllocs = 2
+)
+
+// makeCall is the call Rows.make(1) of a static method of the class Rows.
+// The specs only read it.
+var makeCall = emit.Call(valueFn(utilPkg, rowsClass, makeName), emit.Literal(emit.LiteralInt, "1"))
+
 // Every value spelling is pinned, for the reason the statement
 // spellings are: the text is spliced into generated bodies, and a
 // drift rewrites files.
@@ -231,6 +249,45 @@ func TestValue(t *testing.T) {
 				give: emit.Construction(&emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{ref(longClass)}}),
 				want: "no spelling", wantErr: true,
 			},
+			{
+				name: "writes a function without parameters or results as a lambda with an empty block",
+				give: emit.Func(formed("Runnable", symbol.FormFunc)),
+				want: "() -> {}",
+			},
+			{
+				name: "writes a function as a lambda that returns its result",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "Function<Long, Long>", Form: symbol.FormFunc, Split: 1,
+					Elems: []*emit.TypeRef{ref(longClass), ref(longClass)},
+				}, emit.Number(emit.LiteralInt, "0", 64)),
+				want: "(unused0) -> 0L",
+			},
+			{
+				name: "writes a parameter of a lambda for each parameter of the type",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "BiConsumer<Long, Long>", Form: symbol.FormFunc, Split: 2,
+					Elems: []*emit.TypeRef{ref(longClass), ref(longClass)},
+				}),
+				want: "(unused0, unused1) -> {}",
+			},
+			{
+				name: "returns a value error for a function of two results",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "Pair", Form: symbol.FormFunc,
+					Elems: []*emit.TypeRef{ref(longClass), ref(longClass)},
+				}, integer("1"), integer("2")),
+				want: "returns one value", wantErr: true,
+			},
+			{
+				name: "returns a value error for a function of a named functional interface",
+				give: emit.Func(&emit.TypeRef{Spelling: "Function<Long, Long>", Package: "java/util/function"}),
+				want: "Function<Long, Long> states none", wantErr: true,
+			},
+			{
+				name: "returns a value error for a make",
+				give: emit.Make(formed("Stream<Long>", symbol.FormStream)),
+				want: "no make of Stream<Long>", wantErr: true,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -350,6 +407,85 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, got, qualifiedOut+".of(2)", "the collection written qualified")
 		})
 	})
+
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes a value as the scaffold writes it", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Value(makeCall, &render.ImportSet{})
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, rowsClass+"."+makeName+"(1)", "the Java spelling")
+		})
+
+		t.Run("imports the class of a static callee", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := backend.Value(makeCall, &set)
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilPkg, Name: rowsClass}}, "the class of the method")
+		})
+
+		t.Run("returns a value error for a value that Java cannot spell", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Value(emit.Address(integer("1")), &render.ImportSet{})
+			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+			assert.Equal(t, refused.Lang, string(java.Lang), "naming the target")
+		})
+	})
+}
+
+// A literal allocates nothing, a call allocates the qualified name of its
+// method and its text, and a function allocates the list of its results
+// and its text. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
+func TestValueAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls())
+}
+
+// BenchmarkValue measures the spelling of one value that a template
+// writes.
+func BenchmarkValue(b *testing.B) {
+	benchCalls(b, valueCalls())
+}
+
+// valueCalls returns a call of Value over an integer literal, over a call
+// of a static method of a class that the file imports already, and over a
+// function with one parameter and one result.
+func valueCalls() []allocCall {
+	literal := integer("42")
+	fn := emit.Func(&emit.TypeRef{
+		Spelling: "Function<Long, Integer>", Form: symbol.FormFunc, Split: 1,
+		Elems: []*emit.TypeRef{ref(longClass), ref("Integer")},
+	}, literal)
+	set := &render.ImportSet{}
+	var (
+		out string
+		err error
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "Value spells the value")
+			assert.Equal(tb, out, want, "Value writes the Java spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "Value", caseName: "an integer", allocs: literalAllocs,
+			call: func() { out, err = backend.Value(literal, set) }, check: spells("42"),
+		},
+		{
+			name: "Value", caseName: "a call of a static method", allocs: callAllocs,
+			call: func() { out, err = backend.Value(makeCall, set) }, check: spells(rowsClass + "." + makeName + "(1)"),
+		},
+		{
+			name: "Value", caseName: "a function with one result", allocs: funcAllocs,
+			call: func() { out, err = backend.Value(fn, set) }, check: spells("(unused0) -> 42"),
+		},
+	}
 }
 
 // valueRef returns a resolved reference to a class of one package.

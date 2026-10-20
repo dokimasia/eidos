@@ -36,6 +36,17 @@ const (
 	// class instance creation expression, which calls a constructor.
 	arrayCreation    = "new "
 	instanceCreation = "new "
+	// lambdaParam starts the name of a parameter of a lambda, which the
+	// body of the lambda does not read. The position of the parameter
+	// ends the name.
+	lambdaParam = "unused"
+	// lambdaArrow separates the parameters of a lambda from its body, and
+	// emptyBlock is the body of a lambda without results.
+	lambdaArrow = " -> "
+	emptyBlock  = "{}"
+	// paramDigits is the size of the stack buffer that the position of a
+	// parameter of a lambda is written into.
+	paramDigits = 4
 	// memberSep joins a class and its static member.
 	memberSep = "."
 	// longSuffix marks an integer literal as a long, and floatSuffix
@@ -192,6 +203,50 @@ func (t target) Construction(ref *emit.TypeRef, args []string) (string, error) {
 	return instanceCreation + class + "(" + strings.Join(args, ", ") + ")", nil
 }
 
+// Func spells a lambda of a function type, as (unused0) -> 0L. It writes
+// a parameter for each parameter of the type, which the body does not
+// read. The body of the lambda is the result, and a function without
+// results has an empty block, as () -> {}. Func does not write a type, so
+// the file does not import anything for the lambda. A reference that is not a function type
+// refuses, because the reference of a named functional interface does not
+// state its parameters. A function of two or more results refuses,
+// because a Java lambda returns one value.
+func (t target) Func(ref *emit.TypeRef, results []string) (string, error) {
+	switch {
+	case ref.Form != symbol.FormFunc:
+		return "", render.RefuseValue(t.Lang(),
+			"Java writes a lambda of a function type that states its parameters, and %s states none", ref.Spelling)
+	case len(results) > 1:
+		return "", render.RefuseValue(t.Lang(),
+			"a Java lambda returns one value, and the function of %s returns %d", ref.Spelling, len(results))
+	}
+	body := emptyBlock
+	if len(results) == 1 {
+		body = results[0]
+	}
+	params := max(ref.Split, 0)
+	var b strings.Builder
+	b.Grow(len("()") + params*(len(lambdaParam)+paramDigits+len(listSep)) + len(lambdaArrow) + len(body))
+	b.WriteByte('(')
+	var scratch [paramDigits]byte
+	for i := range params {
+		if i > 0 {
+			b.WriteString(listSep)
+		}
+		b.WriteString(lambdaParam)
+		b.Write(strconv.AppendInt(scratch[:0], int64(i), 10))
+	}
+	b.WriteByte(')')
+	b.WriteString(lambdaArrow)
+	b.WriteString(body)
+	return b.String(), nil
+}
+
+// Make refuses: Java has no make.
+func (t target) Make(_ *emit.TypeRef, typ string) (string, error) {
+	return "", render.RefuseValue(t.Lang(), "Java has no make of %s", typ)
+}
+
 // collection returns the name a factory call spells a collection
 // class by, and imports the class: its simple name where the file's
 // name is free, and the qualified name where another import or a
@@ -201,6 +256,19 @@ func (t target) collection(class string) string {
 		return class
 	}
 	return javaPackage(collectionsPackage) + memberSep + class
+}
+
+// Value spells one value of the value tree as Java, through a target that
+// imports into set the classes that the references and the callees of the
+// value name. The value builtin calls it, so a template writes a value as
+// a body of the same file writes it. A value that Java has no form for
+// returns a [render.ValueError].
+//
+// Value allocates what [scaffold.Value] allocates: the text of each part
+// of the value that it joins, and the qualified name of a static callee.
+// A literal in the int range does not allocate.
+func Value(v emit.Value, set *render.ImportSet) (string, error) {
+	return scaffold.Value(target{set: set}, v)
 }
 
 // number spells a number for Java from its text and its width. A
