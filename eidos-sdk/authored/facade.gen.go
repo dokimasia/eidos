@@ -41,12 +41,12 @@ const (
 
 // Sample returns the annotator of the sample directive. It runs once for
 // each validated instance on a field, a parameter, a return, a variable, a
-// constant, an alias, a struct, an enum or a sum. It stamps the value
-// under gen.sample and the alternate under gen.alternate where the
-// instance states them, both as the text that the author wrote. It
+// constant, an alias, a struct, an interface, an enum or a sum. It stamps
+// the value under gen.sample and the alternate under gen.alternate where
+// the instance states them, both as the text that the author wrote. It
 // refuses an instance that states neither under [EmptySample] at the
-// carrier. A callable and an interface have several types or none, so the
-// fact store refuses the stamp at the subject.
+// carrier. A callable has several types or none, so the fact store
+// refuses the stamp at the subject.
 func Sample() plugin.Annotator {
 	return core.Sample()
 }

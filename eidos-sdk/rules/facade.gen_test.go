@@ -591,6 +591,36 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ResultRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.ResultRules](), reflect.TypeFor[core.ResultRules](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("TextRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.TextRules](), reflect.TypeFor[core.TextRules](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("ContextRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.ContextRules](), reflect.TypeFor[core.ContextRules](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("TagRules", func(t *testing.T) {
 		t.Parallel()
 
@@ -941,6 +971,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("WellKnownContext", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.WellKnownContext, core.WellKnownContext, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("IsWellKnown", func(t *testing.T) {
 		t.Parallel()
 
@@ -1108,6 +1148,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, rules.RefusedDepth, core.RefusedDepth, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("RefusedAuthored", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.RefusedAuthored, core.RefusedAuthored, "the facade re-declares the kernel's value")
 		})
 	})
 

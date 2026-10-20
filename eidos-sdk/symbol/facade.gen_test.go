@@ -271,6 +271,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("FactPassing", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactPassing, core.FactPassing, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("FactNamedReturn", func(t *testing.T) {
 		t.Parallel()
 
@@ -328,6 +338,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.FactValue, core.FactValue, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("FactWire", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactWire, core.FactWire, "the facade re-declares the kernel's value")
 		})
 	})
 
@@ -918,6 +938,56 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, symbol.AccessorSet, core.AccessorSet, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("AccessorDelete", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.AccessorDelete, core.AccessorDelete, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("Passing", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[symbol.Passing](), reflect.TypeFor[core.Passing](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("PassingDefault", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.PassingDefault, core.PassingDefault, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("PassingPositional", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.PassingPositional, core.PassingPositional, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("PassingKeyword", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.PassingKeyword, core.PassingKeyword, "the facade re-declares the kernel's value")
 		})
 	})
 

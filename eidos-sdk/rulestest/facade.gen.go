@@ -45,18 +45,28 @@ func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	core.BenchRules(b, setup, budget)
 }
 
-// Loaded loads a source tree through one frontend into a fixture. The
-// fixture has the sealed graph, the findings of the load, and a fact
-// store with the classification stamps of the load. The store registers
-// its keys through [frontendtest.Registry], so a nil function of keys
-// registers nothing. Each stamp has the claim of [meta.LoadClaim], as in
-// a workspace run. The load runs under [frontendtest.Brand], so a
-// fixture tree writes its carriers the way the frontend suite reads
-// them, and under the context of tb, which ends with the test. A load
-// that reports an Error fails the test, because a tree that the language
-// refuses proves nothing about its rules.
+// Loaded loads a source tree through one frontend into a fixture, as
+// [LoadedWith] loads it without stores. A frontend whose dependency units
+// read a store then places no dependency.
 func Loaded(tb assert.TB, f plugin.Frontend, sources fs.FS, keys ...func(*meta.Registry) error) *Fixture {
 	return core.Loaded(tb, f, sources, keys...)
+}
+
+// LoadedWith loads a source tree through one frontend into a fixture. The
+// dependency units of the frontend read the read-only trees of stores under
+// the name of each store, such as the stubs of the standard library of
+// Python, and a nil map provides no store. The fixture has the sealed
+// graph, the findings of the load, and a fact store with the classification
+// stamps of the load. The store registers its keys through
+// [frontendtest.Registry], so a nil function of keys registers nothing.
+// Each stamp has the claim of [meta.LoadClaim], as in a workspace run. The
+// load runs under [frontendtest.Brand], so a fixture tree writes its
+// carriers the way the frontend suite reads them, and under the context of
+// tb, which ends with the test. A load that reports an Error fails the
+// test, because a tree that the language refuses proves nothing about its
+// rules.
+func LoadedWith(tb assert.TB, f plugin.Frontend, sources fs.FS, stores map[string]fs.FS, keys ...func(*meta.Registry) error) *Fixture {
+	return core.LoadedWith(tb, f, sources, stores, keys...)
 }
 
 // Scripted returns the rules of the scripted language: a member
@@ -116,7 +126,9 @@ func AssertRefusesWithReason(tb assert.TB, setup Setup) {
 // AssertDistinctSamples checks that the two halves of every derived pair
 // differ, compared field by field at every depth. Each pair reports on
 // its own. A check that compares against one half of a pair that does not
-// differ passes whenever the subject has that value.
+// differ passes whenever the subject has that value. The check passes a
+// pair of fresh values whatever their trees, because a function and a
+// make are new values wherever a body writes them ([emit.Value.Fresh]).
 func AssertDistinctSamples(tb assert.TB, setup Setup) {
 	core.AssertDistinctSamples(tb, setup)
 }

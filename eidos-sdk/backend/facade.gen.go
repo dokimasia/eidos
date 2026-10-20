@@ -32,6 +32,9 @@ func New(name plugin.ID, target plugin.Target, syntax plugin.CommentSyntax) *Bui
 }
 
 // Backend is a backend that the kit built. It is the backend of the
-// SPI, with the fact coverage that the guard of the render reads and the
-// kinds that the language refuses, which the backend suite checks.
+// SPI, with the fact coverage that the guard of the render reads, the
+// kinds that the language refuses, which the backend suite checks, the
+// spelling of a supertype of another language, the namespace of the
+// names of a file, whether the language overloads a function, and the
+// convention of a member.
 type Backend = core.Backend

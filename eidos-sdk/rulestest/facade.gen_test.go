@@ -51,6 +51,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("LoadedWith", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(rulestest.LoadedWith), reflect.TypeOf(core.LoadedWith), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Scripted", func(t *testing.T) {
 		t.Parallel()
 

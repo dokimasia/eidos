@@ -60,15 +60,19 @@ func NewBound(source SourceRules, view View, forLang func(symbol.Lang) SourceRul
 
 // Callable is the normalized view of a function or a method: what a
 // shape detector reads, and the only thing it may. [Bound.CallableOf]
-// returns it. Params is nil for a signature without parameters, and
-// Returns for one without returns.
+// returns it. Params is nil for a signature without parameters and
+// without a context, and Returns for one without returns. The view of a
+// context that the [ContextRules] of the language give comes first among
+// the parameters. Under [ErrorsResultType], a return of a result type of a
+// language with [ResultRules] has two views: its value, where it has one,
+// and its failure with the role [ReturnError].
 type Callable = core.Callable
 
 // ParamView is one parameter: its name, its reference, the role the
-// language gave it, whether it collects the rest, and whether a call can
-// leave it out. It contains the reference and no shape. A consumer that
-// needs the shape asks [Bound.TypeOf], which memoises, so a detector folds
-// only the shapes it reads.
+// language gave it, whether it collects the rest, whether a call can
+// leave it out, and how a call passes it. It contains the reference and no
+// shape. A consumer that needs the shape asks [Bound.TypeOf], which
+// memoises, so a detector folds only the shapes it reads.
 type ParamView = core.ParamView
 
 // ReturnView is one return: its name where the language names
@@ -174,8 +178,11 @@ const (
 	// ShadowMerge keeps every arrival, as overloads: TypeScript
 	// interfaces.
 	ShadowMerge = core.ShadowMerge
-	// ShadowLinearise takes the nearest arrival, the first at one
-	// depth over the rest: Python.
+	// ShadowLinearise takes the arrivals from the type that comes
+	// first in the C3 linearization of the walked type, by the path
+	// that first reached it: the method resolution order of Python. A
+	// hierarchy without a linearization, which Python refuses, takes
+	// the nearest arrival, the first at one depth over the rest.
 	ShadowLinearise = core.ShadowLinearise
 )
 
@@ -332,6 +339,26 @@ type ErrorTypeRules = core.ErrorTypeRules
 // that declares no cause and no hooks.
 type ErrorContract = core.ErrorContract
 
+// ResultRules is the optional capability of a language whose callable
+// reports a failure in the type of its return, as a Rust function returns
+// Result<T, E>. [Bound.CallableOf] asks it for each return of a callable
+// whose error model is [ErrorsResultType], and splits a return of a result
+// type into the view of its value and the view of its failure.
+type ResultRules = core.ResultRules
+
+// TextRules is the optional capability of a language whose text types take
+// a string literal through a conversion, as a String of Rust takes
+// String::from("a"). [View.Authored] asks it for the value of a text that an
+// author stated for a type that folds to text.
+type TextRules = core.TextRules
+
+// ContextRules is the optional capability of a language whose callables
+// take a context that their signatures do not state, as every rpc of
+// protobuf takes the cancellation and the deadline of its call.
+// [Bound.CallableOf] asks it for each callable and puts the view of the
+// context before the parameters.
+type ContextRules = core.ContextRules
+
 // TagRules reads a language's per-field tags.
 type TagRules = core.TagRules
 
@@ -343,9 +370,10 @@ type WellKnownRules = core.WellKnownRules
 
 // ShapeRules is the optional capability of a language that declares a type
 // whose values have the shape of another form, such as a GraphQL custom
-// scalar whose specification is a signed integer of 64 bits. The fold asks
-// the rules of the language of a target after [WellKnownRules] and before
-// it classifies the target.
+// scalar whose specification is a signed integer of 64 bits and the class
+// list of Python, whose values are lists. The fold asks the rules of the
+// language of a target after [WellKnownRules] and before it classifies the
+// target.
 type ShapeRules = core.ShapeRules
 
 // SatisfactionRules is the optional capability of a language whose
@@ -519,7 +547,7 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 // A language's Builtin maps its own spelling of a well-known type onto
 // one of these blessed reference identities, so a Go time.Time and a
 // proto Timestamp project to one shape. The registry contains these
-// four, and growing it only adds entries.
+// five, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = core.WellKnownTimestamp
@@ -531,6 +559,11 @@ var (
 	// WellKnownError is the value of a failure, such as Go's error and
 	// TypeScript's Error.
 	WellKnownError = core.WellKnownError
+	// WellKnownContext is the context of a call: its cancellation and its
+	// deadline, as Go's context.Context and the signal of a Connect-ES
+	// handler. The view of an rpc of protobuf takes it through
+	// [ContextRules].
+	WellKnownContext = core.WellKnownContext
 )
 
 // IsWellKnown reports whether an identity is one the registry
@@ -615,15 +648,18 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 }
 
 // Complete returns a pair from the halves that an author stated and the
-// halves that a language derived. Complete keeps a stated half. A half
-// that no author stated takes the first of these values that applies:
+// halves that a language derived. A half is stated where it has a value
+// or a refusal, and Complete keeps a stated half. The caller then receives
+// the refusal of an authored text instead of a derived value. A half that
+// no author stated takes the first of these values that applies:
 //   - the derived value of its own position, where that value differs
 //     from the stated half
 //   - the other derived value, where that value differs
 //   - a [RefusedNoLiteral] refusal, where neither differs
 //
-// The pair then contains two distinct values. Where no half is stated,
-// Complete returns the derived pair unchanged. It allocates nothing.
+// The completed half then differs from the stated half. Where no half is
+// stated, Complete returns the derived pair unchanged. It allocates
+// nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
 	return core.Complete(sample, alternate, derived, derivedAlternate)
 }
@@ -650,6 +686,9 @@ const (
 	// RefusedDepth means a self-referential type past the budget of the
 	// walk.
 	RefusedDepth = core.RefusedDepth
+	// RefusedAuthored means an authored text that the rules of its
+	// language do not read as a value of a boolean or a scalar type.
+	RefusedAuthored = core.RefusedAuthored
 )
 
 // FirstRefusal returns the first refusal among samples, and

@@ -121,15 +121,30 @@ func CanonicalFixture(tb assert.TB) *Fixture {
 	return core.CanonicalFixture(tb)
 }
 
-// Files routes a hand-built store into the files a render renders,
-// the way a plan routes a store whose packages are at their package
-// paths: each unit splits through the target's speller, each part
-// takes its spelled name under its package's path, and parts sharing
-// a package and a name assemble one file, in the store's order. A plan
-// unit, which has no package, takes its name alone. Each file has the
-// header that [plugin.HeaderOf] returns for its units, as a plan's layout
-// gives it. The files sort by path, then by package, which is the order a
-// plan's layout returns.
+// Files routes a hand-built store into the files a render renders, the way
+// a plan's layout routes a store whose packages are at their package paths
+// under the default configuration:
+//
+//   - a per-source unit is written in the directory of its source file, its
+//     key, and a unit whose key names no file of the workspace in the
+//     directory of its package path;
+//   - a per-package unit is written in the directory of its package path;
+//   - a plan unit is written at the root.
+//
+// Each unit splits through the target's speller, each part takes its
+// spelled name in that directory, and the parts of one package at one path
+// assemble one file, in the store's order. Each file has the header that
+// [plugin.HeaderOf] returns for its units, as a plan's layout gives it.
+//
+// Where s is also the [plugin.Packager] of its backend, each file declares
+// the package that the packager derives for its path, as a plan's layout
+// asks it. The residents of a directory are the source files of the
+// per-source units of the store in it, each with the package of its unit.
+// A packager can need the modules of a loaded graph, which a hand-built
+// store does not have. Where the packager derives no package, the file
+// keeps the package of its first unit, as every file of a speller without
+// a package half does. The files sort by path, then by package, which is
+// the order a plan's layout returns.
 func Files(e *plugin.Emit, s plugin.FileSpeller) []plugin.File {
 	return core.Files(e, s)
 }

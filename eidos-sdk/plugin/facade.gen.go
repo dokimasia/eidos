@@ -57,6 +57,17 @@ type Backend = core.Backend
 // implementation is safe for concurrent use.
 type TypeSpeller = core.TypeSpeller
 
+// SupertypeSpeller is the role of a backend whose target spells a
+// supertype of another language otherwise than a value, as Rust spells the
+// supertrait Node bare and a value of the trait as Box<dyn Node>. The
+// emitter asserts it on the TypeSpeller of the plan, and spells a supertype
+// through SpellType where the backend does not implement it.
+//
+// # Concurrency
+//
+// An implementation is safe for concurrent use, as a TypeSpeller is.
+type SupertypeSpeller = core.SupertypeSpeller
+
 // ContinuedCarrier refuses a carrier that continues onto the next
 // line while its own line has the tool-directive shape. A formatter
 // may move such a line to the end of its doc comment, as gofmt does,
@@ -491,8 +502,8 @@ type Journal = core.Journal
 // Names is the name table of the files that a warm run keeps without
 // generating them again. [SettleWith] resolves a reference that its store
 // does not declare against it, and the layout qualifies a reference into a
-// kept file of another package through it. A plan reads the kept names of a
-// collision scope through it.
+// kept file of another package through it. The layout checks the names of
+// the routed files against the kept names of each routed scope through it.
 //
 // # Concurrency
 //
@@ -655,6 +666,24 @@ type Packager = core.Packager
 // declares it: the function [Packager.PackageAt] runs.
 type PackageRule = core.PackageRule
 
+// NameScoper is the role of a target whose file-level names share one
+// namespace across the files of different packages. A protobuf file is a
+// package of its own, because a protobuf file imports a file, and the
+// files of one protobuf package declare their names in one namespace. The
+// layout checks the file-level names of a routed file in the namespace
+// that NameScope returns for the package of the file, and in the package
+// of the file where the target does not implement the role.
+type NameScoper = core.NameScoper
+
+// Overloader is the role of a target whose language declares two functions
+// of one name in one module, told apart by their parameters, as Python
+// declares the overloads of a function. The layout does not count the
+// functions of one emitted name in one routed scope as a collision of names
+// where the target overloads. Functions of two emitted names that settle to
+// one name still collide, and so do two declarations of one name where one
+// of them is no function.
+type Overloader = core.Overloader
+
 // ID is a plugin's declared name: the one identity everywhere it
 // appears. The diagnostic origin, the emit attribution and the
 // arbitration rank's plugin field all carry this same type, so no
@@ -733,8 +762,8 @@ type PolicySpec = core.PolicySpec
 //
 // # Allocation contract
 //
-// [Policy.Choice] and [Policy.Overridden] do not allocate. A call of the
-// override function allocates what the function allocates.
+// [Policy.Choice], [Policy.Lookup] and [Policy.Overridden] do not allocate.
+// A call of the override function allocates what the function allocates.
 type Policy = core.Policy
 
 // NewPolicy returns the resolved policy of the target t. A key takes the
@@ -968,9 +997,11 @@ var RefusedConstruct = core.RefusedConstruct
 var RefusedName = core.RefusedName
 
 // CollidingNames is the code of two declarations in one scope that
-// settle to one name. Both keep their emitted names, and the references
-// to either follow the emitted names. The finding names the declarations
-// to fix.
+// settle to one name. The settle reports two members of one host, which
+// keep their emitted names, and the references to either follow the
+// emitted names. The layout reports two file-level declarations of one
+// routed scope, which keep their settled names. The finding names the
+// declarations to fix, and the Error fails the plan.
 var CollidingNames = core.CollidingNames
 
 // AmbiguousReference is the code of a bare reference that matches
@@ -1013,6 +1044,24 @@ type Respell = core.Respell
 // whose target keeps every name returns the name unchanged.
 type Respeller = core.Respeller
 
+// Member is what the convention of a target reads of a declared member
+// beside its name: the kind of its host, its own kind, its visibility, its
+// level and its mutability. A method has the zero mutability.
+type Member = core.Member
+
+// MemberRespell spells the name of one member in the convention of the
+// target, as [Respell] spells a declared name, by the level and the
+// mutability of the member too. An error means that the target cannot
+// spell the name.
+type MemberRespell = core.MemberRespell
+
+// MemberRespeller is the role of a backend whose convention spells a member
+// by its level and its mutability, as Python keeps the capitals of a
+// constant of a class. The settle respells each field and each method of a
+// declaration through it in place of [Respeller.Respell], and the lowering
+// of a target names a member through it in the same way.
+type MemberRespeller = core.MemberRespeller
+
 // Settle takes the store of one plan through the hooks of the backend,
 // once, after the schedule and before the render. Every declaration
 // lowers into the construct shapes of the target, and every declared
@@ -1038,6 +1087,15 @@ type Respeller = core.Respeller
 // not apply an override where the fact store is nil, or where the
 // composition did not register the name key.
 //
+// A field and a method respell through the [MemberRespeller] role of a
+// backend that has it, with the level and the mutability of the member.
+//
+// A field that is a key of a wire format, [emit.Field.Wire], keeps the
+// name that the generator wrote. The settle calls neither the hook nor the
+// override for it, because a consumer matches the key by string and a
+// renamed key breaks the consumer. Such a field joins the check of the
+// members of its host as any field does.
+//
 // The settle respells the records of a family that claims its files.
 // The units of such a family have a [Unit.Template], and the template
 // reads the names of the target. A record declares no name of its file,
@@ -1050,10 +1108,12 @@ type Respeller = core.Respeller
 //
 // The settle reports its findings to the sink under the name of the
 // backend. A refused construct or name withholds its declaration.
-// Colliding names keep their emitted spellings, and the settle leaves an
-// ambiguous reference as written. A returned error is a defect of the
-// hooks of the backend, a lowering that drops the origin of its input.
-// The error fails the whole plan, not one declaration.
+// Colliding members of one host keep their emitted spellings, and the
+// settle leaves an ambiguous reference as written. The settle does not
+// check the file-level names, which the layout checks in their routed
+// packages. A returned error is a defect of the hooks of the backend, a
+// lowering that drops the origin of its input. The error fails the whole
+// plan, not one declaration.
 //
 // A nil backend marks the store settled and changes nothing in it.
 //
@@ -1074,10 +1134,9 @@ func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 // [Settle] does, and resolves each reference that the store does not
 // settle against others, the names of the plan's other files. A bare
 // reference that both declare under different settled names is
-// ambiguous, as it is where the store declares the plan whole. Names
-// collide only with the store's own names, so the plan places the units
-// of every file with a name in a changed scope into the store before it
-// settles. Settle is SettleWith with no others.
+// ambiguous, as it is where the store declares the plan whole. Members
+// collide only with the members of their host, which the store contains.
+// Settle is SettleWith with no others.
 //
 // SettleWith returns what each unit read. It lists every entry that the
 // unit's references looked up, whether a file declares the entry or not.

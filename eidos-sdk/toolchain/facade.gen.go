@@ -267,11 +267,12 @@ func RunToolchainSuite(t *testing.T, a Adapter, g Generated) {
 //
 // A line starts with the modifiers of its declaration, each one word and
 // a space: static, abstract, final, sealed, const, async, readonly, get,
-// set, constructor and indexer. A line of a declaration at file level
-// continues with the spelling of its kind and its name. Every type, value
-// and default in a line is the spelling that the frontend recorded. A
-// parameter renders as its type, without its name. The surface has no
-// comment, no body, and no order of declarations or members.
+// set, delete, constructor and indexer. A line of a declaration at file
+// level continues with the spelling of its kind and its name. Every type,
+// value and default in a line is the spelling that the frontend recorded.
+// A parameter renders as its type, without its name, unless a caller
+// passes it by keyword alone. The surface has no comment, no body, and no
+// order of declarations or members.
 //
 // Error modes: Surface returns the error of a source of g that does not
 // read, the error of the load, and an error that joins one error for each

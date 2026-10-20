@@ -117,6 +117,12 @@ var RefusedStamp = core.RefusedStamp
 // [Emitter.Type] reports it as an Error, so the plan fails.
 var RefusedType = core.RefusedType
 
+// RefusedFile reports an identity that the package of the subject does
+// not declare, which a handler passes to [Emitter.FileOf]. The finding is
+// at the position of the subject. FileOf reports it as an Error, so the
+// run fails.
+var RefusedFile = core.RefusedFile
+
 // Tag selects a declared output family. The zero value selects the
 // primary family. An emitter call with a family that the plugin did not
 // declare panics. The plugin declares its families itself, so the
@@ -224,6 +230,17 @@ type EnumMatch = core.EnumMatch
 // Stamper annotates.
 func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 	return core.OnEnum[E](h)
+}
+
+// EnumVariantMatch is the OnEnumVariant subject.
+type EnumVariantMatch = core.EnumVariantMatch
+
+// OnEnumVariant runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
+// Stamper annotates.
+func OnEnumVariant[E Effect](h func(*EnumVariantMatch, E) error) Rule {
+	return core.OnEnumVariant[E](h)
 }
 
 // SumMatch is the OnSum subject.

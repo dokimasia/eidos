@@ -68,6 +68,12 @@ const (
 	// it, so a kind template reads a version or a package that the
 	// header states.
 	BuiltinHeader = core.BuiltinHeader
+	// BuiltinValue writes one emit.Value through the language's
+	// [Language.Value] and records its imports into the file under
+	// render. Every template of the file can call it, so a template
+	// writes a value inside an expression, such as a field of a
+	// composite literal or the initializer of a variable.
+	BuiltinValue = core.BuiltinValue
 )
 
 // UnspeltKind reports a declaration whose kind the target language
@@ -244,6 +250,18 @@ type Entry = core.Entry
 // refers into. [ImportSet.SetReferents] sets them for one file, and
 // [ImportSet.Referent] returns the package of one such file.
 //
+// A set has the plan's lowering policy, which [ImportSet.SetPolicy] sets
+// for a render and [ImportSet.Policy] returns, so a helper that a
+// vocabulary binds to the set reads the policy. A set also has the order
+// of the file-level declarations of its file: the order of their
+// reservations. [ImportSet.Enter] names the declaration under render, and
+// [ImportSet.Pending] reports a name that the declaration under render or
+// a later declaration takes. While the pass spells a body,
+// [ImportSet.Body] returns the callable of the body and the declaration
+// whose template places it. [ImportSet.Has] reports whether the set
+// records an entry, so a vocabulary keeps a fact of the file under render
+// as an entry under a path that no import has.
+//
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
 type ImportSet = core.ImportSet
@@ -298,7 +316,7 @@ type Refuser = core.Refuser
 // for concurrent use: its fields are fixed at [New], and every
 // render call has frames of its own. Within one call, files
 // render in parallel on up to GOMAXPROCS workers. The language's
-// Scaffold, Imports, Finalise and Cluster, every helper in its
+// Scaffold, Value, Imports, Finalise and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
 // trees run on those workers concurrently, so each must be safe
 // for concurrent use. Naming and Split run where the plan's layout
@@ -361,4 +379,8 @@ const (
 	HelperParams = core.HelperParams
 	// HelperResults writes the results of a callable.
 	HelperResults = core.HelperResults
+	// HelperWrapDocs wraps a text into the lines of documentation at the
+	// width of the comments of the target, which a template passes to
+	// [HelperDocs] or to the comment helper of a member.
+	HelperWrapDocs = core.HelperWrapDocs
 )

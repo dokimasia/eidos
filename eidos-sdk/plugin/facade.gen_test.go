@@ -61,6 +61,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("SupertypeSpeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.SupertypeSpeller](), reflect.TypeFor[core.SupertypeSpeller](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("ContinuedCarrier", func(t *testing.T) {
 		t.Parallel()
 
@@ -651,6 +661,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("NameScoper", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.NameScoper](), reflect.TypeFor[core.NameScoper](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Overloader", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Overloader](), reflect.TypeFor[core.Overloader](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("ID", func(t *testing.T) {
 		t.Parallel()
 
@@ -1178,6 +1208,36 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.Respeller](), reflect.TypeFor[core.Respeller](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Member", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Member](), reflect.TypeFor[core.Member](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("MemberRespell", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.MemberRespell](), reflect.TypeFor[core.MemberRespell](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("MemberRespeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.MemberRespeller](), reflect.TypeFor[core.MemberRespeller](), "the facade aliases the kernel's type")
 		})
 	})
 

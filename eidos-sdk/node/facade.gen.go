@@ -194,6 +194,13 @@ type Method = core.Method
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Passing states whether a caller passes the argument by position alone,
+// by keyword alone, or in the way of the language. A Python parameter
+// before the slash of its signature is positional, and one after its star
+// is a keyword. A generator that writes a keyword parameter as an ordinary
+// one changes the calls that the callee accepts, so the passing is a field
+// of the parameter and not metadata.
+//
 // Doc is the documentation of the parameter, such as the description of
 // a GraphQL argument. A language that documents a parameter in the
 // documentation of its callable leaves it empty.
@@ -378,6 +385,13 @@ type SumVariant = core.SumVariant
 // the field, or the file of a field at file level, so the identity of
 // the field is in the scope that declares it. A field declared inside
 // its type leaves Receives nil.
+//
+// Wire marks an emitted name that is a key of a wire format, which a
+// consumer matches by string, such as a key of a JSON object. The settle
+// keeps such a name as the generator wrote it, and the target writes it as
+// it is or refuses it. The node side has no such field, because a source
+// states a key through its own syntax: a protobuf json_name, a Go struct
+// tag, a GraphQL field name.
 //
 // This is the node spelling of the kind.
 type Field = core.Field

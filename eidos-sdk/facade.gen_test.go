@@ -71,6 +71,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("RefusedFile", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, sdk.RefusedFile, core.RefusedFile, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Tag", func(t *testing.T) {
 		t.Parallel()
 
@@ -158,6 +168,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[sdk.EnumMatch](), reflect.TypeFor[core.EnumMatch](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("EnumVariantMatch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[sdk.EnumVariantMatch](), reflect.TypeFor[core.EnumVariantMatch](), "the facade aliases the kernel's type")
 		})
 	})
 

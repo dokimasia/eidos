@@ -168,6 +168,13 @@ type Method = core.Method
 // int for Go's ...int and Java's int..., and number for
 // TypeScript's ...xs: number[].
 //
+// Passing states whether a caller passes the argument by position alone,
+// by keyword alone, or in the way of the language. A Python parameter
+// before the slash of its signature is positional, and one after its star
+// is a keyword. A generator that writes a keyword parameter as an ordinary
+// one changes the calls that the callee accepts, so the passing is a field
+// of the parameter and not metadata.
+//
 // Doc is the documentation of the parameter, such as the description of
 // a GraphQL argument. A language that documents a parameter in the
 // documentation of its callable leaves it empty.
@@ -352,6 +359,13 @@ type SumVariant = core.SumVariant
 // the field, or the file of a field at file level, so the identity of
 // the field is in the scope that declares it. A field declared inside
 // its type leaves Receives nil.
+//
+// Wire marks an emitted name that is a key of a wire format, which a
+// consumer matches by string, such as a key of a JSON object. The settle
+// keeps such a name as the generator wrote it, and the target writes it as
+// it is or refuses it. The node side has no such field, because a source
+// states a key through its own syntax: a protobuf json_name, a Go struct
+// tag, a GraphQL field name.
 //
 // This is the emit spelling of the kind.
 type Field = core.Field
@@ -865,6 +879,15 @@ const (
 	// expression of TypeScript and Java, spells it with the import of the
 	// type. A target without such a form refuses it.
 	ValueConstruction = core.ValueConstruction
+	// ValueFunc is a function of the function type Type that returns Args:
+	// func(context.Context) error { return nil }. Each function literal is
+	// a new function value, so two of them differ. A target without a
+	// function literal refuses it.
+	ValueFunc = core.ValueFunc
+	// ValueMake is the empty value of Type that make returns: make(chan
+	// string). Each make is a new value, so two of them differ. A target
+	// without make refuses it.
+	ValueMake = core.ValueMake
 )
 
 // LiteralKind is the kind of the text of a literal. A target spells each
@@ -989,6 +1012,22 @@ func Name(id symbol.Identity) Value {
 // call, one allocation, and nothing without arguments.
 func Construction(t *TypeRef, args ...Value) Value {
 	return core.Construction(t, args...)
+}
+
+// Func returns a function of the function type t that returns the values
+// results, in the order of the results of t. A backend imports each type
+// of the signature, as it does for the type of a composite. Func allocates
+// the list of results of a variadic call, one allocation, and nothing
+// without results.
+func Func(t *TypeRef, results ...Value) Value {
+	return core.Func(t, results...)
+}
+
+// Make returns the empty value of the type t that make returns, such as a
+// channel. A backend imports the type, as it does for the type of a
+// composite. Make allocates nothing.
+func Make(t *TypeRef) Value {
+	return core.Make(t)
 }
 
 // Walk visits s and every declaration it contains, depth first, in
