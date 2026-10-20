@@ -24,9 +24,14 @@ import (
 	protobackend "go.dokimi.dev/eidos/lang/protobuf/backend"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
+	"go.dokimi.dev/eidos/lang/python"
+	pythonbackend "go.dokimi.dev/eidos/lang/python/backend"
+	pythonfrontend "go.dokimi.dev/eidos/lang/python/frontend"
+	pythonrules "go.dokimi.dev/eidos/lang/python/rules"
 	"go.dokimi.dev/eidos/lang/rust"
 	rustbackend "go.dokimi.dev/eidos/lang/rust/backend"
 	rustfrontend "go.dokimi.dev/eidos/lang/rust/frontend"
+	rustrules "go.dokimi.dev/eidos/lang/rust/rules"
 	"go.dokimi.dev/eidos/lang/typescript"
 	tsbackend "go.dokimi.dev/eidos/lang/typescript/backend"
 	tsfrontend "go.dokimi.dev/eidos/lang/typescript/frontend"
@@ -51,9 +56,9 @@ func main() {
 }
 
 // compose returns the composition of the binary: the frontends of Go,
-// TypeScript, Java, Rust, protobuf and GraphQL, the rules of Go, TypeScript,
-// protobuf and GraphQL, and one extensible plan without generators for each
-// target.
+// TypeScript, Java, Rust, protobuf, GraphQL and Python, the rules of Go,
+// TypeScript, Rust, protobuf, GraphQL and Python, and one extensible plan
+// without generators for each target.
 // Each plan has the name of its target and reads the packages of the
 // language of the target below the workspace root. A phase call runs on
 // as many workers as the process has processors. Each call returns new
@@ -62,9 +67,10 @@ func compose() *workspace.Builder {
 	return workspace.New().
 		Brand(brand).
 		Frontends(gofrontend.New(nil), tsfrontend.New(), javafrontend.New(nil), rustfrontend.New(nil),
-			protofrontend.New(), graphqlfrontend.New()).
-		Rules(gorules.New(), tsrules.New(), protorules.New(), graphqlrules.New()).
-		Targets(golang.Target, typescript.Target, java.Target, rust.Target, protobuf.Target, graphql.Target).
+			protofrontend.New(), graphqlfrontend.New(), pythonfrontend.New(nil)).
+		Rules(gorules.New(), tsrules.New(), rustrules.New(), protorules.New(), graphqlrules.New(), pythonrules.New()).
+		Targets(golang.Target, typescript.Target, java.Target, rust.Target, protobuf.Target, graphql.Target,
+			python.Target).
 		Plans(
 			workspace.Plan{
 				Name:       string(golang.Target),
@@ -100,6 +106,12 @@ func compose() *workspace.Builder {
 				Name:       string(graphql.Target),
 				Sources:    workspace.Sources{Lang: graphql.Lang, Packages: []string{treeSources}},
 				Backend:    graphqlbackend.New(),
+				Extensible: true,
+			},
+			workspace.Plan{
+				Name:       string(python.Target),
+				Sources:    workspace.Sources{Lang: python.Lang, Packages: []string{treeSources}},
+				Backend:    pythonbackend.New(),
 				Extensible: true,
 			},
 		).

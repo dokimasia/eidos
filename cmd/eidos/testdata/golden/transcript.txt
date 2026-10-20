@@ -41,19 +41,22 @@ $ eidos --config testdata/tree/.eidos.yaml plan
 frontend golang 0.8.0
 frontend typescript 0.3.0; tree-sitter-typescript v0.23.2, go-tree-sitter v0.25.0
 frontend java 0.2.0; tree-sitter-java v0.23.5, go-tree-sitter v0.25.0
-frontend rust 0.4.0; tree-sitter-rust v0.24.2, go-tree-sitter v0.25.0
+frontend rust 0.5.0; tree-sitter-rust v0.24.2, go-tree-sitter v0.25.0
 frontend protobuf 0.5.0
 frontend graphql 0.1.0
+frontend python 0.1.0; tree-sitter-python (devel), go-tree-sitter v0.25.0
 annotator 1 golang-lowering
 annotator 2 graphql-lowering
 annotator 3 java-lowering
 annotator 4 protobuf-lowering
-annotator 5 rust-lowering
-annotator 6 typescript-lowering
+annotator 5 python-lowering
+annotator 6 rust-lowering
+annotator 7 typescript-lowering
 plan golang: target golang, backend golang, commit order 1
   sources: language golang, packages ./...
   generator 1 audit 0.3.0+e0e53984172bbc0b3a25eb7e6194d7a80f04cdf0c6c5890773ae8b0d0ff06ca6
   layout: policy inherit
+  policies: golang.grpc none
 plan typescript: target typescript, backend typescript, commit order 2
   sources: language golang, packages ./ops
   generator 1 audit 0.3.0+e0e53984172bbc0b3a25eb7e6194d7a80f04cdf0c6c5890773ae8b0d0ff06ca6
@@ -73,6 +76,10 @@ plan graphql: target graphql, backend graphql, commit order 6
   sources: language graphql, packages ./...
   layout: policy inherit
   policies: graphql.bytes String, graphql.duration String, graphql.dynamic String, graphql.int64 String, graphql.map entries, graphql.timestamp String, graphql.uint32 Float, graphql.uint64 String
+plan python: target python, backend python, commit order 7
+  sources: language python, packages ./...
+  layout: policy inherit
+  policies: python.dynamic object, python.version 3.11
 [exit 0]
 
 # The plugin writes a Go implementation, its test, a Go mirror and a TypeScript mirror.
@@ -98,6 +105,7 @@ func TransferAudit(from string, to string, cents int64) {
 	record("Transfer", "warn", from, to, cents)
 	Transfer(from, to, cents)
 }
+
 // eidos:provenance sha256:c13e2d882ab6ebdc1443cf53365cc01f2c1a75843ea315b730387f257f9f5570
 
 // === svc/ledger_audit.go ===
@@ -116,6 +124,7 @@ func (l LedgerAudit) Post(account string, cents int64) string {
 	record("Post", "info", account, cents)
 	return l.next.Post(account, cents)
 }
+
 // eidos:provenance sha256:88162342398065f9351efb9bfc2ba6d2ce06cc94c30177dbf53c15b63f5db8ae
 
 // === svc/ledger_audit_test.go ===
@@ -133,6 +142,7 @@ import (
 func TestLedgerAudit(t *testing.T) {
 	var _ Ledger = LedgerAudit{}
 }
+
 // eidos:provenance sha256:adca759b5ba0405f8f4fbe1dfb79bc2f838e2b7d17f49f38d445bbff17bf6eff
 
 // === ops/transfer.audit.ts ===
@@ -143,6 +153,7 @@ func TestLedgerAudit(t *testing.T) {
 export function transferAudit(from: string, to: string, cents: bigint): void {
   console.warn("Transfer", from, to, cents);
 }
+
 // eidos:provenance sha256:11b2eb49b36d8c23fded1f84f14d4660c050ccaa263ea199a56ac8d932a22930
 
 [exit 0]

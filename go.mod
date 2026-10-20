@@ -13,6 +13,7 @@ require (
 	go.dokimi.dev/eidos/lang/graphql v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/java v0.1.1
 	go.dokimi.dev/eidos/lang/protobuf v0.1.1
+	go.dokimi.dev/eidos/lang/python v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/lang/rust v0.1.1
 	go.dokimi.dev/eidos/lang/typescript v0.1.1
 	go.stealthscale.io/cli v0.4.0
