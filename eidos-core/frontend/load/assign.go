@@ -124,7 +124,10 @@ func bareOf(id symbol.Identity) symbol.Identity {
 //     The discriminator of the implementation of an overloaded name
 //     starts with [discImplementation]: a function of the package, or a
 //     method of the type, without the mark Overload whose name a marked
-//     callable of the same scope declares.
+//     callable of the same scope declares. Two callables of one name in
+//     one scope whose discriminators spell alike spell their type
+//     parameters before it, as [typeParamsDisc] spells them, because
+//     their type parameters can still tell them apart.
 //
 // Members get their Host filled beside the identity. A second
 // declaration spelling one identity reports under
@@ -140,6 +143,9 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 		files:   map[symbol.Identity]string{},
 	}
 	seen := map[symbol.Identity]symbol.Symbol{}
+	// functions lists the functions at the top level of the package under
+	// assignment, and every package reuses its array.
+	var functions []*node.Function
 	for _, sp := range packages {
 		a := &assigner{
 			lang:      sp.lang,
@@ -154,6 +160,15 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 		}
 		if a.overloads {
 			a.functions = markedFunctions(sp.pkg.Files)
+			functions = functions[:0]
+			for _, f := range sp.pkg.Files {
+				for _, d := range f.Decls {
+					if fn, is := d.(*node.Function); is && fn != nil {
+						functions = append(functions, fn)
+					}
+				}
+			}
+			a.sharedFunctions = a.sharedFunctionDiscs(functions)
 		}
 		for _, f := range sp.pkg.Files {
 			a.file(f)
@@ -170,23 +185,35 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 // callable's discriminator spells its parameters. functions are the
 // names that a marked function of the package declares, and methods
 // the names that a marked method of the type under assignment
-// declares. Each is nil where nothing is marked. unit is the unit of
-// the file under assignment, which a duplicate's finding is recorded
-// on.
+// declares. Each is nil where nothing is marked. sharedFunctions and
+// sharedMethods are the names and discriminators that two or more
+// functions of the package, or methods of the type under assignment,
+// share, and each is nil where none do. unit is the unit of the file
+// under assignment, which a duplicate's finding is recorded on.
 type assigner struct {
-	lang      symbol.Lang
-	pkg       string
-	origin    diag.Origin
-	importer  bool
-	overloads bool
-	functions map[string]bool
-	methods   map[string]bool
-	units     map[*node.File]*unit
-	unit      *unit
-	path      string
-	seen      map[symbol.Identity]symbol.Symbol
-	ix        *index
-	sink      *diag.Sink
+	lang            symbol.Lang
+	pkg             string
+	origin          diag.Origin
+	importer        bool
+	overloads       bool
+	functions       map[string]bool
+	methods         map[string]bool
+	sharedFunctions map[discKey]bool
+	sharedMethods   map[discKey]bool
+	units           map[*node.File]*unit
+	unit            *unit
+	path            string
+	seen            map[symbol.Identity]symbol.Symbol
+	ix              *index
+	sink            *diag.Sink
+}
+
+// discKey is the name of a callable and the discriminator of its
+// parameters, which two overloads of one scope share where their
+// parameters spell alike.
+type discKey struct {
+	name string
+	disc string
 }
 
 // file assigns a file's identity and descends into its
@@ -243,9 +270,9 @@ func (a *assigner) claim(
 func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, drop bool) {
 	switch x := s.(type) {
 	case *node.Function:
-		disc := a.disc(nil, x.Params)
-		if owner == "" && !x.Overload && a.functions[x.Name] {
-			disc = discImplementation + disc
+		disc := a.functionDisc(x, owner)
+		if owner == "" && a.sharedFunctions[discKey{name: x.Name, disc: disc}] {
+			disc = a.typeParamsDisc(x.TypeParams) + disc
 		}
 		id := a.derive(x, owner, x.Name, symbol.KindFunction, disc)
 		var dropping bool
@@ -257,12 +284,9 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		if at == "" && x.Receives != nil {
 			at = x.Receives.Spelling
 		}
-		disc := a.disc(x.Receiver, x.Params)
-		switch {
-		case x.Accessor == symbol.AccessorDelete:
-			disc = discDelete
-		case !x.Overload && a.methods[x.Name]:
-			disc = discImplementation + disc
+		disc := a.methodDisc(x)
+		if a.sharedMethods[discKey{name: x.Name, disc: disc}] {
+			disc = a.typeParamsDisc(x.TypeParams) + disc
 		}
 		id := a.derive(x, at, x.Name, symbol.KindMethod, disc)
 		var dropping bool
@@ -447,18 +471,21 @@ func (a *assigner) members[S symbol.Symbol](owner string, host symbol.Identity, 
 
 // methodsOf assigns the methods of a type as [assigner.members] does. The
 // names that a marked method of the type declares apply while they assign,
-// so the implementation of an overloaded name takes [discImplementation].
-// The names of an enclosing type apply again after the call. In a language
-// that overloads, a type with a marked method allocates the set of its
-// names.
+// so the implementation of an overloaded name takes [discImplementation],
+// and so do the discriminators that two of its methods share. The state of
+// an enclosing type applies again after the call. In a language that
+// overloads, a type with a marked method allocates the set of its names,
+// and a type with two methods of one name what [assigner.sharedMethodDiscs]
+// allocates.
 func (a *assigner) methodsOf(owner string, host symbol.Identity, drop bool, methods []*node.Method) {
-	outer := a.methods
-	a.methods = nil
+	outerMarked, outerShared := a.methods, a.sharedMethods
+	a.methods, a.sharedMethods = nil, nil
 	if a.overloads {
 		a.methods = markedMethods(methods)
+		a.sharedMethods = a.sharedMethodDiscs(methods)
 	}
 	a.members(owner, host, drop, methods)
-	a.methods = outer
+	a.methods, a.sharedMethods = outerMarked, outerShared
 }
 
 // derive spells one canonical identity, refusing a nameless
@@ -542,6 +569,56 @@ func markedMethods(methods []*node.Method) map[string]bool {
 	return names
 }
 
+// sharedFunctionDiscs returns the keys that two or more functions at the top
+// level of a package share: the name and the discriminator that
+// [assigner.functionDisc] spells. It returns nil without allocating where
+// no two functions share a name. Otherwise it allocates the set and the
+// discriminators of the functions of a repeated name.
+func (a *assigner) sharedFunctionDiscs(functions []*node.Function) map[discKey]bool {
+	var out map[discKey]bool
+	for i, fn := range functions {
+		for _, other := range functions[i+1:] {
+			if other.Name != fn.Name {
+				continue
+			}
+			k := discKey{name: fn.Name, disc: a.functionDisc(fn, "")}
+			if k.disc != a.functionDisc(other, "") {
+				continue
+			}
+			if out == nil {
+				out = map[discKey]bool{}
+			}
+			out[k] = true
+		}
+	}
+	return out
+}
+
+// sharedMethodDiscs returns the keys that two or more methods of a type
+// share: the name and the discriminator that [assigner.methodDisc] spells.
+// It returns nil without allocating where no two methods share a name.
+// Otherwise it allocates the set and the discriminators of the methods of
+// a repeated name.
+func (a *assigner) sharedMethodDiscs(methods []*node.Method) map[discKey]bool {
+	var out map[discKey]bool
+	for i, m := range methods {
+		for _, other := range methods[i+1:] {
+			if other.Name != m.Name {
+				continue
+			}
+			k := discKey{name: m.Name, disc: a.methodDisc(m)}
+			if k.disc != a.methodDisc(other) {
+				continue
+			}
+			if out == nil {
+				out = map[discKey]bool{}
+			}
+			out[k] = true
+		}
+	}
+	return out
+}
+
 // childOwner extends the dotted owner chain by one type name, joined with
 // [symbol.OwnerSep].
 func childOwner(owner, name string) string {
@@ -614,11 +691,40 @@ func (a *assigner) disc(receiver *node.Param, params []*node.Param) string {
 	return b.String()
 }
 
+// functionDisc returns the discriminator of a function under the owner
+// chain owner: the spelling of its parameters that [assigner.disc] writes,
+// after [discImplementation] where the function is the implementation of an
+// overloaded function of the package.
+func (a *assigner) functionDisc(x *node.Function, owner string) string {
+	disc := a.disc(nil, x.Params)
+	if owner == "" && !x.Overload && a.functions[x.Name] {
+		return discImplementation + disc
+	}
+	return disc
+}
+
+// methodDisc returns the discriminator of a method: [discDelete] for the
+// delete accessor, and otherwise the spelling of its receiver and its
+// parameters that [assigner.disc] writes, after [discImplementation] where
+// the method is the implementation of an overloaded method of its type.
+func (a *assigner) methodDisc(x *node.Method) string {
+	disc := a.disc(x.Receiver, x.Params)
+	switch {
+	case x.Accessor == symbol.AccessorDelete:
+		return discDelete
+	case !x.Overload && a.methods[x.Name]:
+		return discImplementation + disc
+	}
+	return disc
+}
+
 // The marks a discriminator spells between and around its parameters and
 // after the type of a receiver, the spelling of a parameter without a
 // type, and the discriminator of a delete accessor. del is a keyword of
 // Python, the one language with a delete accessor, so no parameter type
-// of a Python callable has that spelling.
+// of a Python callable has that spelling. The brackets enclose the type
+// parameters of an overload whose parameters spell as those of another,
+// with : before each bound and = before the default of a parameter.
 const (
 	discSeparator      = ","
 	discPositional     = "..."
@@ -631,6 +737,10 @@ const (
 	discArgsClose      = ">"
 	discUntyped        = "_"
 	discDelete         = "del"
+	discParamsOpen     = "["
+	discParamsClose    = "]"
+	discBound          = ":"
+	discDefault        = "="
 )
 
 // discImplementation starts the discriminator of the implementation of an
@@ -662,4 +772,34 @@ func discType(b *strings.Builder, t *node.TypeRef) {
 		discType(b, arg)
 	}
 	b.WriteString(discArgsClose)
+}
+
+// typeParamsDisc spells the type parameters of a callable whose
+// discriminator another callable of its name and scope shares: in brackets,
+// comma-joined, each parameter's name, then each of its bounds after a :
+// and its default after a =, each type as [discType] spells it. Callables
+// without type parameters spell the empty brackets. A nil type parameter
+// panics with [assigner.nilSlot], before anything reads it.
+func (a *assigner) typeParamsDisc(tps []*node.TypeParam) string {
+	var b strings.Builder
+	b.WriteString(discParamsOpen)
+	for i, tp := range tps {
+		if tp == nil {
+			panic(a.nilSlot(symbol.KindTypeParam))
+		}
+		if i > 0 {
+			b.WriteString(discSeparator)
+		}
+		b.WriteString(tp.Name)
+		for _, bound := range tp.Bounds {
+			b.WriteString(discBound)
+			discType(&b, bound)
+		}
+		if tp.Default != nil {
+			b.WriteString(discDefault)
+			discType(&b, tp.Default)
+		}
+	}
+	b.WriteString(discParamsClose)
+	return b.String()
 }

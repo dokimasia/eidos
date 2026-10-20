@@ -63,6 +63,20 @@ const (
 	implementationMark = "="
 )
 
+// The type parameters and the two bounds of the overloads whose parameters
+// spell alike, and the discriminators that their type parameters spell:
+// one with a bound, one with a bound and a default, and one of two
+// parameters.
+const (
+	tagParamName   = "K"
+	valueParamName = "V"
+	tagsBound      = "keyof Tags"
+	legacyBound    = "keyof Legacy"
+	tagsDisc       = "[K:keyof Tags]K"
+	legacyDisc     = "[K:keyof Legacy=keyof Legacy]K"
+	pairDisc       = "[K:keyof Tags,V]K"
+)
+
 // TestAssign pins the canonical identities that the assignment step
 // spells. Every persistent record keys on an identity.
 func TestAssign(t *testing.T) {
@@ -545,6 +559,134 @@ func TestAssign(t *testing.T) {
 			assert.True(t, held, "the marked methods of a type leave the methods of its nested types alone")
 			coretest.AssertCodes(t, sink)
 		})
+
+		t.Run("spells the type parameters of methods whose parameters spell alike", func(t *testing.T) {
+			t.Parallel()
+
+			// The DOM declares createElement twice with a parameter of the
+			// type K, once for each map of tag names that bounds K.
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{
+					Name: keyName,
+					TypeParams: []*node.TypeParam{
+						{Name: tagParamName, Bounds: []*node.TypeRef{{Spelling: tagsBound}}},
+					},
+					Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: tagParamName}}},
+				},
+				{
+					Name: keyName,
+					TypeParams: []*node.TypeParam{{
+						Name: tagParamName, Bounds: []*node.TypeRef{{Spelling: legacyBound}},
+						Default: &node.TypeRef{Spelling: legacyBound},
+					}},
+					Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: tagParamName}}},
+				},
+				{Name: keyName, Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}}},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
+			tags := assigned(outerName, keyName, symbol.KindMethod)
+			tags.Disc = tagsDisc
+			legacy := tags
+			legacy.Disc = legacyDisc
+			plain := tags
+			plain.Disc = stringType
+			_, held := g.Lookup(tags)
+			assert.True(t, held, "the first overload spells its type parameter and its bound")
+			_, held = g.Lookup(legacy)
+			assert.True(t, held, "the second overload spells its type parameter, its bound and its default")
+			_, held = g.Lookup(plain)
+			assert.True(t, held, "an overload whose parameters spell apart keeps the discriminator of its parameters")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("spells the type parameters of functions whose parameters spell alike", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(),
+				decls: node.Symbols{
+					&node.Function{
+						Name: serveName,
+						TypeParams: []*node.TypeParam{
+							{Name: tagParamName, Bounds: []*node.TypeRef{{Spelling: tagsBound}}},
+							{Name: valueParamName},
+						},
+						Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: tagParamName}}},
+					},
+					&node.Function{
+						Name: serveName,
+						TypeParams: []*node.TypeParam{{
+							Name: tagParamName, Bounds: []*node.TypeRef{{Spelling: legacyBound}},
+							Default: &node.TypeRef{Spelling: legacyBound},
+						}},
+						Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: tagParamName}}},
+					},
+					&node.Function{
+						Name:   serveName,
+						Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}},
+					},
+					&node.Function{Name: getName},
+				},
+			}))
+			pair := assigned("", serveName, symbol.KindFunction)
+			pair.Disc = pairDisc
+			legacy := pair
+			legacy.Disc = legacyDisc
+			plain := pair
+			plain.Disc = stringType
+			_, held := g.Lookup(pair)
+			assert.True(t, held, "the first function spells its two type parameters and the bound of the first")
+			_, held = g.Lookup(legacy)
+			assert.True(t, held, "the second function spells its type parameter, its bound and its default")
+			_, held = g.Lookup(plain)
+			assert.True(t, held, "a function whose parameters spell apart keeps the discriminator of its parameters")
+			_, held = g.Lookup(assigned("", getName, symbol.KindFunction))
+			assert.True(t, held, "a function of another name keeps the discriminator of its parameters")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports DuplicateDeclaration for overloads whose type parameters spell alike too", func(t *testing.T) {
+			t.Parallel()
+
+			holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+				{
+					Name: keyName,
+					TypeParams: []*node.TypeParam{
+						{Name: tagParamName, Bounds: []*node.TypeRef{{Spelling: tagsBound}}},
+					},
+					Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: tagParamName}}},
+				},
+				{
+					Name: keyName,
+					TypeParams: []*node.TypeParam{
+						{Name: tagParamName, Bounds: []*node.TypeRef{{Spelling: tagsBound}}},
+					},
+					Params: []*node.Param{{Name: keyName, Type: &node.TypeRef{Spelling: tagParamName}}},
+				},
+			}}
+			_, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+			}))
+			coretest.AssertCodes(t, sink, load.DuplicateDeclaration)
+		})
+
+		t.Run("panics naming the frontend for a nil type parameter of overloads whose parameters spell alike",
+			func(t *testing.T) {
+				t.Parallel()
+
+				holder := &node.Struct{Name: outerName, Methods: []*node.Method{
+					{Name: keyName, TypeParams: []*node.TypeParam{nil}},
+					{Name: keyName},
+				}}
+				got := assert.Panics(t, func() {
+					_, _, _ = load.Load(t.Context(), mustConfig(oneFileTree(), with(&holey{
+						Scripted: frontendtest.NewScripted(), decls: node.Symbols{holder},
+					})))
+				}, "the store cannot index a nil type parameter")
+				assert.Contains(t, got, string(frontendtest.ScriptedID), "the panic names the frontend")
+			})
 
 		t.Run("reports DuplicateDeclaration for the implementation in a language without overloads",
 			func(t *testing.T) {

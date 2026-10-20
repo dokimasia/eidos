@@ -45,34 +45,41 @@ func TestMembers(t *testing.T) {
 				"owned by the declaration that declared it")
 		})
 
-		computed := []struct {
-			name  string
-			setup func(*node.Struct)
+		tests := []struct {
+			name string
+			give func(*node.Struct)
+			want []string
 		}{
-			{name: "reports GapComputed for a computed field", setup: func(s *node.Struct) {
-				f := field(svcPath, derivedName, "[key]", builtin(intSpelling))
-				f.Computed = true
-				s.Fields = append(s.Fields, f)
-			}},
-			{name: "reports GapComputed for a computed method", setup: func(s *node.Struct) {
-				m := method(svcPath, derivedName, "[Symbol.iterator]")
-				m.Computed = true
-				s.Methods = append(s.Methods, m)
-			}},
+			{
+				name: "lists a computed field as a member",
+				give: func(s *node.Struct) {
+					f := field(svcPath, derivedName, "[key]", builtin(intSpelling))
+					f.Computed = true
+					s.Fields = append(s.Fields, f)
+				},
+				want: []string{"id", "[key]"},
+			},
+			{
+				name: "lists a computed method as a member",
+				give: func(s *node.Struct) {
+					m := method(svcPath, derivedName, "[Symbol.iterator]")
+					m.Computed = true
+					s.Methods = append(s.Methods, m)
+				},
+				want: []string{"id", "[Symbol.iterator]"},
+			},
 		}
-		for _, tt := range computed {
+		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				s := coretest.Struct(svcPath, derivedName)
 				s.Fields = []*node.Field{field(svcPath, derivedName, "id", builtin(intSpelling))}
-				tt.setup(s)
+				tt.give(s)
 				b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, s)))
 				set, _ := b.MembersOf(s)
-				assert.Equal(t, names(set), []string{"id"}, "the walk leaves out a member that an expression names")
-				assert.Equal(t, reasons(set), []rules.GapReason{rules.GapComputed},
-					"the walk reports the computed member as a gap")
-				assert.Equal(t, set.Gaps[0].Host, s.ID, "the gap names the type that declares the member")
+				assert.Equal(t, names(set), tt.want, "the walk lists the computed member under its name as written")
+				assert.True(t, set.Complete(), "the walk of a type with a computed member has no gap")
 			})
 		}
 
@@ -460,7 +467,7 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, set.Members[0].Depth, 2, "so the name selects the field two embeds down")
 		})
 
-		t.Run("records no embedded field for an interface", func(t *testing.T) {
+		t.Run("does not record an embedded field for an interface", func(t *testing.T) {
 			t.Parallel()
 
 			reader := iface(svcPath, "Reader")
@@ -855,7 +862,7 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, first.Gaps[0].Host, host.ID, "and name its host")
 		})
 
-		t.Run("returns no member of the call before", func(t *testing.T) {
+		t.Run("does not return a member of the call before", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
@@ -936,7 +943,6 @@ func TestMembers(t *testing.T) {
 			{name: "returns cyclic for GapCyclic", give: rules.GapCyclic, want: "cyclic"},
 			{name: "returns generic for GapGeneric", give: rules.GapGeneric, want: "generic"},
 			{name: "returns conflict for GapConflict", give: rules.GapConflict, want: "conflict"},
-			{name: "returns computed for GapComputed", give: rules.GapComputed, want: "computed"},
 			{name: "returns the number of an undeclared reason", give: rules.GapReason(9), want: "9"},
 		}
 		for _, tt := range tests {

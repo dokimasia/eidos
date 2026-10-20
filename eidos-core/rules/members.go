@@ -66,11 +66,6 @@ const (
 	// GapConflict is two arrivals of one name on an interface with
 	// different signatures.
 	GapConflict
-	// GapComputed is a member whose name is an expression of its
-	// language, such as TypeScript's [Symbol.iterator]. No other
-	// language can call such a member by name, so the walk leaves it
-	// out. Host is the type that declares the member.
-	GapComputed
 )
 
 // String returns the reason's spelling, and the decimal number of an
@@ -87,8 +82,6 @@ func (r GapReason) String() string {
 		return "generic"
 	case GapConflict:
 		return "conflict"
-	case GapComputed:
-		return "computed"
 	default:
 		return strconv.Itoa(int(r))
 	}
@@ -289,10 +282,11 @@ func (w *walk) release() {
 // descends into its contributors under the policy that applies to
 // it. The members record in list order: fields, embedded fields
 // where the policy records them, then methods. A field or a method
-// whose name is computed records a gap in its place. A walk under
-// [ShadowLinearise] records the target of each contributor with a
-// target as a base of the type, once per type, before it descends. via
-// is the contributor that reached the type, nil at the root.
+// whose name is computed records under its name as written, such as
+// TypeScript's [Symbol.iterator]. A walk under [ShadowLinearise]
+// records the target of each contributor with a target as a base of the
+// type, once per type, before it descends. via is the contributor that
+// reached the type, nil at the root.
 func (w *walk) visit(
 	t membered, policy MemberPolicy, source SourceRules,
 	through []symbol.Identity, depth int, viaOptional bool, via *node.TypeRef,
@@ -303,10 +297,6 @@ func (w *walk) visit(
 	}
 	for _, f := range t.fields {
 		if f == nil || f.Name == "" {
-			continue
-		}
-		if f.Computed {
-			w.gaps = append(w.gaps, Gap{Host: t.id, Contributor: via, Reason: GapComputed})
 			continue
 		}
 		m := Member{Symbol: f, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
@@ -322,10 +312,6 @@ func (w *walk) visit(
 	}
 	for _, m := range t.methods {
 		if m == nil || m.Name == "" {
-			continue
-		}
-		if m.Computed {
-			w.gaps = append(w.gaps, Gap{Host: t.id, Contributor: via, Reason: GapComputed})
 			continue
 		}
 		mem := Member{Symbol: m, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
