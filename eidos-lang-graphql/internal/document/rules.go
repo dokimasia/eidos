@@ -4,9 +4,9 @@
 package document
 
 import (
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/validator/core"
-	validatorrules "github.com/vektah/gqlparser/v2/validator/rules"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/validator/core"
+	validatorrules "github.com/dokimasia/gqlparser/v2/validator/rules"
 )
 
 // LoneAnonymous is the message of an anonymous operation beside another

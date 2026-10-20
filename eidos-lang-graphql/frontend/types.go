@@ -6,8 +6,8 @@ package frontend
 import (
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/lexer"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/lexer"
 
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/graphql/internal/document"
@@ -33,7 +33,8 @@ const memberSep = " | "
 // the file into the package of the schema. The first definition of a name
 // is the declaration that an extension of the unit merges into. The schema
 // definitions and the extensions lower after every file of the unit, through
-// [lowering.extensions] and [lowering.schemaStatements].
+// [lowering.extensions], [lowering.directiveExtensions] and
+// [lowering.schemaStatements].
 func (s *source) typeSystem(doc *ast.SchemaDocument) {
 	file := s.schemaFile()
 	for _, d := range doc.Definitions {
@@ -44,7 +45,11 @@ func (s *source) typeSystem(doc *ast.SchemaDocument) {
 		}
 	}
 	for _, d := range doc.Directives {
-		file.Decls = append(file.Decls, s.directive(d))
+		i := s.directive(d)
+		file.Decls = append(file.Decls, i)
+		if _, held := s.directives[d.Name]; !held {
+			s.directives[d.Name] = i
+		}
 	}
 }
 
@@ -234,12 +239,16 @@ func (s *source) values(list ast.EnumValueList, end int) []*node.EnumVariant {
 
 // directive lowers a directive definition into an interface with a field for
 // each argument, with the default of the argument as the value of its field.
-// The locations of the directive are its directive stamp as written, and a
-// repeatable directive has the repeatable stamp.
+// The directives that apply to the definition are the annotations of the
+// interface. The locations of the directive are its directive stamp as
+// written, and a repeatable directive has the repeatable stamp.
 func (s *source) directive(d *ast.DirectiveDefinition) *node.Interface {
 	span := s.definitionAt(d.Position)
 	at := s.at(d.Position)
-	i := &node.Interface{Pos: at, Name: d.Name, Visibility: symbol.VisibilityPublic, Doc: s.docOf(d.Description)}
+	i := &node.Interface{
+		Pos: at, Name: d.Name, Visibility: symbol.VisibilityPublic, Doc: s.docOf(d.Description),
+		Annotations: annotations(d.Directives),
+	}
 	i.Comment = s.notes.attach(i, span.First, span.Last)
 	nameAt := func(k int) *ast.Position { return d.Arguments[k].Position }
 	described := func(k int) bool { return d.Arguments[k].Description != "" }

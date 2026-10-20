@@ -81,6 +81,16 @@ func TestLang(t *testing.T) {
 		})
 	})
 
+	t.Run("ReservedPrefix", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells two underscores", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, graphql.ReservedPrefix, "__", "the prefix of the names of introspection")
+		})
+	})
+
 	t.Run("DocumentsSegment", func(t *testing.T) {
 		t.Parallel()
 

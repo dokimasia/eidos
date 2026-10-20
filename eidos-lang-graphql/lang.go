@@ -32,6 +32,11 @@ const (
 	ShortExtension  = ".gql"
 )
 
+// ReservedPrefix opens the names that the specification of GraphQL reserves
+// for its introspection, such as __typename. A schema declares no name with
+// the prefix.
+const ReservedPrefix = "__"
+
 // DocumentsSegment is the last segment of the package of the executable
 // definitions of a schema. The frontend loads the operations and the
 // fragments of a unit into the package of its schema joined with the

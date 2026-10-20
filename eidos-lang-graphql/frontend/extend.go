@@ -7,7 +7,7 @@ import (
 	"cmp"
 	"slices"
 
-	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/ast"
 
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/graphql/internal/document"
@@ -36,6 +36,12 @@ type statement struct {
 type extension struct {
 	src *source
 	def *ast.Definition
+}
+
+// directiveExtension is one extension of a directive of a file of the unit.
+type directiveExtension struct {
+	src *source
+	def *ast.DirectiveDefinition
 }
 
 // nameOf returns the name of a root operation type of a loaded schema, and
@@ -72,6 +78,35 @@ func (l *lowering) extensions(exts []extension) {
 			l.types[x.def.Name] = declared{decl: decl, kind: x.def.Kind}
 			l.schemaScope.extended[x.def.Name] = true
 		}
+	}
+}
+
+// directiveExtensions merges the directives of each extension of a directive
+// into the interface of the directive, where the unit declares the directive.
+// The comment of the extension is the comment of the interface where the
+// interface has none. An extension of a directive that the unit does not
+// declare loads as an interface of its own in the file of the extension,
+// with the directive stamp without a location and the extension stamp. A
+// later extension of the same directive merges into that interface.
+func (l *lowering) directiveExtensions(exts []directiveExtension) {
+	for _, x := range exts {
+		span := x.src.definitionAt(x.def.Position)
+		if i, held := l.directives[x.def.Name]; held {
+			comment := x.src.notes.attach(i, span.First, span.Last)
+			i.Annotations = append(i.Annotations, annotations(x.def.Directives)...)
+			i.Comment = cmp.Or(i.Comment, comment)
+			continue
+		}
+		at := x.src.at(x.def.Position)
+		i := &node.Interface{
+			Pos: at, Name: x.def.Name, Visibility: symbol.VisibilityPublic, Annotations: annotations(x.def.Directives),
+		}
+		i.Comment = x.src.notes.attach(i, span.First, span.Last)
+		file := x.src.schemaFile()
+		file.Decls = append(file.Decls, i)
+		l.gb.Stamp(i, meta.RawStamp{Key: graphql.DirectiveKey, Value: []string{}, Pos: at})
+		l.gb.Stamp(i, meta.RawStamp{Key: graphql.ExtensionKey, Value: extendValue, Pos: at})
+		l.directives[x.def.Name] = i
 	}
 }
 

@@ -13,7 +13,9 @@ import (
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/graphql/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -239,6 +241,41 @@ func TestExtend(t *testing.T) {
 			}
 			assert.Equal(t, kinds, []symbol.Kind{symbol.KindStruct, symbol.KindEnum},
 				"the type and the extension each load")
+		})
+	})
+
+	t.Run("directiveExtensions", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("adds the directives of an extension to the interface of its directive", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := parsedSource(t, "directive @old on FIELD_DEFINITION\n\n"+
+				"extend directive @old @deprecated(reason: \"use @new\")\n")
+			assert.Empty(t, codesOf(sink), "the extension of a declared directive loads clean")
+			old, is := declOf(t, fileIn(t, got, appPkg, appFile), "old").(*node.Interface)
+			assert.True(t, is, "the directive is an interface")
+			deprecated := symbol.Annotation{Name: graphql.DeprecatedDirective, Args: []string{`reason: "use @new"`}}
+			assert.Equal(t, old.Annotations, symbol.Annotations{deprecated},
+				"the directive of the extension is an annotation of the definition")
+		})
+
+		t.Run("loads an extension of a directive that the unit does not declare as an interface", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := parsedSource(t, "directive @a on DIRECTIVE_DEFINITION\n\n"+
+				"directive @b on DIRECTIVE_DEFINITION\n\nextend directive @remote @a\n\nextend directive @remote @b\n")
+			assert.Equal(t, codesOf(sink), []diag.Code{frontend.InvalidDocument},
+				"the validator refuses the extension of an undefined directive")
+			remote, is := declOf(t, fileIn(t, got, appPkg, appFile), "remote").(*node.Interface)
+			assert.True(t, is, "the extension is an interface")
+			expect.Equal(t, remote.Annotations, symbol.Annotations{{Name: "a"}, {Name: "b"}},
+				"the later extension merges into the interface of the earlier one")
+			expect.Contains(t, got.StampRecords(), plugin.StampRecord{
+				Subject: remote, Stamp: meta.RawStamp{Key: graphql.DirectiveKey, Value: []string{}, Pos: remote.Pos},
+			}, "the directive stamp of the interface lists no location")
+			expect.Equal(t, stampsOn(got, remote, graphql.ExtensionKey), []string{"extend"},
+				"the stamp marks the interface as an extension")
 		})
 	})
 

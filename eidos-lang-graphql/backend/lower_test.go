@@ -6,8 +6,8 @@ package backend_test
 import (
 	"testing"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/parser"
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/lang/graphql/backend"
@@ -428,6 +428,13 @@ func TestLower(t *testing.T) {
 			give symbol.Symbol
 			want string
 		}{
+			{
+				name: "returns an error for a type with the deleter of a property",
+				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(&emit.Method{
+					Name: nameField, Accessor: symbol.AccessorDelete,
+				})},
+				want: "graphql: a property has no deleter in graphql, and name states one",
+			},
 			{
 				name: "returns an error for an extension of the schema with documentation",
 				give: &emit.File{Doc: []string{"The shop."}, Annotations: symbol.Annotations{extendMarker, queryRoot}},

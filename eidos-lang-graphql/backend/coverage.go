@@ -34,6 +34,10 @@ import (
 //     the declaration does not render with the fact or without it.
 //   - A type parameter, an accessor, an index signature, a construct
 //     signature and a computed name have no form in a schema either.
+//   - The passing of a parameter takes the [render.Holds] verdict, because
+//     a caller always names an argument. A wire name renders as the name of its field, and the
+//     lowering refuses a wire name that is not a GraphQL name or that
+//     starts with two underscores, because a schema cannot declare it.
 //
 // Coverage builds the table on every call, which the caller keeps.
 func Coverage() render.Coverage {
@@ -62,6 +66,8 @@ func Coverage() render.Coverage {
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Renders,
 			symbol.FactVariadic:         render.Renders,
+			symbol.FactPassing:          render.Holds,
+			symbol.FactWire:             render.Renders,
 			symbol.FactNamedReturn:      render.Renders,
 			symbol.FactConstEnum:        render.Refuses,
 			symbol.FactUnderlying:       render.Refuses,

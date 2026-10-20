@@ -7,9 +7,9 @@ import (
 	"errors"
 	"math"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/gqlerror"
+	"github.com/dokimasia/gqlparser/v2/parser"
 
 	"go.dokimi.dev/eidos/sdk/position"
 )

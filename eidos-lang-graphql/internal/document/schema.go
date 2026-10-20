@@ -8,9 +8,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/parser"
-	"github.com/vektah/gqlparser/v2/validator"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/parser"
+	"github.com/dokimasia/gqlparser/v2/validator"
 )
 
 // prelude returns the parse of the prelude of gqlparser: the built-in

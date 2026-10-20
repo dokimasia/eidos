@@ -6,7 +6,7 @@ package backend_test
 import (
 	"testing"
 
-	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/ast"
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/lang/graphql"
@@ -15,10 +15,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
-
-// directiveDefinitionLocation is the location of a directive that applies
-// to the definition of a directive.
-const directiveDefinitionLocation = "DIRECTIVE_DEFINITION"
 
 // TestAnnotations pins the rules of the annotations of a declaration: a
 // marker of the satellite on a declaration of its kinds with the arguments
@@ -64,7 +60,7 @@ func TestAnnotations(t *testing.T) {
 						string(ast.LocationArgumentDefinition), string(ast.LocationInterface),
 						string(ast.LocationUnion), string(ast.LocationEnum), string(ast.LocationEnumValue),
 						string(ast.LocationInputObject), string(ast.LocationInputFieldDefinition),
-						directiveDefinitionLocation,
+						string(ast.LocationDirectiveDefinition),
 					},
 				}}},
 			},

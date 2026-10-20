@@ -100,7 +100,8 @@ func TestBuiltin(t *testing.T) {
 				t.Parallel()
 
 				f := loaded(t)
-				shape, is := graphqlrules.Rules{}.ShapeOf(f.decl(t, tt.give), f.view)
+				ref := &node.TypeRef{Spelling: tt.give.Name, Target: tt.give}
+				shape, is := graphqlrules.Rules{}.ShapeOf(ref, f.decl(t, tt.give), f.view)
 				assert.True(t, is, "the table contains the URL of the scalar")
 				assert.Equal(t, shape, tt.want, "the shape of the entry of the table")
 			})
@@ -127,7 +128,8 @@ func TestBuiltin(t *testing.T) {
 				t.Parallel()
 
 				f := loaded(t)
-				_, is := graphqlrules.Rules{}.ShapeOf(f.decl(t, tt.give), f.view)
+				ref := &node.TypeRef{Spelling: tt.give.Name, Target: tt.give}
+				_, is := graphqlrules.Rules{}.ShapeOf(ref, f.decl(t, tt.give), f.view)
 				assert.False(t, is, "a reference to the declaration folds to a reference")
 			})
 		}
@@ -163,6 +165,7 @@ func builtinCalls(tb testing.TB) []allocCall {
 	f := loaded(tb)
 	r := graphqlrules.Rules{}
 	ref := &node.TypeRef{Spelling: graphql.IntScalar}
+	longRef := &node.TypeRef{Spelling: longID.Name, Target: longID}
 	long := f.decl(tb, longID)
 	var (
 		shape rules.TypeShape
@@ -178,7 +181,7 @@ func builtinCalls(tb testing.TB) []allocCall {
 		},
 		{
 			name:  "ShapeOf",
-			call:  func() { shape, is = r.ShapeOf(long, f.view) },
+			call:  func() { shape, is = r.ShapeOf(longRef, long, f.view) },
 			check: func(tb assert.TB) { assert.True(tb, is, "ShapeOf returns the shape of Long") },
 		},
 	}

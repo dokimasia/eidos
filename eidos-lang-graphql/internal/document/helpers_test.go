@@ -4,8 +4,8 @@
 package document_test
 
 import (
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/parser"
 	"go.dokimi.dev/assert"
 )
 

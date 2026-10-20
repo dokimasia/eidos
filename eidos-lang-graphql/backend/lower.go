@@ -8,10 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/parser"
 
 	"go.dokimi.dev/eidos/lang/graphql"
+	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -81,7 +82,11 @@ const selectionOpen = "{"
 //     anonymous fragment, and a body that is not a verbatim selection set;
 //   - a header that states a schema definition without a root operation
 //     type, and an extension of the schema without a directive or a root
-//     operation type.
+//     operation type;
+//   - a wire name that is not a GraphQL name or that starts with two
+//     underscores;
+//   - the deleter of a property, through [lowering.DeleteAccessor], because
+//     a schema has no properties.
 //
 // # Allocation contract
 //
@@ -91,6 +96,9 @@ const selectionOpen = "{"
 // of a type after the first 16. A rewrite allocates the declarations that it
 // writes. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	if err := lowering.DeleteAccessor(graphql.Lang, s); err != nil {
+		return nil, err
+	}
 	switch d := s.(type) {
 	case *emit.File:
 		return nil, lowerHeader(d)

@@ -53,9 +53,11 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 // specifiedBy URL the table of [graphql.Scalar] contains: the shape of its
 // entry, such as a signed integer of 64 bits for Long. It reports false for
 // a custom scalar outside the table, for a union and for every other
-// declaration, so a reference to it folds to a reference. The view is
-// unread, and ShapeOf allocates nothing.
-func (Rules) ShapeOf(decl symbol.Symbol, _ rules.View) (rules.TypeShape, bool) {
+// declaration, so a reference to it folds to a reference. A reference to a
+// scalar has no type arguments, so the shape does not depend on the
+// reference. The reference and the view are unread, and ShapeOf allocates
+// nothing.
+func (Rules) ShapeOf(_ *node.TypeRef, decl symbol.Symbol, _ rules.View) (rules.TypeShape, bool) {
 	scalar, is := decl.(*node.Alias)
 	if !is || scalar.Target != nil {
 		return rules.TypeShape{}, false

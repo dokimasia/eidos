@@ -16,10 +16,6 @@ import (
 // the language, as the refusals of every satellite open.
 const refusalPrefix = string(graphql.Lang) + ": "
 
-// reservedPrefix opens the names that the specification of GraphQL
-// reserves for its introspection, such as __typename.
-const reservedPrefix = "__"
-
 // caser is the case conversion of GraphQL. The guide to naming of
 // graphql.org writes an abbreviation as one word, as userId, so the
 // conversion recognises no initialism. A name that the source declares in
@@ -70,7 +66,7 @@ func Name(_, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
 	if !naming.IsIdentifier(bare) {
 		return "", fmt.Errorf(refusalPrefix+"%q is not a GraphQL name", name)
 	}
-	if strings.HasPrefix(bare, reservedPrefix) {
+	if strings.HasPrefix(bare, graphql.ReservedPrefix) {
 		return "", fmt.Errorf(refusalPrefix+"%q starts with two underscores, which GraphQL reserves for "+
 			"its introspection", name)
 	}

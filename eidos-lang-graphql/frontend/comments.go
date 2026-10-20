@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/lexer"
+	"github.com/dokimasia/gqlparser/v2/lexer"
 
 	"go.dokimi.dev/eidos/lang/graphql/internal/document"
 	"go.dokimi.dev/eidos/sdk/plugin"

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/ast"
 
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/graphql/internal/value"
@@ -28,11 +28,6 @@ const (
 	takesLocations = "locations of a directive"
 )
 
-// directiveDefinitionLocation is the location of a directive that applies
-// to the definition of a directive. The working draft of GraphQL declares
-// it, and gqlparser declares no constant of it.
-const directiveDefinitionLocation ast.DirectiveLocation = "DIRECTIVE_DEFINITION"
-
 // locations are the locations of a directive of GraphQL, which a directive
 // definition lists after on.
 var locations = []ast.DirectiveLocation{
@@ -41,7 +36,7 @@ var locations = []ast.DirectiveLocation{
 	ast.LocationVariableDefinition, ast.LocationSchema, ast.LocationScalar, ast.LocationObject,
 	ast.LocationFieldDefinition, ast.LocationArgumentDefinition, ast.LocationInterface, ast.LocationUnion,
 	ast.LocationEnum, ast.LocationEnumValue, ast.LocationInputObject, ast.LocationInputFieldDefinition,
-	directiveDefinitionLocation,
+	ast.LocationDirectiveDefinition,
 }
 
 // arity is the rule of the arguments of a marker.

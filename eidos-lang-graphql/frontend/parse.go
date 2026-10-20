@@ -9,9 +9,9 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vektah/gqlparser/v2/validator"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/gqlerror"
+	"github.com/dokimasia/gqlparser/v2/validator"
 
 	"go.dokimi.dev/eidos/lang/graphql/internal/document"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -98,6 +98,7 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 	}
 
 	var exts []extension
+	var directiveExts []directiveExtension
 	var statements []statement
 	for _, p := range units {
 		if p.schema != nil || p.query == nil {
@@ -110,6 +111,9 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 		for _, d := range p.schema.Extensions {
 			exts = append(exts, extension{src: p.src, def: d})
 		}
+		for _, d := range p.schema.DirectiveExtensions {
+			directiveExts = append(directiveExts, directiveExtension{src: p.src, def: d})
+		}
 		for _, d := range p.schema.Schema {
 			statements = append(statements, statement{src: p.src, def: d})
 		}
@@ -118,6 +122,7 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 		}
 	}
 	l.extensions(exts)
+	l.directiveExtensions(directiveExts)
 	l.schemaStatements(statements)
 	loaded := l.load(docs, units)
 	l.operations(loaded, statements)

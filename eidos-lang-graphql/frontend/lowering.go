@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/lexer"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/lexer"
 
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/graphql/internal/document"
@@ -36,13 +36,16 @@ type declared struct {
 // own files of the unit into the graph builder of the unit: the type system
 // into the package of the schema, and the executable definitions into the
 // package of the documents. types are the declarations of the type system
-// of the unit by name, which an extension of the unit merges into.
+// of the unit by name, which an extension of the unit merges into, and
+// directives are the interfaces of the directive definitions of the unit by
+// name, which an extension of a directive merges into.
 type lowering struct {
-	unit  *plugin.SourceUnit
-	gb    *plugin.GraphBuilder
-	pkg   *node.Package
-	docs  *node.Package
-	types map[string]declared
+	unit       *plugin.SourceUnit
+	gb         *plugin.GraphBuilder
+	pkg        *node.Package
+	docs       *node.Package
+	types      map[string]declared
+	directives map[string]*node.Interface
 	// bindings are the resolution records of the files of the schema and of
 	// the documents, which every file of the unit shares.
 	schemaScope, docsScope *bindings
@@ -62,7 +65,7 @@ func newLowering(u *plugin.SourceUnit, w workspace, first string, sharedFiles []
 		}
 	}
 	gb := u.Graph()
-	l := &lowering{unit: u, gb: gb, types: map[string]declared{}}
+	l := &lowering{unit: u, gb: gb, types: map[string]declared{}, directives: map[string]*node.Interface{}}
 	l.pkg = gb.Package(pkgPath)
 	if pkgPath != "" {
 		l.pkg.Name = path.Base(pkgPath)

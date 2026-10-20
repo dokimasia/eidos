@@ -6,8 +6,8 @@ package value
 import (
 	"fmt"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/lexer"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/lexer"
 )
 
 // The names that GraphQL reads as values of their own and not as enum

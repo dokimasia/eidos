@@ -243,6 +243,8 @@ func reference(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 		return nil, errors.New("the well-known error has no GraphQL spelling")
 	case s.Ref == rules.WellKnownEmpty:
 		return nil, errors.New("the well-known empty value has no GraphQL spelling")
+	case s.Ref == rules.WellKnownContext:
+		return nil, errors.New("the well-known context has no GraphQL spelling, because a schema states no context")
 	case len(s.Args) > 0:
 		return nil, errors.New("a reference with type arguments has no GraphQL spelling")
 	}

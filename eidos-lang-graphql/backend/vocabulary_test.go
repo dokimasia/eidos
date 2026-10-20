@@ -6,21 +6,30 @@ package backend_test
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/graphql/backend"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
 // The allocations of a description: the text of a block string, and the
-// text and the quoted line of a description of one line.
+// text and the quoted line of a description of one line. The wrap of a
+// single-spaced text allocates the list of its lines, each of which is a
+// part of the text.
 const (
 	blockDocsAllocs = 1
 	lineDocsAllocs  = 1 + 1
+	wrapDocsAllocs  = 1
 )
+
+// filledLine is a word as wide as the documentation, so the wrap starts a
+// line with the word after it.
+var filledLine = strings.Repeat("a", textfmt.DocsWidth)
 
 // TestVocabulary pins the template vocabulary: the names of its helpers and
 // the description of the helper that every backend declares.
@@ -37,6 +46,7 @@ func TestVocabulary(t *testing.T) {
 			assert.Permutation(t, names, []string{
 				backend.FuncDocs, backend.FuncStruct, backend.FuncInterface, backend.FuncEnum,
 				backend.FuncAlias, backend.FuncFunction, backend.FuncSchema, backend.FuncExtension,
+				backend.FuncWrapDocs,
 			}, "the names of the helpers")
 		})
 
@@ -76,6 +86,24 @@ func TestVocabulary(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("WrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps a list marker on the line before it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" - next"), []string{filledLine + " -", "next"},
+				"a GraphQL description is CommonMark")
+		})
+
+		t.Run("starts a line with a word that starts with @", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" @see next"), []string{filledLine, "@see next"},
+				"a description has no block tags")
+		})
+	})
 }
 
 // Docs allocates the text of the description, and the quoted line of a
@@ -93,6 +121,11 @@ func TestVocabularyAllocs(t *testing.T) {
 	assert.HasPrefix(t, got, `"Row`, "Docs writes a string")
 	assert.MaxAllocs(t, func() { got = v.Docs(nil) }, 0, "Docs allocates nothing for no lines")
 	assert.Empty(t, got, "Docs writes no description")
+	wrapped := filledLine + " next"
+	var lines []string
+	assert.MaxAllocs(t, func() { lines = backend.WrapDocs(wrapped) }, wrapDocsAllocs,
+		"WrapDocs allocates the list of lines")
+	assert.Equal(t, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
 }
 
 // BenchmarkVocabulary measures the description that the template of a
@@ -127,5 +160,16 @@ func BenchmarkVocabulary(b *testing.B) {
 				assert.Equal(b, got, tt.want, "Docs writes the description")
 			})
 		}
+	})
+
+	b.Run("WrapDocs", func(b *testing.B) {
+		wrapped := filledLine + " next"
+		c := bench.Start(b).MaxAllocs(wrapDocsAllocs)
+		defer c.End()
+		var lines []string
+		for c.Loop() {
+			lines = backend.WrapDocs(wrapped)
+		}
+		assert.Equal(b, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
 	})
 }

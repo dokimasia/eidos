@@ -231,6 +231,18 @@ func TestTypes(t *testing.T) {
 			expect.Equal(t, fields.Doc, []string{"The fields of the key."}, "the field has the description")
 		})
 
+		t.Run("loads the directives of a directive definition as the annotations of its interface", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := parsedSource(t, "directive @experimental on DIRECTIVE_DEFINITION\n\n"+
+				"directive @cached(ttl: Int) @experimental on FIELD_DEFINITION\n")
+			assert.Empty(t, codesOf(sink), "a directive may apply to a directive definition")
+			cached, is := declOf(t, fileIn(t, got, appPkg, appFile), "cached").(*node.Interface)
+			assert.True(t, is, "the directive definition is an interface")
+			assert.Equal(t, cached.Annotations, symbol.Annotations{{Name: "experimental"}},
+				"the directive of the definition is an annotation of the interface")
+		})
+
 		t.Run("stamps the locations of a directive as written", func(t *testing.T) {
 			t.Parallel()
 

@@ -101,7 +101,10 @@ func (h *host) member(name string) error {
 
 // field lowers the field f of the type. A field has a type, takes a default
 // in an input object alone, and receives no type inside a type. Its default
-// is a constant value of GraphQL.
+// is a constant value of GraphQL. The wire name of a field is a GraphQL name
+// that does not start with [graphql.ReservedPrefix], because the settle
+// keeps the name as the generator wrote it and a schema cannot declare any
+// other name.
 func (h *host) field(f *emit.Field) error {
 	if _, err := checkAnnotations(symbol.KindField, f.Name, f.Annotations); err != nil {
 		return err
@@ -110,6 +113,9 @@ func (h *host) field(f *emit.Field) error {
 		return err
 	}
 	switch {
+	case f.Wire && (!naming.IsIdentifier(f.Name) || strings.HasPrefix(f.Name, graphql.ReservedPrefix)):
+		return fmt.Errorf(refusalPrefix+"a schema declares a field by a GraphQL name without two leading "+
+			"underscores, and the wire name %q of %s is not one", f.Name, h.name)
 	case f.Receives != nil && !h.receives:
 		return fmt.Errorf(refusalPrefix+"an extension of GraphQL is a block of its own, and %s receives %s inside %s",
 			f.Name, f.Receives.Spelling, h.name)

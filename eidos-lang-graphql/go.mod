@@ -7,8 +7,8 @@ go 1.27.2
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
+	github.com/dokimasia/gqlparser/v2 v2.0.0-00010101000000-000000000000
 	github.com/pelletier/go-toml/v2 v2.4.3
-	github.com/vektah/gqlparser/v2 v2.5.63
 	go.dokimi.dev/assert v0.2.0
 	go.dokimi.dev/eidos/lang v0.1.1
 	go.dokimi.dev/eidos/sdk v0.1.1

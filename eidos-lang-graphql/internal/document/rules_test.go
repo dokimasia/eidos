@@ -6,10 +6,10 @@ package document_test
 import (
 	"testing"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/parser"
-	"github.com/vektah/gqlparser/v2/validator"
-	validatorrules "github.com/vektah/gqlparser/v2/validator/rules"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/parser"
+	"github.com/dokimasia/gqlparser/v2/validator"
+	validatorrules "github.com/dokimasia/gqlparser/v2/validator/rules"
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"

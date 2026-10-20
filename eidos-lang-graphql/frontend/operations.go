@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/lexer"
+	"github.com/dokimasia/gqlparser/v2/ast"
+	"github.com/dokimasia/gqlparser/v2/lexer"
 
 	"go.dokimi.dev/eidos/lang/graphql"
 	"go.dokimi.dev/eidos/lang/graphql/internal/document"
@@ -77,10 +77,11 @@ func (s *source) executable(doc *ast.QueryDocument, sel *selector) {
 // parameter for each variable and one result: the struct of its selection,
 // named after the operation and its kind. The result of a subscription is
 // an asynchronous stream of the struct, because a subscription responds
-// with a sequence of results. The directives of the operation are the
-// annotations of the function. The function has the kind of the operation
-// and its selection set as written as stamps, and an anonymous operation
-// has the anonymous stamp.
+// with a sequence of results. The description of the operation is the
+// documentation of the function, and its directives are the annotations of
+// the function. The function has the kind of the operation and its
+// selection set as written as stamps, and an anonymous operation has the
+// anonymous stamp.
 func (s *source) operation(op *ast.OperationDefinition, sel *selector) []symbol.Symbol {
 	span := s.definitionAt(op.Position)
 	at := s.at(op.Position)
@@ -91,7 +92,8 @@ func (s *source) operation(op *ast.OperationDefinition, sel *selector) []symbol.
 	kind := graphql.Operation(op.Operation)
 	result := name + suffixOf(kind)
 	fn := &node.Function{
-		Pos: at, Name: name, Visibility: symbol.VisibilityPublic, Annotations: annotations(op.Directives),
+		Pos: at, Name: name, Visibility: symbol.VisibilityPublic, Doc: s.docOf(op.Description),
+		Annotations: annotations(op.Directives),
 	}
 	fn.Comment = s.notes.attach(fn, span.First, s.body(span))
 	fn.Params = s.variables(op.VariableDefinitions, s.variablesEnd(span))
@@ -117,7 +119,8 @@ func (s *source) operation(op *ast.OperationDefinition, sel *selector) []symbol.
 
 // fragment lowers one fragment into a function and the declaration of its
 // result, the struct or the sum of its selection, named after the fragment.
-// The variables of the fragment, which gqlparser parses beyond the
+// The description of the fragment is the documentation of the function. The
+// variables of the fragment, which gqlparser parses beyond the
 // specification, are the parameters of the function. The function has the
 // type condition of the fragment and its selection set as written as
 // stamps.
@@ -126,8 +129,8 @@ func (s *source) fragment(fr *ast.FragmentDefinition, sel *selector) []symbol.Sy
 	at := s.at(fr.Position)
 	result := fr.Name + fragmentSuffix
 	fn := &node.Function{
-		Pos: at, Name: fr.Name, Visibility: symbol.VisibilityPublic, Annotations: annotations(fr.Directives),
-		Returns: []*node.Return{{Pos: at, Type: named(result, at)}},
+		Pos: at, Name: fr.Name, Visibility: symbol.VisibilityPublic, Doc: s.docOf(fr.Description),
+		Annotations: annotations(fr.Directives), Returns: []*node.Return{{Pos: at, Type: named(result, at)}},
 	}
 	fn.Comment = s.notes.attach(fn, span.First, s.body(span))
 	fn.Params = s.variables(fr.VariableDefinition, s.variablesEnd(span))
@@ -142,19 +145,20 @@ func (s *source) fragment(fr *ast.FragmentDefinition, sel *selector) []symbol.Sy
 }
 
 // variables lowers the variables of an operation or of a fragment into
-// parameters, each with its type, its default and its directives. end is
-// the index in Sig of the closing parenthesis of the variables.
+// parameters, each with its type, its default, its description as its
+// documentation and its directives. end is the index in Sig of the closing
+// parenthesis of the variables.
 func (s *source) variables(list ast.VariableDefinitionList, end int) []*node.Param {
 	if len(list) == 0 {
 		return nil
 	}
 	nameAt := func(i int) *ast.Position { return list[i].Position }
-	described := func(int) bool { return false }
+	described := func(i int) bool { return list[i].Description != "" }
 	out := make([]*node.Param, 0, len(list))
 	for i, v := range list {
 		p := &node.Param{
 			Pos: s.at(v.Position), Name: v.Variable, Type: typeRef(v.Type, s.at, named),
-			Default: valueText(v.DefaultValue), Annotations: annotations(v.Directives),
+			Default: valueText(v.DefaultValue), Doc: s.docOf(v.Description), Annotations: annotations(v.Directives),
 		}
 		b := s.memberAt(i, len(list), nameAt, described, end)
 		p.Comment = s.notes.attach(p, b.first, b.last)

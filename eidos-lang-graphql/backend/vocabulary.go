@@ -7,15 +7,18 @@ import (
 	"bytes"
 	"text/template"
 
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
 // The names of the vocabulary are constants, so a template and the map of
-// its helpers use the same name. The name of the documentation helper is the
-// name that every backend declares.
+// its helpers use the same name. The names of the documentation helpers
+// are the names that every backend declares.
 const (
 	// FuncDocs is the template name of [Vocabulary.Docs].
 	FuncDocs = render.HelperDocs
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncStruct is the template name of [Vocabulary.Struct].
 	FuncStruct = "structdecl"
 	// FuncInterface is the template name of [Vocabulary.Interface].
@@ -62,6 +65,7 @@ func Funcs(*render.ImportSet) template.FuncMap {
 	v := &Vocabulary{}
 	return template.FuncMap{
 		FuncDocs:      v.Docs,
+		FuncWrapDocs:  WrapDocs,
 		FuncStruct:    v.Struct,
 		FuncInterface: v.Interface,
 		FuncEnum:      v.Enum,
@@ -83,4 +87,12 @@ func (v *Vocabulary) Docs(lines []string) string {
 	v.b.Reset()
 	writeDescription(&v.b, lines, "")
 	return v.b.String()
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that
+// [Vocabulary.Docs] writes. A GraphQL description is CommonMark, so the
+// wrap starts no line with a block opener. It allocates what
+// [textfmt.Wrap] allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupMarkdown)
 }

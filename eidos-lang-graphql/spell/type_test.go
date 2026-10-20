@@ -482,6 +482,11 @@ func TestType(t *testing.T) {
 				want: "graphql: the well-known empty value has no GraphQL spelling",
 			},
 			{
+				name: "returns an error for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext),
+				want: "graphql: the well-known context has no GraphQL spelling, because a schema states no context",
+			},
+			{
 				name: "returns an error for a reference with type arguments",
 				give: rules.Reference("Page[int64]", page, long),
 				want: "graphql: a reference with type arguments has no GraphQL spelling",
