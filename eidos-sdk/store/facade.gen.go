@@ -20,9 +20,10 @@ import (
 // Graph is the run's node declarations.
 //
 // A graph comes from one of two constructors. [New] returns an empty
-// graph that a load fills through [Graph.AddPackage] and the attach
-// methods and seals with [Graph.Freeze]. [Sealed] returns a frozen graph
-// over a [Source]'s regions, which decode on first use.
+// graph that a load fills through [Graph.AddPackage],
+// [Graph.AddDependencyPackage] and the attach methods and seals with
+// [Graph.Freeze]. [Sealed] returns a frozen graph over a [Source]'s
+// regions, which decode on first use.
 //
 // # Concurrency
 //
