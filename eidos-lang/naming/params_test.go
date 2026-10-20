@@ -14,13 +14,14 @@ import (
 )
 
 // The names of the parameters of the cases: a declared name, the
-// positional names of the first two positions, and the numbered name of
-// the first position.
+// positional names of the first two positions, the numbered name of the
+// first position, and the blank identifier.
 const (
 	declaredParam = "ctx"
 	firstParam    = "a0"
 	secondParam   = "a1"
 	numberedParam = "a00"
+	blankParam    = "_"
 )
 
 // paramsAllocs is the ceiling of a call of Params that names one
@@ -51,6 +52,16 @@ func TestParams(t *testing.T) {
 				name: "keeps the name of a named parameter",
 				give: method(nil, nil, declaredParam, ""),
 				want: []string{declaredParam, secondParam},
+			},
+			{
+				name: "names a blank parameter by its position",
+				give: method(nil, nil, blankParam, declaredParam),
+				want: []string{firstParam, declaredParam},
+			},
+			{
+				name: "names each blank parameter by its own position",
+				give: method(nil, nil, blankParam, blankParam),
+				want: []string{firstParam, secondParam},
 			},
 			{
 				name: "numbers a positional name that another parameter has",

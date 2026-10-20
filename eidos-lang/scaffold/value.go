@@ -94,6 +94,19 @@ type Target interface {
 	// a construction for its value. A language without a construction
 	// form refuses it.
 	Construction(ref *emit.TypeRef, args []string) (string, error)
+	// Func spells a function of a function type that returns the
+	// spellings of its results, such as func(context.Context) error {
+	// return nil } in Go and () => 0 in TypeScript, and records the
+	// imports of the types that the function writes. The walk passes the
+	// reference unspelled, because a target that writes the signature of
+	// the function writes it from the type. A language without a function
+	// literal refuses it.
+	Func(ref *emit.TypeRef, results []string) (string, error)
+	// Make spells the empty value of a type that make returns, such as
+	// make(chan string) in Go. The walk passes the reference beside its
+	// spelling, and the spelling records the import of the type. A
+	// language without make refuses it.
+	Make(ref *emit.TypeRef, typ string) (string, error)
 }
 
 // Leaves is the spelling of the literal leaves of one target, in which the
@@ -176,13 +189,14 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 // value. A call spells as the callee and its arguments, which commas join
 // in parentheses. A name spells as the target spells a callee. A
 // construction passes its type unspelled and the spellings of its
-// arguments to the target.
+// arguments to the target, and a function passes its type unspelled and
+// the spellings of its results. A make passes its type with its spelling.
 //
 // Error modes, each a [render.ValueError]:
 //   - A value kind that the vocabulary does not declare.
 //   - A conversion or an address without an inner value.
-//   - A conversion, a composite or a construction without a type, or with
-//     a named type that has no spelling.
+//   - A conversion, a composite, a construction, a function or a make
+//     without a type, or with a named type that has no spelling.
 //   - A call or a name without an identity, or with an identity that has
 //     no name.
 //
@@ -191,13 +205,15 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 // # Allocation contract
 //
 // The walk allocates the list of entries that a composite with fields
-// passes to [Target.Composite], and the list of the spelled arguments
-// that a construction with arguments passes to [Target.Construction], one
-// allocation each, because the argument of an interface method escapes. A
-// call allocates its spelling, one allocation, and the list of its spelled
-// arguments where it has more than eight. Literals, names, conversions and
-// addresses allocate nothing in the walk. The methods of the target add
-// their own allocations.
+// passes to [Target.Composite], the list of the spelled arguments that a
+// construction with arguments passes to [Target.Construction], and the
+// list of the spelled results that a function with results passes to
+// [Target.Func], one allocation each, because the argument of an
+// interface method escapes. A call allocates its spelling, one
+// allocation, and the list of its spelled arguments where it has more
+// than eight. Literals, names, conversions, addresses and makes allocate
+// nothing in the walk. The methods of the target add their own
+// allocations.
 func Value(t Target, v emit.Value) (string, error) {
 	switch v.Kind {
 	case emit.ValueLiteral:
@@ -225,27 +241,46 @@ func Value(t Target, v emit.Value) (string, error) {
 	case emit.ValueName:
 		return callee(t, v, "a name value")
 	case emit.ValueConstruction:
-		return construction(t, v)
+		if err := typed(t, v, "a construction"); err != nil {
+			return "", err
+		}
+		args, err := spelledArgs(t, v)
+		if err != nil {
+			return "", err
+		}
+		return t.Construction(v.Type, args)
+	case emit.ValueFunc:
+		if err := typed(t, v, "a function"); err != nil {
+			return "", err
+		}
+		results, err := spelledArgs(t, v)
+		if err != nil {
+			return "", err
+		}
+		return t.Func(v.Type, results)
+	case emit.ValueMake:
+		typ, err := namedType(t, v, "a make")
+		if err != nil {
+			return "", err
+		}
+		return t.Make(v.Type, typ)
 	default:
 		return "", render.RefuseValue(t.Lang(), "no spelling for the %s value", v.Kind)
 	}
 }
 
-// construction spells a construction from its type and the spellings of its
-// arguments, in the order of the value.
-func construction(t Target, v emit.Value) (string, error) {
-	if err := typed(t, v, "a construction"); err != nil {
-		return "", err
-	}
+// spelledArgs returns the spellings of the arguments of a construction or
+// of the results of a function, in the order of the value.
+func spelledArgs(t Target, v emit.Value) ([]string, error) {
 	args := make([]string, 0, len(v.Args))
 	for _, arg := range v.Args {
 		spelled, err := Value(t, arg)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		args = append(args, spelled)
 	}
-	return t.Construction(v.Type, args)
+	return args, nil
 }
 
 // composite spells a composite from its type and its fields, in the order
@@ -322,8 +357,8 @@ func callee(t Target, v emit.Value, what string) (string, error) {
 	return t.Callee(v.Callee)
 }
 
-// namedType spells the type of a conversion or a composite through the
-// target, after [typed] admits it.
+// namedType spells the type of a conversion, a composite or a make
+// through the target, after [typed] admits it.
 func namedType(t Target, v emit.Value, what string) (string, error) {
 	if err := typed(t, v, what); err != nil {
 		return "", err
@@ -331,8 +366,9 @@ func namedType(t Target, v emit.Value, what string) (string, error) {
 	return t.Type(v.Type)
 }
 
-// typed refuses the type of a conversion, a composite or a construction
-// that the target cannot spell. A language cannot invent a named type, so
+// typed refuses the type of a conversion, a composite, a construction, a
+// function or a make that the target cannot spell. A language cannot
+// invent a named type, so
 // typed refuses a value without a type and a named reference without a
 // spelling. A structural reference without a spelling passes to the
 // target, which restates it from its children or refuses it. what is the

@@ -14,27 +14,32 @@ import (
 // a name, before the position of the parameter.
 const positionalPrefix = "a"
 
-// Params names each parameter of m that has no name, and returns m. The
-// parameter at position i takes a followed by i, or that name followed by
-// the smallest number from 0 that m does not have, as [Unique] chooses.
-// The names of the receiver, the type parameters, the parameters and the
-// results of m are taken first, so a named parameter keeps its name and no
-// two names of m are equal. A generator that writes a body for a mirrored
-// method calls Params, because the body passes each parameter on by its
-// name. A nil m returns nil.
+// blankName is the blank identifier. A parameter of that name has no value
+// that a body can read in Go, Rust or Java.
+const blankName = "_"
+
+// Params names each parameter of m that has no name or the name _, and
+// returns m. The parameter at position i takes a followed by i, or that
+// name followed by the smallest number from 0 that m does not have, as
+// [Unique] chooses. The names of the receiver, the type parameters, the
+// parameters and the results of m are taken first, so a named parameter
+// keeps its name and no two names of m are equal. A generator that writes
+// a body for a mirrored method calls Params, because the body passes each
+// parameter on by its name. A new name leaves the type of the method
+// unchanged in every target. A nil m returns nil.
 //
 // # Allocation contract
 //
-// Params allocates nothing for a method whose parameters all have names.
-// Otherwise it allocates the set of the names of m and the text of each
-// name that it gives, and the set takes one allocation for a method of
-// eight names or fewer.
+// Params allocates nothing for a method whose parameters all have names
+// other than _. Otherwise it allocates the set of the names of m and the
+// text of each name that it gives, and the set takes one allocation for a
+// method of eight names or fewer.
 func Params(m *emit.Method) *emit.Method {
 	if m == nil {
 		return nil
 	}
 	params := m.Params.Items()
-	if !slices.ContainsFunc(params, func(p *emit.Param) bool { return p.Name == "" }) {
+	if !slices.ContainsFunc(params, unnamed) {
 		return m
 	}
 	taken := make(map[string]bool, 1+len(m.TypeParams)+len(params)+m.Returns.Len())
@@ -51,10 +56,16 @@ func Params(m *emit.Method) *emit.Method {
 		taken[r.Name] = true
 	}
 	for i, p := range params {
-		if p.Name == "" {
+		if unnamed(p) {
 			p.Name = Unique(taken, positionalPrefix+strconv.Itoa(i))
 			taken[p.Name] = true
 		}
 	}
 	return m
+}
+
+// unnamed reports whether p has no name that a body can pass on: no name,
+// or the blank identifier.
+func unnamed(p *emit.Param) bool {
+	return p.Name == "" || p.Name == blankName
 }
