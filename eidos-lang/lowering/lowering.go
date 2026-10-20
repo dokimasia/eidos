@@ -179,6 +179,85 @@ func UniqueMethods(lang, host string, methods []*emit.Method) error {
 	return nil
 }
 
+// GroupOverloads returns methods with the methods of each overloaded name
+// and level together at the position of the first of them: the overload
+// signatures in their order, then the other methods of the name. An
+// overloaded name has a method with the mark Overload. TypeScript writes
+// the signatures of a method right before its implementation, and Python
+// writes the implementation after its signatures. Every other method keeps
+// its order among the methods.
+//
+// # Allocation contract
+//
+// GroupOverloads returns methods itself and allocates nothing where every
+// overloaded name already stands together with its signatures first. It
+// allocates the new list otherwise, and for more than 32 methods also the
+// marks of the methods that it took.
+func GroupOverloads(methods []*emit.Method) []*emit.Method {
+	if grouped(methods) {
+		return methods
+	}
+	out := make([]*emit.Method, 0, len(methods))
+	taken := make([]bool, len(methods))
+	for i, m := range methods {
+		switch {
+		case taken[i]:
+			continue
+		case !overloaded(methods, m):
+			out = append(out, m)
+			continue
+		}
+		for _, signature := range [2]bool{true, false} {
+			for j := i; j < len(methods); j++ {
+				other := methods[j]
+				if !taken[j] && other != nil && other.Name == m.Name && other.Level == m.Level &&
+					other.Overload == signature {
+
+					out = append(out, other)
+					taken[j] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
+// grouped reports whether every overloaded name of methods stands together
+// with its signatures first.
+func grouped(methods []*emit.Method) bool {
+	for i, m := range methods {
+		if !overloaded(methods, m) {
+			continue
+		}
+		if prev := methods[max(i-1, 0)]; i > 0 && prev != nil && prev.Name == m.Name && prev.Level == m.Level {
+			if !prev.Overload && m.Overload {
+				return false
+			}
+			continue
+		}
+		for _, earlier := range methods[:i] {
+			if earlier != nil && earlier.Name == m.Name && earlier.Level == m.Level {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// overloaded reports whether a method of methods with the name and the
+// level of m has the mark Overload. It reports false for a nil m.
+func overloaded(methods []*emit.Method, m *emit.Method) bool {
+	if m == nil {
+		return false
+	}
+	for _, other := range methods {
+		if other != nil && other.Overload && other.Name == m.Name && other.Level == m.Level {
+			return true
+		}
+	}
+	return false
+}
+
 // DeleteAccessor returns an error under the prefix of lang for the first
 // method with the delete accessor that s is or contains: the method that s
 // is, or a method of the struct, the interface, the enum or the sum that s

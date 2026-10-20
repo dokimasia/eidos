@@ -7,6 +7,8 @@
 // [Children] spell the children of a shape through a spoke. The refusal
 // of a child starts with the source spelling of the child. [Describe]
 // returns the noun phrase that a refusal uses for the form of a shape.
+// [Param] returns the reference of a type parameter, which a spoke of a
+// language with type parameters writes at every depth of a shape.
 // [Arity] and [Split] are the checks of a shape that every spoke makes
 // before it spells a form: the number of children of the form, and the
 // split of a function type between its parameters and its results.

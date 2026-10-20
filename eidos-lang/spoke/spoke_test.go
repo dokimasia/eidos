@@ -28,8 +28,23 @@ const (
 )
 
 // childrenAllocs is the list that Children returns for two shapes that
-// the fixture spoke spells without allocating.
-const childrenAllocs = 1
+// the fixture spoke spells without allocating, and paramAllocs is the
+// reference that Param returns for a type parameter.
+const (
+	childrenAllocs = 1
+	paramAllocs    = 1
+)
+
+// paramName is the name of the type parameter of the cases, and param is
+// the shape that the fold gives a reference to it.
+const paramName = "T"
+
+// param is the opaque shape of a reference to the type parameter
+// paramName, with the identity of the parameter.
+var param = rules.TypeShape{
+	Form: symbol.FormOpaque, Spelling: paramName,
+	Ref: symbol.Identity{Package: "svc", Owner: "Box", Name: paramName, Kind: symbol.KindTypeParam},
+}
 
 // errRefused is the fixture spoke's refusal of a number.
 var errRefused = errors.New("spoke_test: the target has no number")
@@ -46,9 +61,9 @@ func textOnly(s rules.TypeShape) (*emit.TypeRef, error) {
 	return spelled, nil
 }
 
-// TestSpoke checks the noun phrase of each form, the refusal of a child,
-// which starts with the source spelling of the child, and the refusal of
-// a read-only shape.
+// TestSpoke checks the noun phrase of each form, the reference of a type
+// parameter, the refusal of a child, which starts with the source
+// spelling of the child, and the refusal of a read-only shape.
 func TestSpoke(t *testing.T) {
 	t.Parallel()
 
@@ -129,6 +144,10 @@ func TestSpoke(t *testing.T) {
 				give: rules.Opaque(nil), want: "a type that the rules of its language do not classify",
 			},
 			{
+				name: "returns a type parameter for the opaque shape of a type parameter",
+				give: param, want: "a type parameter",
+			},
+			{
 				name: "returns the top type for the dynamic form",
 				give: rules.Leaf(symbol.FormDynamic, "unknown"), want: "the top type",
 			},
@@ -142,6 +161,38 @@ func TestSpoke(t *testing.T) {
 				t.Parallel()
 
 				assert.Equal(t, spoke.Describe(tt.give), tt.want, "the form's noun phrase")
+			})
+		}
+	})
+
+	t.Run("Param", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the name of a type parameter without a target", func(t *testing.T) {
+			t.Parallel()
+
+			got, held := spoke.Param(param)
+			assert.True(t, held, "the shape is a type parameter")
+			assert.Equal(t, got, &emit.TypeRef{Spelling: paramName}, "the reference has the name of the parameter")
+		})
+
+		tests := []struct {
+			name string
+			give rules.TypeShape
+		}{
+			{name: "reports false for the opaque shape of an unclassified type", give: rules.Opaque(nil)},
+			{
+				name: "reports false for a reference whose identity is a type parameter",
+				give: rules.TypeShape{Form: symbol.FormReference, Spelling: paramName, Ref: param.Ref},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, held := spoke.Param(tt.give)
+				expect.False(t, held, "the shape is no type parameter")
+				expect.Nil(t, got, "Param returns no reference")
 			})
 		}
 	})
@@ -342,6 +393,14 @@ func TestSpokeAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { described = spoke.Describe(stream) }, 0, "Describe allocates nothing")
 	assert.Equal(t, described, "an asynchronous stream", "Describe returns the phrase of the stream")
 
+	var ref *emit.TypeRef
+	assert.MaxAllocs(t, func() { ref, _ = spoke.Param(param) }, paramAllocs,
+		"Param allocates the reference of a type parameter")
+	assert.Equal(t, ref.Spelling, paramName, "Param returns the name of the parameter")
+	opaque := rules.Opaque(nil)
+	assert.MaxAllocs(t, func() { ref, _ = spoke.Param(opaque) }, 0, "Param allocates nothing for another shape")
+	assert.Nil(t, ref, "Param returns no reference for another shape")
+
 	shapes := []rules.TypeShape{rules.Leaf(symbol.FormText, textSpelling), rules.Leaf(symbol.FormText, textSpelling)}
 	var (
 		got []*emit.TypeRef
@@ -381,6 +440,16 @@ func BenchmarkSpoke(b *testing.B) {
 			got = spoke.Describe(union)
 		}
 		assert.Equal(b, got, "a union", "Describe returns the phrase of the union")
+	})
+
+	b.Run("Param", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(paramAllocs)
+		defer c.End()
+		var got *emit.TypeRef
+		for c.Loop() {
+			got, _ = spoke.Param(param)
+		}
+		assert.Equal(b, got.Spelling, paramName, "Param returns the name of the parameter")
 	})
 
 	b.Run("Children", func(b *testing.B) {

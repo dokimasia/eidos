@@ -63,6 +63,20 @@ const (
 	// uniqueAllocs is the member check of more methods than the stack
 	// holds: the set at its final size.
 	uniqueAllocs = 3
+	// groupAllocs is the grouping of two methods whose overloads stand
+	// apart: the new list. The marks of the methods that it took stay on
+	// the stack for up to 32 methods.
+	groupAllocs = 1
+)
+
+// The labels of the methods that the cases of the grouping order, which
+// each method keeps in its comment, and the mark of a signature in the
+// spelling of a method.
+const (
+	firstLabel    = "1"
+	secondLabel   = "2"
+	staticLabel   = "static"
+	signatureMark = ";"
 )
 
 // errFold is the refusal of the fold that a case passes to Callables.
@@ -421,6 +435,93 @@ func TestLowering(t *testing.T) {
 		})
 	})
 
+	t.Run("GroupOverloads", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give []*emit.Method
+			want []string
+		}{
+			{
+				name: "returns the signatures of a name before its implementation",
+				give: []*emit.Method{
+					{Name: readName},
+					{Name: readName, Overload: true, Comment: firstLabel},
+					{Name: readName, Overload: true, Comment: secondLabel},
+				},
+				want: []string{readName + signatureMark + firstLabel, readName + signatureMark + secondLabel, readName},
+			},
+			{
+				name: "returns the methods of an overloaded name at the position of the first",
+				give: []*emit.Method{
+					{Name: readName, Overload: true, Comment: firstLabel}, {Name: writeName}, {Name: readName},
+				},
+				want: []string{readName + signatureMark + firstLabel, readName, writeName},
+			},
+			{
+				name: "returns a static method apart from the overloads of an instance method",
+				give: []*emit.Method{
+					{Name: readName, Overload: true, Comment: firstLabel},
+					{Name: readName, Level: symbol.LevelType, Comment: staticLabel},
+					{Name: readName},
+				},
+				want: []string{readName + signatureMark + firstLabel, readName, readName + staticLabel},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got := lowering.GroupOverloads(tt.give)
+				spelled := make([]string, 0, len(got))
+				for _, m := range got {
+					mark := ""
+					if m.Overload {
+						mark = signatureMark
+					}
+					spelled = append(spelled, m.Name+mark+m.Comment)
+				}
+				assert.Equal(t, spelled, tt.want, "the methods in the order of their groups")
+			})
+		}
+
+		kept := []struct {
+			name string
+			give []*emit.Method
+		}{
+			{
+				name: "returns the methods themselves where the overloads stand together",
+				give: []*emit.Method{{Name: readName, Overload: true}, {Name: readName}, {Name: writeName}},
+			},
+			{
+				name: "returns the methods themselves where no method is a signature",
+				give: []*emit.Method{{Name: writeName}, {Name: readName}, {Name: writeName}},
+			},
+			{
+				name: "returns the methods themselves beside a nil method",
+				give: []*emit.Method{nil, {Name: readName, Overload: true}, {Name: readName}},
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, lowering.GroupOverloads(tt.give), tt.give, "the same list", assert.ByIdentity())
+			})
+		}
+
+		t.Run("returns a nil method of an ungrouped list in its place", func(t *testing.T) {
+			t.Parallel()
+
+			give := []*emit.Method{nil, {Name: readName}, {Name: writeName}, {Name: readName, Overload: true}}
+			got := lowering.GroupOverloads(give)
+			assert.Length(t, got, 4, "every method")
+			assert.Nil(t, got[0], "the nil method keeps its place")
+			assert.True(t, got[1].Overload, "the signature of read comes first in its group")
+		})
+	})
+
 	t.Run("DeleteAccessor", func(t *testing.T) {
 		t.Parallel()
 
@@ -545,6 +646,14 @@ func TestLoweringAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { err = lowering.DeleteAccessor(rustLang, host) }, 0,
 		"DeleteAccessor allocates nothing for a host without a deleter")
 	assert.NoError(t, err, "DeleteAccessor passes a host without a deleter")
+	together, apart := overloadsTogether(), overloadsApart()
+	var grouped []*emit.Method
+	assert.MaxAllocs(t, func() { grouped = lowering.GroupOverloads(together) }, 0,
+		"GroupOverloads allocates nothing for overloads that stand together")
+	assert.Length(t, grouped, 2, "GroupOverloads keeps both methods")
+	assert.MaxAllocs(t, func() { grouped = lowering.GroupOverloads(apart) }, groupAllocs,
+		"GroupOverloads allocates the new list")
+	assert.True(t, grouped[0].Overload, "GroupOverloads puts the signature first")
 }
 
 // BenchmarkLowering measures each copy a backend's lowering makes of a
@@ -656,6 +765,38 @@ func BenchmarkLowering(b *testing.B) {
 		}
 		assert.NoError(b, err, "DeleteAccessor passes a host without a deleter")
 	})
+
+	groups := []struct {
+		name    string
+		methods []*emit.Method
+		allocs  uint64
+	}{
+		{name: "overloads that stand together", methods: overloadsTogether()},
+		{name: "overloads that stand apart", methods: overloadsApart(), allocs: groupAllocs},
+	}
+	b.Run("GroupOverloads", func(b *testing.B) {
+		for _, tt := range groups {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var got []*emit.Method
+				for c.Loop() {
+					got = lowering.GroupOverloads(tt.methods)
+				}
+				assert.Length(b, got, 2, "GroupOverloads keeps both methods")
+			})
+		}
+	})
+}
+
+// overloadsTogether returns a signature of read before its implementation.
+func overloadsTogether() []*emit.Method {
+	return []*emit.Method{{Name: readName, Overload: true}, {Name: readName}}
+}
+
+// overloadsApart returns the implementation of read before its signature.
+func overloadsApart() []*emit.Method {
+	return []*emit.Method{{Name: readName}, {Name: readName, Overload: true}}
 }
 
 // boundParams returns one parameter T with one bound Ord of one

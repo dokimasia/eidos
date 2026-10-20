@@ -37,11 +37,13 @@ var forms = map[symbol.TypeForm]string{
 	symbol.FormDynamic:      "the top type",
 }
 
-// The noun phrases that [Describe] returns for the two streams, and the
-// start of its phrase for a form outside the vocabulary.
+// The noun phrases that [Describe] returns for the two streams and for a
+// type parameter, and the start of its phrase for a form outside the
+// vocabulary.
 const (
 	syncStream  = "a synchronous stream"
 	asyncStream = "an asynchronous stream"
+	typeParam   = "a type parameter"
 	unknownForm = "the form "
 )
 
@@ -56,19 +58,40 @@ const (
 
 // Describe returns the noun phrase that a refusal uses for the form of
 // s. The phrase has its article, as in a tuple, an inline type or an
-// asynchronous stream. For a form outside the vocabulary, it returns the
-// form's number. It allocates nothing for a form in the vocabulary.
+// asynchronous stream. The opaque shape of a type parameter is a type
+// parameter. For a form outside the vocabulary, it returns the form's
+// number. It allocates nothing for a form in the vocabulary.
 func Describe(s rules.TypeShape) string {
-	if s.Form == symbol.FormStream {
-		if s.Async {
-			return asyncStream
-		}
+	switch {
+	case s.Form == symbol.FormStream && s.Async:
+		return asyncStream
+	case s.Form == symbol.FormStream:
 		return syncStream
+	case s.Form == symbol.FormOpaque && s.Ref.Kind == symbol.KindTypeParam:
+		return typeParam
 	}
 	if name, declared := forms[s.Form]; declared {
 		return name
 	}
 	return unknownForm + strconv.Itoa(int(s.Form))
+}
+
+// Param returns the reference that a spoke writes for the shape s of a
+// type parameter: the spelling of the parameter without a target, because
+// the declaration that a generator writes declares the parameter under its
+// name. It reports false for every other shape, the opaque shape of a
+// reference that names no type parameter included. A spoke of a language
+// with type parameters calls it before it reads the form of a shape.
+//
+// # Allocation contract
+//
+// Param allocates the reference of a type parameter, one allocation, and
+// nothing for every other shape.
+func Param(s rules.TypeShape) (*emit.TypeRef, bool) {
+	if s.Form != symbol.FormOpaque || s.Ref.Kind != symbol.KindTypeParam {
+		return nil, false
+	}
+	return &emit.TypeRef{Spelling: s.Spelling}, true
 }
 
 // Arity returns an error where s does not have n children, such as "a
