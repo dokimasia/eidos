@@ -143,7 +143,7 @@ each addition:
 | `Method.HasDefault` | interface methods with default bodies: Java 8 and later, Kotlin, Rust default impls. Go leaves it false |
 | `Method.Optional` | a method that a value of its type may lack: TypeScript's `run?(): void`. Every other language leaves it false |
 | `Method.Mutability` | whether a holder can assign the entries of an index signature: TypeScript's `readonly [key: string]: V`. A method that is not an index signature leaves it unknown |
-| `Method.Computed` / `Field.Computed` | a member whose name is an expression: TypeScript's `[Symbol.iterator]`. The member keeps the brackets in its name, and the member walk leaves it out under the gap reason `GapComputed` |
+| `Method.Computed` / `Field.Computed` | a member whose name is an expression: TypeScript's `[Symbol.iterator]`. The member keeps the brackets in its name, and the member walk lists it under that name |
 | `Field.Receives` | the type that a field attaches to from outside the declaration of the type: a protobuf extension, a field of a GraphQL type extension. The field keeps the identity of the scope that declares it, and the name table lists it under the spelling of its `Receives` |
 | `Param.Doc` | the documentation of a parameter: the description of a GraphQL argument. A language that documents a parameter in the documentation of its callable leaves it empty |
 | `Param.Passing` | `Default \| Positional \| Keyword`: whether a caller passes the argument by position alone, by keyword alone, or in the way of the language. A Python parameter before the `/` of its signature is positional, and one after its `*` a keyword. Every other language leaves the default |
@@ -170,7 +170,11 @@ setter of a property without annotations differs from its getter. A
 deleter of a property takes no parameter, as its getter does, so its
 discriminator is `del`. The discriminator of the implementation of an
 overloaded name starts with `=`, so the implementation differs from an
-overload signature whose parameters spell as its own.
+overload signature whose parameters spell as its own. Two overloads of
+one scope can spell one discriminator and differ in the bounds of their
+type parameters, as two overloads of `createElement` in the DOM do. Each
+such overload spells its type parameters in brackets before its
+parameters, with `:` before each bound and `=` before a default.
 
 Identity survives reparsing. A reloaded file yields symbols with the
 same identities wherever the declarations did not change. Everything

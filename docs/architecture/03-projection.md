@@ -328,9 +328,10 @@ text is the right literal for some types and not for others. In a
 language whose values can be names, the value can also be a declaration
 in the scope. The Go rules read a constant or a variable, such as
 `time.Second`, and a call of a function without arguments, such as
-`store.NewMemory()`. The value tree refers to such a declaration by its
-identity, so the backend imports its package. `View.ScopeOf` returns the
-scope of a declaration.
+`store.NewMemory()`. The TypeScript rules read the same two forms, such
+as `top` and `rootEntry()`, through the imports of the file. The value
+tree refers to such a declaration by its identity, so the backend
+imports its package. `View.ScopeOf` returns the scope of a declaration.
 
 All three refuse instead of guessing. A type the language cannot
 reason about returns not-OK, and never a zero value you would

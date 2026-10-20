@@ -98,3 +98,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0079](0079-the-implements-clause-of-an-enum-and-a-sum.md) | The implements clause of an enum and a sum | Accepted |
 | [0080](0080-overload-signatures-and-the-order-of-a-file.md) | Overload signatures and the order of the declarations of a file | Accepted |
 | [0081](0081-a-type-parameter-inside-a-structural-type.md) | A type parameter inside a structural type | Accepted |
+| [0082](0082-the-declaration-files-of-the-typescript-library.md) | The declaration files of the TypeScript library | Accepted |

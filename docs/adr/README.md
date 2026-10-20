@@ -102,3 +102,6 @@ way.
 | [0081](0081-a-callable-marks-an-overload-signature.md) | A function and a method mark an overload signature | Accepted |
 | [0082](0082-the-render-orders-the-declarations-of-a-file.md) | The render orders the declarations of a file | Accepted |
 | [0083](0083-the-spoke-spells-a-type-parameter.md) | The spoke spells a type parameter at every depth of a type | Accepted |
+| [0084](0084-the-typescript-frontend-loads-the-library-of-each-project.md) | The TypeScript frontend loads the library of each project from the embedded release | Accepted |
+| [0085](0085-the-member-walk-lists-a-computed-member.md) | The member walk lists a member with a computed name | Accepted |
+| [0086](0086-colliding-overloads-spell-their-type-parameters.md) | The discriminator of colliding overloads spells their type parameters | Accepted |

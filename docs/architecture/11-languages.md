@@ -204,6 +204,16 @@ parses generated files with the `ast` module of CPython, type-checks
 them with pyright in its strict mode and runs their tests with
 unittest.
 
+The TypeScript frontend loads the library of each project from the
+declaration files of TypeScript 7.0.2, which the satellite embeds. The
+options `noLib`, `lib` and `target` of the tsconfig of a project select
+the library, and a file without a tsconfig has the default library of
+ES2025. A library loads as one dependency unit into the package
+`typescript-lib://<key>`. The key is the root files of the library,
+joined with `+`. A global name of a source file resolves in the global
+package of the workspace and then in its library. A lib directive at the
+head of a file adds its library to the library of that file alone.
+
 The TypeScript and Python frontends mark an overload signature with
 `Overload`, and the callable of its name without the mark is the
 implementation. The render writes the declarations of a TypeScript file
