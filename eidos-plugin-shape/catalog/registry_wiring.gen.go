@@ -38,4 +38,5 @@ func Detections() []shape.Detection {
 		{Shape: shape.Writer, Detect: detectors.Writer},
 	}
 }
+
 // shapegen:provenance sha256:cb67a236b14c7376607ae52f8fc75a501aac933cec77021ec25fef7f75ae74bd
