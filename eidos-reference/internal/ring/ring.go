@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 )
 
 // The kernel and the SDK facade. The ring replaces them with their
@@ -50,10 +51,12 @@ const (
 	allPackages  = "./..."
 )
 
-// The git command and the prefix of the reference of a release tag.
+// The git command, the prefix of the reference of a release tag, and the
+// separator of a revision and a path in the object name of a file.
 const (
 	gitBinary = "git"
 	tagRefs   = "refs/tags/"
+	objectSep = ":"
 )
 
 // notServed are the status lines of the module proxy protocol for a module
@@ -76,6 +79,12 @@ type checkout struct {
 	// ring are the modules that require the kernel in the order of their
 	// paths. The kernel and the facade are not among them.
 	ring []member
+	// releases maps the kernel and the facade to the version that the
+	// checkout releases. That version is the version of the replace
+	// directive of the module in the go.work, raised by the highest bump of
+	// the module in the pending changesets. A module without a versioned
+	// replace directive has no entry.
+	releases map[string]string
 }
 
 // member is a module of the ring.
@@ -88,13 +97,16 @@ type member struct {
 }
 
 // read returns the checkout whose go.work is in root. read resolves a
-// relative root against the absolute directory dir. It reads the go.work
-// and the go.mod of each directory that the go.work uses through an os.Root
-// of root. The root keeps each read inside the checkout. A module that has
-// the kernel among its requirements is a module of the ring. The
-// directories of the kernel and of the facade are absolute, because the
+// relative root against the absolute directory dir. It reads the go.work,
+// the changesets and the go.mod of each directory that the go.work uses
+// through an os.Root of root. The root keeps each read inside the checkout. A
+// module that has the kernel among its requirements is a module of the ring.
+// The directories of the kernel and of the facade are absolute, because the
 // tree of a release in another directory replaces the kernel and the facade
-// with them.
+// with them. The version that the checkout releases of the kernel and of the
+// facade is the version of their replace directives in the go.work, raised by
+// the pending bumps of the changesets. A release commit has the new versions
+// in its go.work and no pending changeset.
 //
 // Error modes:
 //   - the error of a root that does not open
@@ -103,6 +115,8 @@ type member struct {
 //   - an error for a go.mod without a module line
 //   - an error for a go.work that does not use the kernel, the SDK facade
 //     or a module of the ring
+//   - the errors of pending, and the error of raise for the version of a
+//     replace directive of the kernel or the facade
 func read(dir, root string) (checkout, error) {
 	if !filepath.IsAbs(root) {
 		root = filepath.Join(dir, root)
@@ -120,7 +134,19 @@ func read(dir, root string) (checkout, error) {
 	if err != nil {
 		return checkout{}, fmt.Errorf("%s: %w", commandName, err)
 	}
-	c := checkout{root: root}
+	bumps, err := pending(r.FS())
+	if err != nil {
+		return checkout{}, err
+	}
+	c := checkout{root: root, releases: map[string]string{}}
+	for _, rep := range work.Replace {
+		if rep.Old.Version == "" || (rep.Old.Path != kernelModule && rep.Old.Path != facadeModule) {
+			continue
+		}
+		if c.releases[rep.Old.Path], err = raise(rep.Old.Version, bumps[rep.Old.Path]); err != nil {
+			return checkout{}, err
+		}
+	}
 	for _, use := range work.Use {
 		dir := filepath.Clean(filepath.FromSlash(use.Path))
 		name := filepath.Join(dir, modFile)
@@ -158,6 +184,41 @@ func read(dir, root string) (checkout, error) {
 	}
 	slices.SortFunc(c.ring, func(a, b member) int { return strings.Compare(a.path, b.path) })
 	return c, nil
+}
+
+// earlier returns the reason why version of the module m is on an earlier
+// compatibility line than the checkout c releases. It reads the go.mod of
+// the release from its tag in the git repository of c. earlier checks the
+// requirement of the kernel first and the requirement of the facade second.
+// The reason contains the first requirement on a line before the line of its
+// version in c.releases. earlier returns an empty reason for a release on
+// the line of c. A requirement of a module without an entry in c.releases
+// does not make a release earlier.
+//
+// Error modes: the error of git for a tag or a file that it does not show,
+// and the error of a go.mod that does not parse.
+func earlier(ctx context.Context, env []string, c checkout, m member, version string) (string, error) {
+	data, err := command(ctx, env, c.root, gitBinary, "show",
+		tagRefs+path.Join(m.dir, version)+objectSep+path.Join(m.dir, modFile))
+	if err != nil {
+		return "", err
+	}
+	f, err := modfile.Parse(modFile, data, nil)
+	if err != nil {
+		return "", fmt.Errorf("%s: the go.mod of the release: %w", commandName, err)
+	}
+	for _, mod := range []string{kernelModule, facadeModule} {
+		released, known := c.releases[mod]
+		at := slices.IndexFunc(f.Require, func(r *modfile.Require) bool { return r.Mod.Path == mod })
+		if !known || at < 0 {
+			continue
+		}
+		if required := f.Require[at].Mod.Version; semver.Compare(lineOf(required), lineOf(released)) < 0 {
+			return fmt.Sprintf("the release requires %s %s, and the checkout releases %s", mod, required, released),
+				nil
+		}
+	}
+	return "", nil
 }
 
 // latest returns the answer of the module proxy to the query of the latest

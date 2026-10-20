@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -183,6 +184,21 @@ func TestMainProcess(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			got := run(t.Context(), t.TempDir(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
 			expect.Equal(t, got, statusOK, "run returns statusOK: "+stdout.String()+stderr.String())
+		})
+
+		t.Run("writes earlier for each release on an earlier line of the kernel", func(t *testing.T) {
+			t.Parallel()
+
+			f := proxied(t, failingName, passingName)
+			files.Write(t, f.root, files.Tree{workFile: replacing(kernelVersion, release, failingName, passingName)})
+			var stdout, stderr bytes.Buffer
+			got := run(t.Context(), t.TempDir(), []string{"-" + rootFlag, f.root}, f.env, &stdout, &stderr)
+			expect.Equal(t, got, statusOK, "run returns statusOK: "+stdout.String()+stderr.String())
+			reason := fmt.Sprintf(reasonFormat, kernelModule, release, kernelVersion)
+			expect.ContainsInOrder(t, stdout.String(), []string{
+				earlierWord + " " + modulePrefix + failingName + "@" + release + ": " + reason + "\n",
+				earlierWord + " " + modulePrefix + passingName + "@" + release + ": " + reason + "\n",
+			}, "run writes earlier for each release in the order of the module paths")
 		})
 
 		t.Run("writes FAIL for a module whose query its context stops", func(t *testing.T) {

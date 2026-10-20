@@ -32,7 +32,8 @@ import (
 // failing fails against it. The module in pseudo does not have a release.
 // The proxy does not serve the module in missing. It fails each query of the
 // module in broken. The path of each module is the prefix followed by the
-// directory.
+// directory. The tag of the directory unparsed has a go.mod that does not
+// parse.
 const (
 	modulePrefix = "go.dokimi.dev/eidos/"
 	passingName  = "passing"
@@ -40,6 +41,7 @@ const (
 	pseudoName   = "pseudo"
 	missingName  = "missing"
 	brokenName   = "broken"
+	unparsedName = "unparsed"
 )
 
 // The directories of the kernel, of the SDK facade and of a module that
@@ -74,13 +76,20 @@ const (
 
 // The release of the published modules, a version without a release tag,
 // the pseudo-version that the proxy returns for the module without a
-// release, and the time of the versions.
+// release, and the time of the versions. linePatch is a later version on the
+// compatibility line of release.
 const (
 	release       = "v0.1.0"
 	untagged      = "v0.2.0"
 	pseudoVersion = "v0.0.0-20261010000000-abcdefabcdef"
 	versionTime   = "2026-10-10T00:00:00Z"
+	linePatch     = "v0.1.5"
 )
+
+// reasonFormat is the reason of a release on an earlier compatibility line.
+// Its arguments are the module, the version that the release requires, and
+// the version that the checkout releases.
+const reasonFormat = "the release requires %s %s, and the checkout releases %s"
 
 // checkoutMajor is the major version of the kernel and the facade of a
 // checkout. publishedMajor is the major version of the kernel and the facade
@@ -132,12 +141,15 @@ const (
 )
 
 // The go.work of a checkout opens with workStart. The use of each directory
-// follows it. workEnd closes the file. localUse opens the path of each
-// directory.
+// follows it. workEnd closes the use block. localUse opens the path of each
+// directory. versionedReplace and plainReplace are replace directives with a
+// version and without a version.
 const (
-	workStart = "go %s\n\nuse (\n"
-	workEnd   = ")\n"
-	localUse  = "./"
+	workStart        = "go %s\n\nuse (\n"
+	workEnd          = ")\n"
+	localUse         = "./"
+	versionedReplace = "replace %s %s => %s\n"
+	plainReplace     = "replace %s => %s\n"
 )
 
 // testFailure and facadeFailure open the messages of the test of a release
@@ -248,9 +260,10 @@ type entry struct {
 	content string
 }
 
-// The ring reads the workspace of a checkout, reads the answers of the
-// module proxy, writes the tree of a release tag, and tests a release
-// against the kernel of the checkout.
+// The ring reads the workspace of a checkout and the answers of the module
+// proxy. It finds a release on an earlier compatibility line. It writes the
+// tree of a release tag and tests a release against the kernel of the
+// checkout.
 func TestRing(t *testing.T) {
 	t.Parallel()
 
@@ -280,6 +293,28 @@ func TestRing(t *testing.T) {
 			expect.Equal(t, got.facade, filepath.Join(root, facadeDir), "the directory of the facade is absolute")
 		})
 
+		t.Run("returns the versions that the checkout releases of the kernel and the SDK facade", func(t *testing.T) {
+			t.Parallel()
+
+			tree := checkoutTree(passingName)
+			tree[workFile] = replacing(kernelVersion, release, passingName)
+			tree[changesetDir+"/"+minorFile] = files.Text(kernelMinor)
+			got, err := read(t.TempDir(), files.Workspace(t, tree))
+			assert.NoError(t, err, "the checkout reads")
+			assert.Equal(t, got.releases, map[string]string{kernelModule: nextMinor, facadeModule: release},
+				"the checkout releases the version of each replace directive raised by its changesets")
+		})
+
+		t.Run("returns no version of a module whose replace directive has no version", func(t *testing.T) {
+			t.Parallel()
+
+			tree := checkoutTree(passingName)
+			tree[workFile] = replacing("", "", passingName)
+			got, err := read(t.TempDir(), files.Workspace(t, tree))
+			assert.NoError(t, err, "the checkout reads")
+			assert.Empty(t, got.releases, "the checkout releases no version of the kernel or the facade")
+		})
+
 		t.Run("returns the error of a root that does not exist", func(t *testing.T) {
 			t.Parallel()
 
@@ -302,6 +337,28 @@ func TestRing(t *testing.T) {
 			_, err := read(t.TempDir(), root)
 			assert.HasError(t, err, "the checkout does not read")
 			expect.HasPrefix(t, err.Error(), commandName+": ", "the error starts with the name of the command")
+		})
+
+		t.Run("returns the error of a changeset that does not parse", func(t *testing.T) {
+			t.Parallel()
+
+			tree := checkoutTree(passingName)
+			tree[changesetDir+"/"+unclosedFile] = files.Text(unclosedText)
+			_, err := read(t.TempDir(), files.Workspace(t, tree))
+			assert.HasError(t, err, "the checkout does not read")
+			expect.That(t, err.Error()).
+				HasPrefix(commandName+": ", "the error starts with the name of the command").
+				Contains(unclosedFault, "the error contains the fault of the changeset")
+		})
+
+		t.Run("returns the error of raise for the version of the kernel", func(t *testing.T) {
+			t.Parallel()
+
+			tree := checkoutTree(passingName)
+			tree[workFile] = replacing(hugeVersion, release, passingName)
+			tree[changesetDir+"/"+patchFile] = files.Text(kernelPatch)
+			_, err := read(t.TempDir(), files.Workspace(t, tree))
+			assert.ErrorIs(t, err, strconv.ErrRange, "the error wraps the error of the number")
 		})
 
 		kernelOnly := fmt.Sprintf(workStart, goVersion) + fmt.Sprintf(useFormat, localUse+kernelDir) + workEnd
@@ -372,6 +429,76 @@ func TestRing(t *testing.T) {
 				expect.Contains(t, err.Error(), tt.want, "the error names what the checkout lacks")
 			})
 		}
+	})
+
+	t.Run("earlier", func(t *testing.T) {
+		t.Parallel()
+
+		f := proxied(t, passingName)
+		passing := member{path: modulePrefix + passingName, dir: passingName}
+		tests := []struct {
+			name string
+			give map[string]string
+			want string
+		}{
+			{
+				name: "returns the requirement of the kernel for a release on an earlier line of the kernel",
+				give: map[string]string{kernelModule: kernelVersion, facadeModule: kernelVersion},
+				want: fmt.Sprintf(reasonFormat, kernelModule, release, kernelVersion),
+			},
+			{
+				name: "returns the requirement of the facade for a release on an earlier line of the facade",
+				give: map[string]string{facadeModule: kernelVersion},
+				want: fmt.Sprintf(reasonFormat, facadeModule, release, kernelVersion),
+			},
+			{
+				name: "returns no reason for a release on the line of the checkout",
+				give: map[string]string{kernelModule: linePatch, facadeModule: linePatch},
+			},
+			{
+				name: "returns no reason for a release on a later line than the checkout",
+				give: map[string]string{kernelModule: pseudoVersion, facadeModule: pseudoVersion},
+			},
+			{name: "returns no reason for a checkout without released versions", give: map[string]string{}},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := earlier(t.Context(), f.env, checkout{root: f.root, releases: tt.give}, passing, release)
+				assert.NoError(t, err, "git shows the go.mod of the release")
+				assert.Equal(t, got, tt.want, "earlier returns the reason of the release")
+			})
+		}
+
+		t.Run("returns no reason for a release that does not require the kernel", func(t *testing.T) {
+			t.Parallel()
+
+			unrelated := member{path: unrelatedModule, dir: unrelatedDir}
+			releases := map[string]string{kernelModule: kernelVersion, facadeModule: kernelVersion}
+			got, err := earlier(t.Context(), f.env, checkout{root: f.root, releases: releases}, unrelated, release)
+			assert.NoError(t, err, "git shows the go.mod of the release")
+			assert.Equal(t, got, "", "earlier returns no reason")
+		})
+
+		t.Run("returns the error of git for a version without a release tag", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := earlier(t.Context(), f.env, checkout{root: f.root}, passing, untagged)
+			assert.HasError(t, err, "git does not show the go.mod of the tag")
+			assert.Contains(t, err.Error(), tagRefs+passingName+"/"+untagged, "the error contains the tag")
+		})
+
+		t.Run("returns the error of a go.mod of the release that does not parse", func(t *testing.T) {
+			t.Parallel()
+
+			unparsed := member{path: modulePrefix + unparsedName, dir: unparsedName}
+			_, err := earlier(t.Context(), f.env, checkout{root: f.root}, unparsed, release)
+			assert.HasError(t, err, "the go.mod of the release does not parse")
+			expect.That(t, err.Error()).
+				HasPrefix(commandName+": ", "the error starts with the name of the command").
+				Contains(modFile, "the error contains the file")
+		})
 	})
 
 	t.Run("latest", func(t *testing.T) {
@@ -600,7 +727,9 @@ func TestRing(t *testing.T) {
 // The checkout is a git repository with one commit, the release. The release
 // has the kernel and the facade of the major version publishedMajor. It also
 // has the sources of the passing and the failing module, at which the tags
-// passing/v0.1.0 and failing/v0.1.0 point. The go.mod of each release
+// passing/v0.1.0 and failing/v0.1.0 point. The tags unrelated/v0.1.0 and
+// unparsed/v0.1.0 point at the same commit. The go.mod of the directory
+// unparsed does not parse. The go.mod of each release
 // replaces the kernel, the facade and the sibling with directories of the
 // tree. The tree does not have a directory of the sibling. The test of each
 // release checks the major versions of the kernel and of the facade. It also
@@ -643,6 +772,7 @@ func proxied(t *testing.T, names ...string) fixture {
 	served[pseudo+"/"+versionDir+pseudoVersion+modExt] = files.Text(fmt.Sprintf(requiringFormat, pseudo))
 	tree[versionFile] = files.Text(fmt.Sprintf(versionSource, publishedMajor))
 	tree[facadeVersionFile] = files.Text(fmt.Sprintf(versionSource, publishedMajor))
+	tree[unparsedName+"/"+modFile] = files.Text(unparsedMod)
 
 	proxy := http.FileServerFS(os.DirFS(files.Workspace(t, served)))
 	broken := "/" + modulePrefix + brokenName + "/"
@@ -668,6 +798,8 @@ func proxied(t *testing.T, names ...string) fixture {
 		{"commit", "-q", "-m", releaseMessage},
 		{"tag", passingName + "/" + release},
 		{"tag", failingName + "/" + release},
+		{"tag", unrelatedDir + "/" + release},
+		{"tag", unparsedName + "/" + release},
 	}
 	for _, args := range commands {
 		cmd := exec.CommandContext(t.Context(), gitBinary, args...)
@@ -723,6 +855,34 @@ func workspaceOf(dirs ...string) files.Tree {
 		}
 	}
 	return tree
+}
+
+// replacing returns the go.work of a checkout that uses the kernel, the SDK
+// facade, the module that does not require the kernel, and the modules of
+// names. The go.work replaces the kernel at the version kernel and the facade
+// at the version facade with their directories. The replace directive of an
+// empty version has no version. The go.work also replaces the module that
+// does not require the kernel at the version release.
+func replacing(kernel, facade string, names ...string) files.Entry {
+	var work strings.Builder
+	fmt.Fprintf(&work, workStart, goVersion)
+	for _, d := range append([]string{kernelDir, facadeDir, unrelatedDir}, names...) {
+		fmt.Fprintf(&work, useFormat, localUse+d)
+	}
+	work.WriteString(workEnd)
+	replaced := []struct{ mod, version, dir string }{
+		{mod: kernelModule, version: kernel, dir: kernelDir},
+		{mod: facadeModule, version: facade, dir: facadeDir},
+		{mod: unrelatedModule, version: release, dir: unrelatedDir},
+	}
+	for _, r := range replaced {
+		if r.version == "" {
+			fmt.Fprintf(&work, plainReplace, r.mod, localUse+r.dir)
+			continue
+		}
+		fmt.Fprintf(&work, versionedReplace, r.mod, r.version, localUse+r.dir)
+	}
+	return files.Text(work.String())
 }
 
 // archived returns the tar archive of entries. The size of the header of

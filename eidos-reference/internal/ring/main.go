@@ -44,6 +44,7 @@ const (
 	okWord          = "ok"
 	failWord        = "FAIL"
 	unpublishedWord = "unpublished"
+	earlierWord     = "earlier"
 )
 
 // scratchPattern is the pattern of the name of the scratch directory of a
@@ -73,7 +74,10 @@ func main() {
 //
 // run reads the checkout and queries the module proxy for the latest version
 // of each module of the ring. It tests each published version from the tree
-// of its release tag against the kernel and the SDK facade of the checkout.
+// of its release tag against the kernel and the SDK facade of the checkout. A
+// published version that requires the kernel or the facade on an earlier
+// compatibility line than the checkout releases is not tested. run reports it
+// as earlier, and the report does not fail the run.
 // It writes the line of each module to stdout in the order of the module
 // paths. It writes the errors of the command line and of the checkout to
 // stderr. The tree of each release has a directory of its own in the scratch
@@ -122,7 +126,15 @@ func run(ctx context.Context, dir string, args, env []string, stdout, stderr io.
 				"%s %s: the module proxy returns the pseudo-version %s for a module without a release\n",
 				unpublishedWord, m.path, version)
 		default:
-			out, err := test(ctx, env, c, filepath.Join(scratch, strconv.Itoa(i)), m, version)
+			reason, err := earlier(ctx, env, c, m, version)
+			if err == nil && reason != "" {
+				fmt.Fprintf(stdout, "%s %s@%s: %s\n", earlierWord, m.path, version, reason)
+				continue
+			}
+			var out []byte
+			if err == nil {
+				out, err = test(ctx, env, c, filepath.Join(scratch, strconv.Itoa(i)), m, version)
+			}
 			if err != nil {
 				fmt.Fprintf(stdout, "%s %s@%s: %v\n%s", failWord, m.path, version, err, out)
 				status = statusFailed
