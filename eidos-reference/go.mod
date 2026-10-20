@@ -17,10 +17,10 @@ require (
 )
 
 require (
+	github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
-	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
 	go.dokimi.dev/eidos/declarative v0.1.1 // indirect
 	go.stealthscale.io/cli v0.4.0 // indirect
 	go.stealthscale.io/cli/yaml v0.1.3 // indirect

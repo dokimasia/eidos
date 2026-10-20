@@ -32,6 +32,7 @@ require (
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9 // indirect
 	github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed // indirect
 	github.com/dokimasia/tree-sitter-python v0.0.0-20261020093147-bab31bd04b20 // indirect
+	github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020195847-51f19912ddc4 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260716134002-a9b348f0a2b9 // indirect
@@ -41,7 +42,6 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
-	github.com/tree-sitter/tree-sitter-typescript v0.23.2 // indirect
 	go.stealthscale.io/cli/yaml v0.1.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
