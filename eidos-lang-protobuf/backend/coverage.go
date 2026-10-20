@@ -35,6 +35,10 @@ import (
 //   - A type parameter, an accessor, an index signature, a construct
 //     signature and a computed name have no form in a schema, so the
 //     declaration does not render with the fact or without it.
+//   - The passing of a parameter takes the [render.Holds] verdict, because
+//     an rpc takes one request.
+//     A wire name renders as the name of its field, and the lowering
+//     refuses a wire name that is not an identifier.
 //
 // Coverage builds the table on every call, which the caller keeps.
 func Coverage() render.Coverage {
@@ -63,6 +67,8 @@ func Coverage() render.Coverage {
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Refuses,
 			symbol.FactVariadic:         render.Renders,
+			symbol.FactPassing:          render.Holds,
+			symbol.FactWire:             render.Renders,
 			symbol.FactNamedReturn:      render.Renders,
 			symbol.FactConstEnum:        render.Refuses,
 			symbol.FactUnderlying:       render.Refuses,

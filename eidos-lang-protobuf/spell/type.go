@@ -207,6 +207,8 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: protobuf.TypeEmpty, Package: protobuf.EmptyFile}, nil
 	case s.Ref == rules.WellKnownError:
 		return nil, errors.New("the well-known error has no protobuf spelling")
+	case s.Ref == rules.WellKnownContext:
+		return nil, errors.New("the well-known context has no protobuf spelling, because a schema states no context")
 	case len(s.Args) > 0:
 		return nil, errors.New("a reference with type arguments has no protobuf spelling")
 	}

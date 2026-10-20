@@ -36,7 +36,8 @@ const (
 
 // A protobuf file is a package of its own, whose path is the import path
 // of the file. The clause comes from the header, from a protobuf origin,
-// or from the directories of the import path, in that order.
+// or from the directories of the import path, in that order. The files of
+// one clause declare their names in one namespace.
 func TestPackage(t *testing.T) {
 	t.Parallel()
 
@@ -200,10 +201,43 @@ func TestPackage(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("NameScope", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give symbol.Identity
+			want symbol.Identity
+		}{
+			{
+				name: "returns the protobuf package of a file",
+				give: pkg(schemaPath, "acme.v1"),
+				want: symbol.Identity{Lang: protobuf.Lang, Package: "acme.v1", Kind: symbol.KindPackage},
+			},
+			{
+				name: "returns the protobuf package of another file of that package",
+				give: pkg("svc/other.proto", "acme.v1"),
+				want: symbol.Identity{Lang: protobuf.Lang, Package: "acme.v1", Kind: symbol.KindPackage},
+			},
+			{
+				name: "returns the namespace of the files without a package",
+				give: pkg("store.proto", ""),
+				want: symbol.Identity{Lang: protobuf.Lang, Kind: symbol.KindPackage},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, spell.NameScope(tt.give), tt.want, "the namespace of the names of the file")
+			})
+		}
+	})
 }
 
 // Package derives the package of a path in the ordinary run, which runs no
-// benchmark, within its ceilings.
+// benchmark, within its ceilings, and NameScope allocates nothing.
 func TestPackageAllocs(t *testing.T) {
 	for _, tt := range packageCalls() {
 		var (
@@ -215,6 +249,10 @@ func TestPackageAllocs(t *testing.T) {
 		assert.NoError(t, err, "Package derives the package of "+tt.name)
 		assert.Equal(t, got.Name, tt.want, "Package returns the clause of "+tt.name)
 	}
+	file := pkg(schemaPath, "acme.v1")
+	var scope symbol.Identity
+	assert.MaxAllocs(t, func() { scope = spell.NameScope(file) }, 0, "NameScope allocates nothing")
+	assert.Equal(t, scope.Package, file.Name, "NameScope returns the protobuf package")
 }
 
 // BenchmarkPackage measures the package a backend names once per routed
@@ -236,6 +274,17 @@ func BenchmarkPackage(b *testing.B) {
 				assert.Equal(b, got.Name, tt.want, "Package returns the clause of "+tt.name)
 			})
 		}
+	})
+
+	b.Run("NameScope", func(b *testing.B) {
+		file := pkg(schemaPath, "acme.v1")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var scope symbol.Identity
+		for c.Loop() {
+			scope = spell.NameScope(file)
+		}
+		assert.Equal(b, scope.Package, file.Name, "NameScope returns the protobuf package")
 	})
 }
 

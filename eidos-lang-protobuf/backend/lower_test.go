@@ -214,6 +214,13 @@ func TestLower(t *testing.T) {
 			want string
 		}{
 			{
+				name: "returns an error for a message with the deleter of a property",
+				give: &emit.Struct{Name: rowName, Methods: emit.SlotOf(&emit.Method{
+					Name: nameField, Accessor: symbol.AccessorDelete,
+				})},
+				want: "protobuf: a property has no deleter in protobuf, and name states one",
+			},
+			{
 				name: "returns an error for a field of a message without a number",
 				give: &emit.Struct{Name: rowName, Fields: emit.SlotOf(&emit.Field{Name: nameField})},
 				want: "protobuf: a field of a message takes a number, and name states none",

@@ -27,14 +27,26 @@ var (
 	callableKinds = []symbol.Kind{symbol.KindInterface, symbol.KindMethod}
 )
 
+// The name of the context of an rpc, which every binding of gRPC passes to
+// a handler, and the spelling of the reference to it.
+const (
+	contextName     = "ctx"
+	contextSpelling = "context"
+)
+
+// contextRef is the reference of the context of every rpc. Every view
+// shares it, and the fold of the kernel only reads it.
+var contextRef = &node.TypeRef{Spelling: contextSpelling, Target: rules.WellKnownContext}
+
 // Rules is protobuf's implementation of the source-rules contract.
 //
 // The zero value is ready and is the only value. Every method reads
 // through the [rules.View] it is handed and caches nothing.
 //
-// It implements [rules.EnumRules] and [rules.PresenceRules] and no other
-// optional capability, because protobuf has no generics, no member
-// promotion, no struct tags and no user-defined equality.
+// It implements [rules.EnumRules], [rules.PresenceRules] and
+// [rules.ContextRules] and no other optional capability, because protobuf
+// has no generics, no member promotion, no struct tags and no user-defined
+// equality.
 //
 // # Concurrency
 //
@@ -47,10 +59,13 @@ var (
 // policy and a scalar's shape allocate nothing.
 type Rules struct{}
 
+var _ rules.ContextRules = Rules{}
+
 // New returns the protobuf rules as the [rules.SourceRules] a
 // composition registers. The value is [Rules], so a caller that needs
-// the enum or the presence capability asserts [rules.EnumRules] or
-// [rules.PresenceRules] on it. It allocates nothing.
+// the enum, the presence or the context capability asserts
+// [rules.EnumRules], [rules.PresenceRules] or [rules.ContextRules] on it.
+// It allocates nothing.
 func New() rules.SourceRules { return Rules{} }
 
 // Lang returns [protobuf.Lang], the language a composition keys
@@ -77,19 +92,31 @@ func (Rules) Members() rules.MemberPolicy {
 
 // ParamRole reports [rules.ParamInput] for every parameter.
 //
-// An rpc takes one request message and a schema states no context
-// parameter, so no parameter has another role. The view is unread,
+// An rpc takes one request message, so no parameter has another role.
+// The context of the call comes from [Rules.Context]. The view is unread,
 // and ParamRole allocates nothing.
 func (Rules) ParamRole(*node.Param, rules.View) rules.ParamRole { return rules.ParamInput }
+
+// Context returns the view of the context of an rpc: ctx, a reference to
+// [rules.WellKnownContext] with the role [rules.ParamContext]. Every binding
+// of gRPC passes the cancellation and the deadline of a call to its handler,
+// as grpc-go passes a context.Context and Connect-ES a HandlerContext. It
+// reports false for every other symbol. Context allocates nothing.
+func (Rules) Context(sym symbol.Symbol, _ rules.View) (rules.ParamView, bool) {
+	if _, rpc := sym.(*node.Method); !rpc {
+		return rules.ParamView{}, false
+	}
+	return rules.ParamView{Name: contextName, Ref: contextRef, Role: rules.ParamContext}, true
+}
 
 // ReturnRoles reports one role per return and the error model.
 //
 // A return whose type is [symbol.FormStream] is
 // [rules.ReturnStream]; every other return is [rules.ReturnValue].
-// The model is always [rules.ErrorsNone]: a schema states no failure
-// in a signature, and a gRPC status is sent beside the response, not
-// inside it, so a generator binding a call reads its transport's
-// convention and not the schema's.
+// The model is always [rules.ErrorsRaised]. A schema declares no type of
+// the failure of an rpc, and every binding of gRPC fails a call with a
+// status: grpc-go through the error result, and Connect-ES when the
+// handler throws.
 //
 // # Allocation contract
 //
@@ -102,7 +129,7 @@ func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, r
 			roles[i] = rules.ReturnStream
 		}
 	}
-	return roles, rules.ErrorsNone
+	return roles, rules.ErrorsRaised
 }
 
 // Resolve returns the declaration a directive's spelling names from

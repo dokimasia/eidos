@@ -238,7 +238,27 @@ func TestRules(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			assert.Equal(t, f.callable(t, 0).Params[0].Role, rules.ParamInput, "Get's one parameter")
+			assert.Equal(t, f.callable(t, 0).Params[1].Role, rules.ParamInput, "Get's request")
+		})
+	})
+
+	t.Run("Context", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("puts the context of the call before the request of an rpc", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			ctx := f.callable(t, 0).Params[0]
+			assert.Equal(t, ctx.Role, rules.ParamContext, "the first parameter is the context of the call")
+			assert.Equal(t, ctx.Ref.Target, rules.WellKnownContext, "the context is the well-known context")
+		})
+
+		t.Run("reports false for a message", func(t *testing.T) {
+			t.Parallel()
+
+			_, has := protorules.Rules{}.Context(&node.Struct{}, rules.View{})
+			assert.False(t, has, "a message is no call")
 		})
 	})
 
@@ -259,11 +279,12 @@ func TestRules(t *testing.T) {
 			assert.Equal(t, f.callable(t, 1).Returns[0].Role, rules.ReturnStream, "Watch's one return")
 		})
 
-		t.Run("returns ErrorsNone for an rpc", func(t *testing.T) {
+		t.Run("returns ErrorsRaised for an rpc", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			assert.Equal(t, f.callable(t, 0).Errors, rules.ErrorsNone, "a schema states no failure in its signature")
+			assert.Equal(t, f.callable(t, 0).Errors, rules.ErrorsRaised,
+				"a call fails with a status that the schema does not declare")
 		})
 
 		t.Run("classifies a return without a type as a value", func(t *testing.T) {
@@ -536,7 +557,8 @@ func rulesCalls(tb testing.TB) []allocCall {
 
 	f := loaded(tb)
 	r := protorules.New()
-	request := f.rpc(tb, 0).Params[0]
+	rpc := f.rpc(tb, 0)
+	request := rpc.Params[0]
 	rets := []*node.Return{
 		{Type: ref(svcPkg, "Row", symbol.KindStruct)},
 		{Type: composite("stream Row", symbol.FormStream)},
@@ -547,6 +569,7 @@ func rulesCalls(tb testing.TB) []allocCall {
 		lang   symbol.Lang
 		policy rules.MemberPolicy
 		role   rules.ParamRole
+		ctx    rules.ParamView
 		roles  []rules.ReturnRole
 		got    symbol.Symbol
 		err    error
@@ -574,6 +597,13 @@ func rulesCalls(tb testing.TB) []allocCall {
 			name:  "ParamRole",
 			call:  func() { role = r.ParamRole(request, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, role, rules.ParamInput, "ParamRole classifies the request") },
+		},
+		{
+			name: "Context",
+			call: func() { ctx, _ = protorules.Rules{}.Context(rpc, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, ctx.Role, rules.ParamContext, "Context returns the context of the rpc")
+			},
 		},
 		{
 			name: "ReturnRoles", allocs: returnRolesAllocs,

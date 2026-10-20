@@ -271,13 +271,8 @@ func TestTemplates(t *testing.T) {
 						Per:    plugin.PerSource,
 						Word:   templateWord,
 						Key:    templateKey,
-						Pkg: symbol.Identity{
-							Lang:    protobuf.Lang,
-							Package: "acme/store",
-							Name:    tt.pkg,
-							Kind:    symbol.KindPackage,
-						},
-						Decls: tt.decls,
+						Pkg:    symbol.Identity{Lang: protobuf.Lang, Package: tt.pkg, Kind: symbol.KindPackage},
+						Decls:  tt.decls,
 					}), "the unit is added")
 					return backend.New(), &backendtest.Fixture{Emit: e}
 				})

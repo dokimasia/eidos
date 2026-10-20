@@ -6,6 +6,7 @@ package backend_test
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -13,14 +14,22 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/protobuf/backend"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/render"
 )
+
+// filledLine is a word as wide as the documentation, so the wrap starts a
+// line with the word after it.
+var filledLine = strings.Repeat("a", textfmt.DocsWidth)
 
 // The allocations of the vocabulary.
 const (
 	// docsAllocs is the documentation of a declaration: the comments in one
 	// buffer.
 	docsAllocs = 1
+	// wrapDocsAllocs is the wrap of a single-spaced text: the list of its
+	// lines, each of which is a part of the text.
+	wrapDocsAllocs = 1
 	// newVocabularyAllocs is the vocabulary of a file: the vocabulary and
 	// its two record maps.
 	newVocabularyAllocs = 3
@@ -44,8 +53,26 @@ func TestVocabulary(t *testing.T) {
 			got := slices.Sorted(maps.Keys(backend.Funcs(&render.ImportSet{})))
 			assert.Equal(t, got, []string{
 				backend.FuncBlock, backend.FuncDocs, backend.FuncExtension,
-				backend.FuncFileOptions, backend.FuncSyntax, backend.FuncUseImports,
+				backend.FuncFileOptions, backend.FuncSyntax, backend.FuncUseImports, backend.FuncWrapDocs,
 			}, "the names of the vocabulary")
+		})
+	})
+
+	t.Run("WrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("wraps the text at the width of the documentation", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" next"), []string{filledLine, "next"},
+				"the word past the width starts the next line")
+		})
+
+		t.Run("starts a line with a word that starts with @", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" @see next"), []string{filledLine, "@see next"},
+				"a protobuf comment is text")
 		})
 	})
 
@@ -99,11 +126,17 @@ func TestVocabularyAllocs(t *testing.T) {
 	assert.NotNil(t, v, "NewVocabulary returns the vocabulary")
 	assert.MaxAllocs(t, func() { funcs = backend.Funcs(set) }, funcsAllocs,
 		"Funcs allocates the vocabulary and the map of its helpers")
-	assert.Length(t, funcs, 6, "Funcs returns the six helpers")
+	assert.Length(t, funcs, 7, "Funcs returns the seven helpers")
 
 	lines := []string{"Row is one record.", "It has a key."}
 	assert.MaxAllocs(t, func() { got = backend.Docs(lines) }, docsAllocs, "Docs allocates the comments once")
 	assert.HasPrefix(t, got, "// Row", "Docs writes the comments")
+
+	wrapped := filledLine + " next"
+	var wrappedLines []string
+	assert.MaxAllocs(t, func() { wrappedLines = backend.WrapDocs(wrapped) }, wrapDocsAllocs,
+		"WrapDocs allocates the list of lines")
+	assert.Equal(t, wrappedLines, []string{filledLine, "next"}, "WrapDocs wraps the text")
 }
 
 // BenchmarkVocabulary measures the vocabulary that the render binds to each
@@ -128,7 +161,18 @@ func BenchmarkVocabulary(b *testing.B) {
 		for c.Loop() {
 			funcs = backend.Funcs(set)
 		}
-		assert.Length(b, funcs, 6, "Funcs returns the six helpers")
+		assert.Length(b, funcs, 7, "Funcs returns the seven helpers")
+	})
+
+	b.Run("WrapDocs", func(b *testing.B) {
+		wrapped := filledLine + " next"
+		c := bench.Start(b).MaxAllocs(wrapDocsAllocs)
+		defer c.End()
+		var lines []string
+		for c.Loop() {
+			lines = backend.WrapDocs(wrapped)
+		}
+		assert.Equal(b, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
 	})
 
 	b.Run("Docs", func(b *testing.B) {

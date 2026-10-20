@@ -443,6 +443,11 @@ func TestType(t *testing.T) {
 				want: "protobuf: the well-known error has no protobuf spelling",
 			},
 			{
+				name: "returns an error for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext),
+				want: "protobuf: the well-known context has no protobuf spelling, because a schema states no context",
+			},
+			{
 				name: "returns an error for a reference with type arguments",
 				give: rules.Reference("Page[int64]", page, long),
 				want: "protobuf: a reference with type arguments has no protobuf spelling",

@@ -7,17 +7,20 @@ import (
 	"strings"
 	"text/template"
 
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The names of the vocabulary are constants, so a template and the map of
-// its helpers use the same name. The name of the documentation helper is
-// the name that every backend declares.
+// its helpers use the same name. The names of the documentation helpers
+// are the names that every backend declares.
 const (
 	// FuncDocs is the template name of [Docs].
 	FuncDocs = render.HelperDocs
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncBlock is the template name of [Vocabulary.Block]. The word block
 	// is a keyword of text/template.
 	FuncBlock = "blockof"
@@ -124,6 +127,7 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 	v := NewVocabulary(set)
 	return template.FuncMap{
 		FuncDocs:        Docs,
+		FuncWrapDocs:    WrapDocs,
 		FuncBlock:       v.Block,
 		FuncExtension:   v.Extension,
 		FuncSyntax:      Syntax,
@@ -138,6 +142,13 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 // the comments once, and nothing for no lines.
 func Docs(lines []string) string {
 	return comments(lines, "")
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that [Docs]
+// writes. A protobuf comment is text, so no word of the text is markup. It
+// allocates what [textfmt.Wrap] allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupNone)
 }
 
 // comments writes the documentation lines as line comments behind indent,

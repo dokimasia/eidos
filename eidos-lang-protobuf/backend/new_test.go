@@ -31,8 +31,9 @@ const contractBrand = "protobuf"
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template, the block template of each of the four kinds and the extend
+	// template, and the function maps that text/template keeps for each
 	// template.
-	newAllocs = 1_003
+	newAllocs = 1_027
 	// renderAllocs is one render of the scaled corpus of 10,000 files. One
 	// run counted 13,660,874: about 6.1 million in the parse that checks
 	// each written file, and nearly all of the rest in text/template's
@@ -126,6 +127,17 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.New().Policies(), protobuf.Policies(), "the policies of the satellite")
+		})
+
+		t.Run("returns a backend whose namespace of a file is its protobuf package", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := symbol.Identity{
+				Lang: protobuf.Lang, Package: "svc/store.proto", Name: "acme.v1", Kind: symbol.KindPackage,
+			}
+			assert.Equal(t, backend.New().NameScope(pkg),
+				symbol.Identity{Lang: protobuf.Lang, Package: pkg.Name, Kind: symbol.KindPackage},
+				"the files of one protobuf package declare their names in one namespace")
 		})
 
 		t.Run("returns a backend whose files stamp under the module's contract", func(t *testing.T) {

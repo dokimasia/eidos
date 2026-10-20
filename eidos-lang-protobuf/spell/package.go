@@ -85,6 +85,16 @@ func Package(p plugin.Placement) (symbol.Identity, error) {
 	return symbol.Identity{Lang: protobuf.Lang, Package: imported, Name: clause, Kind: symbol.KindPackage}, nil
 }
 
+// NameScope returns the namespace of the file-level names of a protobuf
+// file that declares the package pkg: the protobuf package of the file,
+// which [Package] returns as the Name of pkg. protoc resolves the names of
+// every file of one protobuf package in one namespace, and the names of
+// every file without a package in one other namespace. NameScope does not
+// allocate.
+func NameScope(pkg symbol.Identity) symbol.Identity {
+	return symbol.Identity{Lang: protobuf.Lang, Package: pkg.Name, Kind: symbol.KindPackage}
+}
+
 // headerPackage returns the package that the package markers of the header
 // of p state, and reports false for a header without one. It returns an
 // error for two markers of different packages, for a marker without

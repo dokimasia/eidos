@@ -4,15 +4,18 @@
 // Package rules implements protobuf's projection rules.
 //
 // [New] returns the value a composition registers. It satisfies the
-// source-rules contract, the enum capability and the presence
-// capability, and no other.
+// source-rules contract, the enum capability, the presence capability
+// and the context capability, and no other.
 //
 // # Decisions
 //
 //   - Nothing contributes members: protobuf has no embedding, no
 //     supertypes and no implemented interfaces.
-//   - An rpc's parameter is input and its return a value under no
-//     error model. A streaming return is a stream.
+//   - An rpc takes the context of its call before its request, and
+//     fails under the raised error model, because every binding of gRPC
+//     passes a context to a handler and fails a call with a status. Its
+//     request is input and its response a value. A streaming return is a
+//     stream.
 //   - Numbers classify from the wire table: a width is the wire's,
 //     so int32 is thirty-two bits in every target, and every derived
 //     number states it.

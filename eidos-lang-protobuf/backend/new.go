@@ -26,6 +26,7 @@ func New() backend.Backend {
 		Funcs(Funcs).
 		Naming(spell.Filename).
 		Packages(spell.Package).
+		NameScopes(spell.NameScope).
 		Respell(spell.Name).
 		Types(spell.Type).
 		Policies(protobuf.Policies()...).

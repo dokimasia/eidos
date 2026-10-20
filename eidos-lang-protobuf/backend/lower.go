@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -96,8 +97,8 @@ var caser = naming.New()
 //   - a field of a message without one tag entry number, or with a number
 //     outside 1 to 536,870,911 or from 19,000 to 19,999;
 //   - two members of a message with one number or one name;
-//   - a read-only field, and a field at file level that extends no
-//     message;
+//   - a read-only field, a wire name that is not an identifier, and a field
+//     at file level that extends no message;
 //   - a field among the nested declarations of a message that extends no
 //     message, an extension among its fields, and a nested declaration of
 //     a kind that a message does not nest;
@@ -108,7 +109,9 @@ var caser = naming.New()
 //     protobuf:number, and a variant without exactly one field and without
 //     the marker;
 //   - a service with fields or with two rpcs of one name, a stream beside
-//     another parameter or result, and a parameter with a label.
+//     another parameter or result, and a parameter with a label;
+//   - the deleter of a property, through [lowering.DeleteAccessor], because
+//     a schema has no properties.
 //
 // # Allocation contract
 //
@@ -116,6 +119,9 @@ var caser = naming.New()
 // rewrite allocates the declarations that it writes. A refusal allocates
 // its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	if err := lowering.DeleteAccessor(protobuf.Lang, s); err != nil {
+		return nil, err
+	}
 	switch d := s.(type) {
 	case *emit.File:
 		return nil, checkAnnotations(symbol.KindFile, headerName, d.Annotations)
@@ -255,6 +261,9 @@ func lowerField(name string, f *emit.Field, add func(*emit.Struct)) (uint32, err
 	}
 	if f.Mutability == symbol.MutabilityImmutable {
 		return 0, fmt.Errorf(refusalPrefix+"a message has no read-only field, and %s is read-only", name)
+	}
+	if f.Wire && !naming.IsIdentifier(name) {
+		return 0, fmt.Errorf(refusalPrefix+"a field name is an identifier, and the wire name %q is not one", name)
 	}
 	n, err := fieldNumber(name, f)
 	if err != nil {
