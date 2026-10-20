@@ -20,6 +20,7 @@ use (
 	./eidos-lang-kotlin
 	./eidos-lang-php
 	./eidos-lang-protobuf
+	./eidos-lang-python
 	./eidos-lang-rust
 	./eidos-lang-typescript
 	./eidos-plugin-shape
@@ -43,6 +44,8 @@ replace go.dokimi.dev/eidos/lang/graphql v0.0.0-00010101000000-000000000000 => .
 replace go.dokimi.dev/eidos/lang/java v0.1.1 => ./eidos-lang-java
 
 replace go.dokimi.dev/eidos/lang/protobuf v0.1.1 => ./eidos-lang-protobuf
+
+replace go.dokimi.dev/eidos/lang/python v0.0.0-00010101000000-000000000000 => ./eidos-lang-python
 
 replace go.dokimi.dev/eidos/lang/rust v0.1.1 => ./eidos-lang-rust
 
