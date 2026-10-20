@@ -39,7 +39,9 @@ const (
 	boxType        = "Box"
 	systemTimeType = "SystemTime"
 	durationType   = "Duration"
-	dynErrorType   = "dyn std::error::Error"
+	dynPrefix      = "dyn "
+	errorTrait     = "std::error::Error"
+	dynErrorType   = dynPrefix + errorTrait
 	arrayOpen      = "["
 	arrayLength    = "; "
 	arrayClose     = "]"
@@ -86,6 +88,11 @@ var (
 //   - the well-known timestamp and duration as std::time::SystemTime and
 //     std::time::Duration, the well-known empty value as the unit type (),
 //     and the well-known error as Box<dyn std::error::Error>;
+//   - a reference to an interface as the owned trait object Box<dyn Name>,
+//     because the backend renders an interface as a trait and Rust 2024
+//     refuses a bare trait in the position of a value. The argument of Box
+//     is an intersection with the spelling dyn Name and the reference as
+//     its one element, the form in which the Rust frontend reads dyn Trait;
 //   - every other reference and sum as a translated reference with the
 //     referent's flat name, the shape's target and the translated type
 //     arguments, which Rust writes in angle brackets.
@@ -105,14 +112,48 @@ var (
 //
 // Type allocates each reference that it returns, the list of children
 // of a structural reference, the list of arguments of a named one, and
-// the spelling of each structural reference. A refusal allocates its
-// error.
+// the spelling of each structural reference. A trait object allocates the
+// box, the intersection, the list of its element, the list of the
+// arguments of the box and the spelling of the intersection. A refusal
+// allocates its error.
 func Type(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
 	t, err := rustType(s)
 	if err != nil {
 		return nil, fmt.Errorf(typeRefusal+"%w", err)
 	}
 	return t, nil
+}
+
+// Supertype spells the canonical shape s where a declaration extends,
+// implements or embeds it, or where it bounds a type parameter. It is the
+// supertype spelling of the Rust target. A reference and a sum spell as the
+// flat name of the referent with its translated arguments, without the box
+// of a trait object, because Rust writes a supertrait bare, as in
+// trait Named: Node. Each argument is a value, so a trait that extends
+// Page<Node> writes Page<Box<dyn Node>>. The well-known error is the trait
+// std::error::Error.
+//
+// Supertype refuses every other shape, and the well-known timestamp,
+// duration and empty value, because a supertype of Rust is a trait.
+//
+// # Allocation contract
+//
+// Supertype allocates the reference that it returns and what [Type]
+// allocates for each argument. A refusal allocates its error.
+func Supertype(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
+	switch {
+	case s.Form != symbol.FormReference && s.Form != symbol.FormSum:
+		return nil, fmt.Errorf(typeRefusal+"a supertype of Rust is a trait, and %s is none", spoke.Describe(s))
+	case s.Ref == rules.WellKnownError:
+		return &emit.TypeRef{Spelling: errorTrait}, nil
+	case s.Ref == rules.WellKnownTimestamp || s.Ref == rules.WellKnownDuration || s.Ref == rules.WellKnownEmpty:
+		return nil, fmt.Errorf(typeRefusal+"a supertype of Rust is a trait, and %s is a struct", s.Ref.Name)
+	}
+	args, err := spoke.Children(s.Args, rustType)
+	if err != nil {
+		return nil, fmt.Errorf(typeRefusal+"%w", err)
+	}
+	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
 }
 
 // rustType spells one shape by the rules of [Type], and returns a
@@ -252,8 +293,9 @@ func function(s rules.TypeShape) (*emit.TypeRef, error) {
 // reference spells a reference or a sum: the well-known timestamp and
 // duration as the types of std::time, the well-known empty value as the
 // unit type, the well-known error as a boxed trait object of
-// std::error::Error, and every other referent as a translated reference
-// under its flat name, with its translated arguments.
+// std::error::Error, an interface as a boxed trait object of its trait,
+// and every other referent as a translated reference under its flat name,
+// with its translated arguments.
 func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
@@ -264,12 +306,23 @@ func reference(s rules.TypeShape) (*emit.TypeRef, error) {
 		return &emit.TypeRef{Spelling: unitType, Form: symbol.FormTuple}, nil
 	case rules.WellKnownError:
 		return &emit.TypeRef{Spelling: boxType, Args: []*emit.TypeRef{{Spelling: dynErrorType}}}, nil
+	case rules.WellKnownContext:
+		return nil, errors.New("the well-known context has no Rust spelling, because Rust has no standard type of " +
+			"the context of a call")
 	}
 	args, err := spoke.Children(s.Args, rustType)
 	if err != nil {
 		return nil, err
 	}
-	return &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}, nil
+	ref := &emit.TypeRef{Spelling: s.Ref.FlatName(), Target: s.Ref, Args: args}
+	if s.Ref.Kind != symbol.KindInterface {
+		return ref, nil
+	}
+	dyn := &emit.TypeRef{
+		Spelling: dynPrefix + spellref.Spell(ref, argsOpener, argsCloser, unitType),
+		Form:     symbol.FormIntersection, Elems: []*emit.TypeRef{ref},
+	}
+	return &emit.TypeRef{Spelling: boxType, Args: []*emit.TypeRef{dyn}}, nil
 }
 
 // tupleOf returns the spelling of a tuple of refs: (A, B), (A,) for one

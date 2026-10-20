@@ -330,8 +330,8 @@ func (l *lowering) returns(n treesitter.Node) []*node.Return {
 // parameter of an extern function is positionally variadic. A parameter
 // that a cfg predicate keeps out is left out, and the carriers of the
 // comments of a parameter report under [UnaddressedCarrier]. params
-// returns the self parameter apart as the receiver, with the type Self
-// behind the reference of the parameter.
+// returns the self parameter apart as the receiver, with the type that
+// [lowering.selfType] lowers.
 func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver *node.Param) {
 	var attrs []treesitter.Node
 	for p := range list.NamedChildren() {
@@ -356,7 +356,7 @@ func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver 
 		switch {
 		case k == l.v.selfParameter:
 			param.Name = keywordSelf
-			param.Type = &node.TypeRef{Spelling: l.selfSpelling(p), Pos: p.Pos()}
+			param.Type = l.selfType(p)
 			receiver = param
 			continue
 		case pattern.Kind() == l.v.self:
@@ -376,22 +376,32 @@ func (l *lowering) params(list treesitter.Node) (params []*node.Param, receiver 
 	return params, receiver
 }
 
-// selfSpelling spells the type of a self parameter: Self behind the
-// reference, the lifetime and the mutability of the parameter. A mut self
-// parameter is a mutable binding of a value, whose type is Self.
-func (l *lowering) selfSpelling(p treesitter.Node) string {
+// selfType lowers the type of a self parameter. &self is an immutable Borrow
+// of Self and &mut self a mutable one, spelled with the lifetime of the
+// parameter, as &'a mut Self is. self and mut self are Self, because a mut
+// self parameter is a mutable binding of a value. The resolution step gives
+// Self the type that the parameter's method belongs to.
+func (l *lowering) selfType(p treesitter.Node) *node.TypeRef {
+	self := &node.TypeRef{Spelling: keywordSelfType, Pos: p.Pos()}
 	var b strings.Builder
+	mutability := symbol.MutabilityImmutable
 	for child := range p.AllChildren() {
 		switch {
 		case child.Kind() == l.v.lifetime:
 			b.WriteString(child.Text() + " ")
 		case child.Kind() == l.v.mutableSpecifier && b.Len() > 0:
 			b.WriteString(keywordMut + " ")
+			mutability = symbol.MutabilityMutable
 		case !child.Named():
 			b.WriteString(child.Text())
 		}
 	}
-	return b.String() + keywordSelfType
+	if b.Len() == 0 {
+		return self
+	}
+	borrow := plugin.Composite(b.String()+keywordSelfType, p.Pos(), symbol.FormBorrow, self)
+	borrow.Mutability = mutability
+	return borrow
 }
 
 // typeParams lowers the generic parameters of an item: a type parameter

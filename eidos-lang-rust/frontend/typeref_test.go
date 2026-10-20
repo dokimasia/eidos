@@ -82,6 +82,16 @@ func TestTypeRef(t *testing.T) {
 					"each argument keeps its spelling")
 			})
 
+		t.Run("lowers the type of an associated type binding as its one argument", func(t *testing.T) {
+			t.Parallel()
+
+			binding := typeOf(t, "Iterator<Item = Vec<u8>>").Args[0]
+			assert.Equal(t, binding.Spelling, "Item=Vec<u8>", "the binding keeps its spelling")
+			assert.Length(t, binding.Args, 1, "the binding has the type that it binds")
+			assert.Equal(t, binding.Args[0].Spelling, "Vec", "the bound type is lowered")
+			assert.Equal(t, spellingsOf(binding.Args[0].Args), []string{"u8"}, "with its own arguments")
+		})
+
 		t.Run("lowers a reference as a Borrow of its type", func(t *testing.T) {
 			t.Parallel()
 

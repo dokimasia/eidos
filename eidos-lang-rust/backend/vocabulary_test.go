@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"strings"
 	"testing"
 	"text/template"
 
@@ -11,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/backend"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -27,6 +29,17 @@ const (
 	baseName     = "Base"
 	// keyPath is a path inside rowName.
 	keyPath = "::Key"
+)
+
+// The paths that the cases of a qualified spelling write, and the module of
+// io::Error.
+const (
+	hashMapPath  = "std::collections::HashMap"
+	ioModule     = "std/io"
+	ioErrorPath  = "io::Error"
+	cratePath    = "crate::store::Row"
+	namedKeyPath = "Named::Key"
+	storeKeyPath = "store::Named::Key"
 )
 
 // The declarations, the spellings and the keyword the allocation cases
@@ -80,14 +93,20 @@ const (
 	// selfParamsAllocs is a method of two parameters: the parameter list,
 	// and the receiver joined before it.
 	selfParamsAllocs = paramsAllocs + 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty-nine
-	// helpers, four allocations, and the fourteen bound helpers of the
-	// speller.
+	// funcsAllocs is the vocabulary of a file: the map of thirty helpers,
+	// four allocations, and the fourteen bound helpers of the speller.
 	funcsAllocs = 4 + 14
 	// typeNamesAllocs is two parameter names: the joined list, and its
 	// brackets.
 	typeNamesAllocs = 1 + 1
+	// wrapDocsAllocs is the wrap of a single-spaced text: the list of its
+	// lines, each of which is a part of the text.
+	wrapDocsAllocs = 1
 )
+
+// filledLine is a word as wide as the documentation, so the wrap starts a
+// line with the word after it.
+var filledLine = strings.Repeat("a", textfmt.DocsWidth)
 
 // The vocabulary is what every kind template spells through, so
 // each helper's output is pinned byte for byte, and every use a
@@ -134,6 +153,24 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Docs([]string{"One.", "Two."}), "/// One.\n/// Two.\n", "at the top level")
+		})
+	})
+
+	t.Run("WrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps a list marker on the line before it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" - next"), []string{filledLine + " -", "next"},
+				"rustdoc reads the documentation as CommonMark")
+		})
+
+		t.Run("starts a line with a word that starts with @", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" @see next"), []string{filledLine, "@see next"},
+				"rustdoc has no block tags")
 		})
 	})
 
@@ -209,6 +246,49 @@ func TestVocabulary(t *testing.T) {
 				"the first segment is the use")
 		})
 
+		t.Run("writes a path from a crate without a use", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			assert.Equal(t, must(t)(s.Spell(imported(collectionsModule, hashMapPath))), hashMapPath, "the path")
+			assert.Equal(t, set.Len(), 0, "a crate needs no use")
+		})
+
+		t.Run("writes a path from the crate root without a use", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			assert.Equal(t, must(t)(s.Spell(imported(storeModule, cratePath))), cratePath, "the path")
+			assert.Equal(t, set.Len(), 0, "crate opens the path")
+		})
+
+		t.Run("uses the module that the first segment of a path names", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			assert.Equal(t, must(t)(s.Spell(imported(ioModule, ioErrorPath))), ioErrorPath, "the path")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: "std", Name: "io"}}, "the use of the module")
+		})
+
+		t.Run("uses the type of an associated item of a target", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			key := ref(namedKeyPath)
+			key.Target = symbol.Identity{Lang: rust.Lang, Package: storeModule, Owner: "Named", Name: "Key"}
+			assert.Equal(t, must(t)(s.Spell(key)), namedKeyPath, "the path")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storeModule, Name: "Named"}}, "the use of the trait")
+		})
+
+		t.Run("uses the module of the type of an associated item of a target", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			key := ref(storeKeyPath)
+			key.Target = symbol.Identity{Lang: rust.Lang, Package: storeModule, Owner: "Named", Name: "Key"}
+			assert.Equal(t, must(t)(s.Spell(key)), storeKeyPath, "the path")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: "crate", Name: "store"}}, "the use of the module")
+		})
 		t.Run("returns an error for a composite whose child is used under another name", func(t *testing.T) {
 			t.Parallel()
 
@@ -1307,11 +1387,13 @@ func vocabularyCalls() []allocCall {
 	traitMethod, implMethod := &emit.Method{Name: getName}, &emit.Method{Name: getName}
 	asyncMethod := &emit.Method{Name: getName, Async: true}
 	field := &emit.Field{Name: idName}
+	wrapped := filledLine + " next"
 	var (
 		spellerOut backend.Speller
 		out        string
 		err        error
 		funcs      template.FuncMap
+		lines      []string
 	)
 	spells := func(want string) func(tb assert.TB) {
 		return func(tb assert.TB) {
@@ -1378,11 +1460,18 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 29, "Funcs returns the twenty-nine helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 30, "Funcs returns the thirty helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/// " + rowDoc + "\n"),
+		},
+		{
+			name: "WrapDocs", allocs: wrapDocsAllocs,
+			call: func() { lines = backend.WrapDocs(wrapped) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
+			},
 		},
 		{
 			name: "MemberDocs", allocs: textAllocs,

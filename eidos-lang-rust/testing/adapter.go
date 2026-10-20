@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -145,11 +146,10 @@ func (adapter) RunTests(ctx context.Context, dir string) (toolchain.TestReport, 
 // A probe that rustc refuses with unsatisfied trait bounds alone reports
 // false. Satisfies returns an error for any other refusal, with the source
 // of the probe, and for a crate that does not check without the probe. It
+// returns an error for a directory that it cannot open, and for a crate root
+// that it cannot read or write, each before it runs cargo where it can. It
 // restores the crate root after the check.
 func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) (bool, error) {
-	if err := a.TypeCheck(ctx, dir); err != nil {
-		return false, fmt.Errorf("the crate does not check, so nothing can be asked of it: %w", err)
-	}
 	r, err := os.OpenRoot(dir)
 	if err != nil {
 		return false, fmt.Errorf("testing: %w", err)
@@ -163,24 +163,32 @@ func (a adapter) Satisfies(ctx context.Context, dir, typeName, contract string) 
 	if err != nil {
 		return false, fmt.Errorf("testing: %w", err)
 	}
+	if checkErr := a.TypeCheck(ctx, dir); checkErr != nil {
+		return false, fmt.Errorf("the crate does not check, so nothing can be asked of it: %w", checkErr)
+	}
 	probe := path.Join(path.Dir(filepath.ToSlash(root)), probeModule+rust.Extension)
 	source := "#![allow(dead_code, unused_imports)]\nuse super::*;\n\n" +
 		"fn eidos_probe<T: ?Sized + " + contract + ">() {}\n\n" +
 		"fn eidos_probe_check() {\n    eidos_probe::<" + typeName + ">();\n}\n"
 	declared := slices.Concat(original, []byte("\nmod "+probeModule+";\n"))
+	// write replaces the crate root with content: the root that declares the
+	// probe module, and then the original root.
+	write := func(content []byte) error {
+		if writeErr := r.WriteFile(root, content, rootMode); writeErr != nil {
+			return fmt.Errorf("testing: %w", writeErr)
+		}
+		return nil
+	}
 	var (
 		out      string
 		checkErr error
 	)
 	err = toolchain.Probe(dir, probe, source, func() error {
-		if declareErr := r.WriteFile(root, declared, rootMode); declareErr != nil {
-			return fmt.Errorf("testing: %w", declareErr)
+		if declareErr := write(declared); declareErr != nil {
+			return declareErr
 		}
 		out, checkErr = cargo(ctx, dir, "check")
-		if restoreErr := r.WriteFile(root, original, rootMode); restoreErr != nil {
-			return fmt.Errorf("testing: %w", restoreErr)
-		}
-		return nil
+		return write(original)
 	})
 	if err != nil {
 		return false, err
@@ -246,11 +254,8 @@ func tally(stream string) toolchain.TestReport {
 // count is the last word before the label, after a status such as "ok." in
 // the first field. A count that does not parse is zero.
 func number(field, label string) int {
-	words := strings.Fields(strings.TrimSuffix(field, label))
-	if len(words) == 0 {
-		return 0
-	}
-	n, err := strconv.Atoi(words[len(words)-1])
+	text := strings.TrimSuffix(field, label)
+	n, err := strconv.Atoi(text[strings.LastIndexFunc(text, unicode.IsSpace)+1:])
 	if err != nil {
 		return 0
 	}

@@ -40,6 +40,10 @@ const (
 //   - a file-level method without a Receives type, because Rust renders
 //     a method inside the impl block of its type.
 //
+// It also returns an error for a declaration with the deleter of a
+// property, through [lowering.DeleteAccessor], because Rust has no
+// properties.
+//
 // # Allocation contract
 //
 // A declaration that passes through allocates nothing. A fold allocates
@@ -50,6 +54,9 @@ const (
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if m, is := s.(*emit.Method); is && (m.Receives == nil || m.Receives.Spelling == "") {
 		return nil, refuse("a method renders inside the impl block of its type, and %s attaches to none", m.Name)
+	}
+	if err := lowering.DeleteAccessor(rust.Lang, s); err != nil {
+		return nil, err
 	}
 	return nil, lowering.Callables(rust.Lang, s, fold)
 }

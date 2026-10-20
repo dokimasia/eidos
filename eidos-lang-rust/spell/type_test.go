@@ -28,6 +28,9 @@ const (
 	sessionName   = "Session"
 	pageName      = "Page"
 	resultName    = "Result"
+	nodeName      = "Node"
+	listingName   = "Listing"
+	supertypeLine = "rust: a supertype of Rust is a trait"
 )
 
 // The modules of the library types that the cases expect, in the
@@ -53,6 +56,10 @@ const (
 	// of children, the two children's references, and the function
 	// type's spelling.
 	functionAllocs = 7
+	// traitObjectAllocs is a reference to an interface: the box and its
+	// list of arguments, the intersection, its list of elements and its
+	// spelling, and the reference of the trait.
+	traitObjectAllocs = 6
 )
 
 // The declarations of the source language that the cases reference. state
@@ -64,7 +71,18 @@ var (
 	state   = symbol.Identity{
 		Lang: sourceLang, Package: "svc", Owner: sessionName, Name: "State", Kind: symbol.KindEnum,
 	}
+	node    = symbol.Identity{Lang: sourceLang, Package: "svc", Name: nodeName, Kind: symbol.KindInterface}
+	listing = symbol.Identity{Lang: sourceLang, Package: "svc", Name: listingName, Kind: symbol.KindInterface}
 )
+
+// nodeObject is the Rust spelling of a value of the interface Node: the
+// owned trait object Box<dyn Node>.
+func nodeObject() *emit.TypeRef {
+	return &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{{
+		Spelling: "dyn Node", Form: symbol.FormIntersection,
+		Elems: []*emit.TypeRef{{Spelling: nodeName, Target: node}},
+	}}}
+}
 
 // The shapes the cases compose.
 var (
@@ -316,6 +334,33 @@ func TestType(t *testing.T) {
 				give: rules.Reference("Session.State", state),
 				want: &emit.TypeRef{Spelling: "SessionState", Target: state},
 			},
+			{
+				name: "returns a boxed trait object for a reference to an interface",
+				give: rules.Reference(nodeName, node),
+				want: nodeObject(),
+			},
+			{
+				name: "returns an option of a boxed trait object for an optional interface",
+				give: rules.TypeShape{
+					Form:     symbol.FormOptional,
+					Spelling: "*Node",
+					Elems:    []rules.TypeShape{rules.Reference(nodeName, node)},
+				},
+				want: &emit.TypeRef{Spelling: "Option", Args: []*emit.TypeRef{nodeObject()}},
+			},
+			{
+				name: "returns the arguments of an interface inside its trait object",
+				give: rules.Reference(listingName, listing, rules.Reference(nodeName, node)),
+				want: &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{
+					{
+						Spelling: "dyn Listing<Box<dyn Node>>",
+						Form:     symbol.FormIntersection,
+						Elems: []*emit.TypeRef{
+							{Spelling: listingName, Target: listing, Args: []*emit.TypeRef{nodeObject()}},
+						},
+					},
+				}},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -335,6 +380,12 @@ func TestType(t *testing.T) {
 			{
 				name: "returns an error for a union",
 				give: union, want: "rust: a union has no Rust spelling",
+			},
+			{
+				name: "returns an error for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext),
+				want: "rust: the well-known context has no Rust spelling, because Rust has no standard type of the " +
+					"context of a call",
 			},
 			{
 				name: "returns an error for an intersection",
@@ -525,6 +576,73 @@ func TestType(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Supertype", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give rules.TypeShape
+			want *emit.TypeRef
+		}{
+			{
+				name: "returns the bare name of an interface",
+				give: rules.Reference(nodeName, node),
+				want: &emit.TypeRef{Spelling: nodeName, Target: node},
+			},
+			{
+				name: "returns each argument of an interface as a value",
+				give: rules.Reference(listingName, listing, rules.Reference(nodeName, node)),
+				want: &emit.TypeRef{Spelling: listingName, Target: listing, Args: []*emit.TypeRef{nodeObject()}},
+			},
+			{
+				name: "returns the bare name of a sum",
+				give: rules.TypeShape{Form: symbol.FormSum, Spelling: resultName, Ref: result},
+				want: &emit.TypeRef{Spelling: resultName, Target: result},
+			},
+			{
+				name: "returns the trait std::error::Error for the well-known error",
+				give: rules.Reference("error", rules.WellKnownError),
+				want: &emit.TypeRef{Spelling: "std::error::Error"},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spell.Supertype(tt.give, plugin.Policy{})
+				assert.NoError(t, err, "Rust spells the supertype")
+				assert.Equal(t, got, tt.want, "the reference of the supertype")
+			})
+		}
+
+		refusals := []struct {
+			name string
+			give rules.TypeShape
+			want string
+		}{
+			{name: "returns an error for a shape that is no reference", give: text, want: supertypeLine},
+			{
+				name: "returns an error for the well-known timestamp",
+				give: rules.Reference("time.Time", rules.WellKnownTimestamp), want: supertypeLine,
+			},
+			{
+				name: "returns an error about an argument of the supertype",
+				give: rules.Reference(listingName, listing, union),
+				want: "rust: string | int32: a union has no Rust spelling",
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, err := spell.Supertype(tt.give, plugin.Policy{})
+				assert.HasError(t, err, "Rust has no supertype of the shape")
+				assert.HasPrefix(t, err.Error(), tt.want, "the error has the reason for the refusal")
+				assert.Nil(t, got, "a refusal returns no reference")
+			})
+		}
+	})
 }
 
 // Type allocates each reference that it returns, its list of children
@@ -541,6 +659,15 @@ func TestTypeAllocs(t *testing.T) {
 		assert.NoError(t, err, "Type spells "+tt.name)
 		assert.Equal(t, got.Spelling, tt.want, "Type spells "+tt.name+" in Rust")
 	}
+	nodeTo := rules.Reference(nodeName, node)
+	var (
+		got *emit.TypeRef
+		err error
+	)
+	assert.MaxAllocs(t, func() { got, err = spell.Supertype(nodeTo, plugin.Policy{}) }, leafAllocs,
+		"Supertype of an interface allocates the reference")
+	assert.NoError(t, err, "Supertype spells the interface")
+	assert.Equal(t, got.Spelling, nodeName, "Supertype spells the interface bare")
 }
 
 // BenchmarkType measures the spoke that every translation into Rust
@@ -562,6 +689,21 @@ func BenchmarkType(b *testing.B) {
 				assert.Equal(b, got.Spelling, tt.want, "Type spells "+tt.name+" in Rust")
 			})
 		}
+	})
+
+	b.Run("Supertype", func(b *testing.B) {
+		nodeTo := rules.Reference(nodeName, node)
+		c := bench.Start(b).MaxAllocs(leafAllocs)
+		defer c.End()
+		var (
+			got *emit.TypeRef
+			err error
+		)
+		for c.Loop() {
+			got, err = spell.Supertype(nodeTo, plugin.Policy{})
+		}
+		assert.NoError(b, err, "Supertype spells the interface")
+		assert.Equal(b, got.Spelling, nodeName, "Supertype spells the interface bare")
 	})
 }
 
@@ -592,6 +734,10 @@ func typeCalls() []typeCall {
 				Split:    1,
 				Elems:    []rules.TypeShape{text, int64Of},
 			},
+		},
+		{
+			name: "a reference to an interface", allocs: traitObjectAllocs, want: "Box",
+			give: rules.Reference(nodeName, node),
 		},
 	}
 }

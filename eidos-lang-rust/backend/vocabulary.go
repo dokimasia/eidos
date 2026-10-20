@@ -25,6 +25,8 @@ const (
 	FuncDocs = render.HelperDocs
 	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
 	// FuncSpellValue is the template name of [Speller.SpellValue].
@@ -108,8 +110,19 @@ const (
 	discardName     = "_"
 )
 
-// pathSep separates the segments of a Rust path.
-const pathSep = "::"
+// pathSep separates the segments of a Rust path, and moduleSep those of the
+// path of a module in the model, as in std/io.
+const (
+	pathSep   = "::"
+	moduleSep = "/"
+)
+
+// The keywords that open a path at the crate root and at the parent module.
+// A path from self or Self opens at the module or at the type of the item.
+const (
+	crateKeyword = "crate"
+	superKeyword = "super"
+)
 
 // docMark starts a line of an outer doc comment, and attrOpen and
 // attrClose enclose an outer attribute. reprOpen and reprClose enclose the
@@ -505,20 +518,47 @@ func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
 // It never returns an error.
 func (s Speller) qualify(t *emit.TypeRef) (string, error) { return s.use(t), nil }
 
-// use returns the spelling of the named reference t through its use. The
-// first segment of a path is the item that the module declares, and the
-// rest is a path inside that item.
+// use returns the spelling of the named reference t through its use. A path
+// splits into the module part, the item that the module declares, and the
+// associated items inside that item, one for each owner of a target of
+// Rust, as Key is inside Named in Named::Key.
+//
+//   - A path from crate, self, super, Self or :: takes no use.
+//   - A module part that names the module of t, as io of io::Error names
+//     std/io, starts at a module. The use binds that module from its
+//     parent, and a module part from a crate, as std::collections of
+//     std::collections::HashMap, takes no use.
+//   - Every other path starts at the item that the module declares, as Row
+//     of Row::Key does, and the use binds that item.
+//
+// use allocates what the import set allocates for a new use, and the path
+// behind a bound first segment.
 func (s Speller) use(t *emit.TypeRef) string {
 	module := spellref.PackageOf(t, rust.Lang)
-	if module == "" {
+	head, rest, qualified := strings.Cut(t.Spelling, pathSep)
+	switch {
+	case module == "":
+		return t.Spelling
+	case !qualified:
+		return s.set.BindItem(module, head, false)
+	case head == "" || head == crateKeyword || head == selfName || head == superKeyword || head == selfType:
 		return t.Spelling
 	}
-	head, rest, qualified := strings.Cut(t.Spelling, pathSep)
-	local := s.set.BindItem(module, head, false)
-	if !qualified {
-		return local
+	depth := 0
+	if t.Target.Lang == rust.Lang && t.Target.Owner != "" {
+		depth = 1 + strings.Count(t.Target.Owner, symbol.OwnerSep)
 	}
-	return local + pathSep + rest
+	prefix, found := t.Spelling, true
+	for i := 0; i <= depth && found; i++ {
+		prefix, _, found = strings.CutLast(prefix, pathSep)
+	}
+	if parent, names := modulePath(prefix, module); found && names {
+		if parent == "" {
+			return t.Spelling
+		}
+		return s.set.BindItem(parent, head, false) + pathSep + rest
+	}
+	return s.set.BindItem(module, head, false) + pathSep + rest
 }
 
 // typeParams writes the type parameter list ps for the position at.
@@ -629,13 +669,14 @@ const (
 // set, the import set of one file. Every helper takes a
 // fixed list of arguments, because text/template allocates the list of a
 // variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty-nine helpers in four allocations,
-// and the fourteen bound helpers of the speller.
+// Funcs allocates the map of thirty helpers in four allocations, and the
+// fourteen bound helpers of the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:        Docs,
 		FuncMemberDocs:  MemberDocs,
+		FuncWrapDocs:    WrapDocs,
 		FuncSpell:       s.Spell,
 		FuncSpellValue:  s.SpellValue,
 		FuncTypeParams:  s.TypeParams,
@@ -678,6 +719,14 @@ func Docs(lines []string) string {
 // block. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.LineDocs(lines, docMark, memberIndent)
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that [Docs]
+// and [MemberDocs] write. rustdoc reads the documentation as CommonMark, so
+// the wrap starts no line with a block opener. It allocates what
+// [textfmt.Wrap] allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupMarkdown)
 }
 
 // TypeNames writes the names of the type parameters ps alone, in the
@@ -928,6 +977,32 @@ func complete(t *emit.TypeRef) bool {
 // a type parameter.
 func typeParameter(a *emit.TypeRef) bool {
 	return a.Target.Kind == symbol.KindTypeParam
+}
+
+// modulePath reports whether the path prefix names the module path module:
+// each segment of prefix, from the last, is the segment of module at the same
+// place from its end, as io names std/io and std::collections names
+// std/collections. It also returns the path of the module above the module
+// that the first segment of prefix names, which is empty where that segment
+// names a crate. It allocates nothing.
+func modulePath(prefix, module string) (parent string, names bool) {
+	for {
+		before, segment, more := strings.CutLast(prefix, pathSep)
+		if !more {
+			segment = before
+		}
+		up, name, nested := strings.CutLast(module, moduleSep)
+		if !nested {
+			up, name = "", up
+		}
+		switch {
+		case segment != name:
+			return "", false
+		case !more:
+			return up, true
+		}
+		prefix, module = before, up
+	}
 }
 
 // bareName returns the spelling of t where t is a bare name that the

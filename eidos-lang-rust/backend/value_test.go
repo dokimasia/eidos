@@ -16,14 +16,36 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The value fixture: the modules the values name and a function of
-// one of them.
+// The value fixture: the modules the values name, a function of one of
+// them, an enum with a variant, and a type of the standard library with
+// its module.
 const (
-	unitsModule = "example/units"
-	utilModule  = "example/util"
-	makeName    = "make"
-	weightName  = "Weight"
+	unitsModule  = "example/units"
+	utilModule   = "example/util"
+	makeName     = "make"
+	weightName   = "Weight"
+	colorName    = "Color"
+	redName      = "Red"
+	timeModule   = "std/time"
+	durationName = "Duration"
 )
+
+// The allocations of a value.
+const (
+	// literalAllocs is an integer literal, which Rust writes as its text.
+	literalAllocs = 0
+	// callAllocs is a call of a function of another module with one
+	// argument, in a file that uses the function already: the text of the
+	// call.
+	callAllocs = 1
+	// funcAllocs is a function with one parameter and one result: the list
+	// of the spelled results, and the text of the closure.
+	funcAllocs = 2
+)
+
+// makeCall is the call make(1) of the function make of the module util.
+// The specs only read it.
+var makeCall = emit.Call(valueFn(utilModule, makeName), emit.Literal(emit.LiteralInt, "1"))
 
 // Every value spelling is pinned, for the reason the statement
 // spellings are: the text is spliced into generated bodies, and a
@@ -119,15 +141,43 @@ func TestValue(t *testing.T) {
 				give: emit.Raw("golang", "Row{}"), want: "written in golang", wantErr: true,
 			},
 			{
-				name: "returns a value error for a map",
-				give: emit.Composite(&emit.TypeRef{Spelling: "HashMap<String, i64>", Form: symbol.FormMap},
-					emit.KeyedEntry(emit.Literal(emit.LiteralString, "k"), integer("2"))),
-				want: "no map literal", wantErr: true,
+				name: "writes a map as the call of from with an array of pairs",
+				give: emit.Composite(&emit.TypeRef{
+					Spelling: hashMapName, Package: collectionsModule, Args: []*emit.TypeRef{ref("String"), ref("i64")},
+				},
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, "k"), integer("2")),
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, "j"), integer("3"))),
+				want: `HashMap::<String, i64>::from([("k", 2), ("j", 3)])`,
 			},
 			{
-				name: "returns a value error for a positional element in a struct literal",
-				give: emit.Composite(valueRef(rowName, storeModule, rowName), emit.Element(integer("1"))),
-				want: "names every field", wantErr: true,
+				name: "writes the elements of a tuple struct in parentheses",
+				give: emit.Composite(valueRef(rowName, storeModule, rowName), emit.Element(integer("1")),
+					emit.Element(integer("2"))),
+				want: "Row(1, 2)",
+			},
+			{
+				name: "writes a tuple of two members as a tuple expression",
+				give: emit.Composite(&emit.TypeRef{Spelling: "(i64, i64)", Form: symbol.FormTuple},
+					emit.Element(integer("1")), emit.Element(integer("2"))),
+				want: "(1, 2)",
+			},
+			{
+				name: "writes a tuple of one member with its trailing comma",
+				give: emit.Composite(&emit.TypeRef{Spelling: "(i64,)", Form: symbol.FormTuple},
+					emit.Element(integer("1"))),
+				want: "(1,)",
+			},
+			{
+				name: "returns a value error for a composite of named fields and elements",
+				give: emit.Composite(valueRef(rowName, storeModule, rowName), emit.NamedField("id", integer("1")),
+					emit.Element(integer("2"))),
+				want: "mixes the forms of its entries", wantErr: true,
+			},
+			{
+				name: "returns a value error for a composite of keyed entries and elements",
+				give: emit.Composite(&emit.TypeRef{Spelling: hashMapName, Package: collectionsModule},
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, "k"), integer("2")), emit.Element(integer("3"))),
+				want: "mixes the forms of its entries", wantErr: true,
 			},
 			{
 				name: "returns a value error for a conversion to String",
@@ -150,6 +200,47 @@ func TestValue(t *testing.T) {
 				name: "returns a value error for a construction",
 				give: emit.Construction(valueRef(rowName, storeModule, rowName)),
 				want: "has no construction of Row", wantErr: true,
+			},
+			{
+				name: "writes a function as a closure that returns its result",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "fn(i64) -> i64", Form: symbol.FormFunc, Split: 1,
+					Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+				}, integer("0")),
+				want: "|_| 0",
+			},
+			{
+				name: "writes a function without parameters as a closure without parameters",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "fn() -> i64", Form: symbol.FormFunc, Elems: []*emit.TypeRef{ref("i64")},
+				}, integer("0")),
+				want: "|| 0",
+			},
+			{
+				name: "writes a function without results as a closure with an empty block",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "fn(i64, i64)", Form: symbol.FormFunc, Split: 2,
+					Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+				}),
+				want: "|_, _| {}",
+			},
+			{
+				name: "writes the results of a function of two results as a tuple",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "dyn Fn() -> (i64, i64)", Form: symbol.FormFunc,
+					Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+				}, integer("0"), integer("1")),
+				want: "|| (0, 1)",
+			},
+			{
+				name: "returns a value error for a function of a type that is not a function type",
+				give: emit.Func(generic("Box", &emit.TypeRef{Spelling: "dyn Fn(i64) -> i64", Form: symbol.FormFunc})),
+				want: "Box is not one", wantErr: true,
+			},
+			{
+				name: "returns a value error for a make",
+				give: emit.Make(&emit.TypeRef{Spelling: "Receiver<i64>", Form: symbol.FormStream}),
+				want: "no make of Receiver<i64>", wantErr: true,
 			},
 		}
 		for _, tt := range tests {
@@ -195,6 +286,28 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilModule, Name: limitName}}, "the constant's use")
 		})
 
+		t.Run("writes a variant through its enum", func(t *testing.T) {
+			t.Parallel()
+
+			got, set, err := returned(t, emit.Name(symbol.Identity{
+				Lang: rust.Lang, Package: unitsModule, Owner: colorName, Name: redName, Kind: symbol.KindEnumVariant,
+			}))
+			assert.NoError(t, err, "the name spells")
+			assert.Equal(t, got, colorName+"::"+redName, "the variant is a path through its enum")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsModule, Name: colorName}},
+				"the use binds the enum")
+		})
+
+		t.Run("writes an associated function through its type", func(t *testing.T) {
+			t.Parallel()
+
+			got, set, err := returned(t, emit.Call(valueFn(timeModule, durationName+"::from_secs"), integer("1")))
+			assert.NoError(t, err, "the call spells")
+			assert.Equal(t, got, durationName+"::from_secs(1)", "the function is a path through its type")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeModule, Name: durationName}},
+				"the use binds the type")
+		})
+
 		t.Run("uses the generic item a struct literal names", func(t *testing.T) {
 			t.Parallel()
 
@@ -233,6 +346,84 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Len(), 0, "a literal names no module")
 		})
 	})
+
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes a value as the scaffold writes it", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Value(makeCall, &render.ImportSet{})
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, makeName+"(1)", "the Rust spelling")
+		})
+
+		t.Run("uses the function a call names", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := backend.Value(makeCall, &set)
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilModule, Name: makeName}}, "the function's use")
+		})
+
+		t.Run("returns a value error for a value that Rust cannot spell", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Value(emit.Construction(valueRef(rowName, storeModule, rowName)), &render.ImportSet{})
+			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+			assert.Equal(t, refused.Lang, string(rust.Lang), "naming the target")
+		})
+	})
+}
+
+// A literal allocates nothing, a call allocates its text, and a function
+// allocates the list of its results and its text. The ordinary run, which
+// runs no benchmark, checks those ceilings here.
+func TestValueAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls())
+}
+
+// BenchmarkValue measures the spelling of one value that a template
+// writes.
+func BenchmarkValue(b *testing.B) {
+	benchCalls(b, valueCalls())
+}
+
+// valueCalls returns a call of Value over an integer literal, over a call
+// of a function that the file uses already, and over a function with one
+// parameter and one result.
+func valueCalls() []allocCall {
+	literal := integer("42")
+	fn := emit.Func(&emit.TypeRef{
+		Spelling: "fn(i64) -> i64", Form: symbol.FormFunc, Split: 1,
+		Elems: []*emit.TypeRef{ref("i64"), ref("i64")},
+	}, literal)
+	set := &render.ImportSet{}
+	var (
+		out string
+		err error
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "Value spells the value")
+			assert.Equal(tb, out, want, "Value writes the Rust spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "Value", caseName: "an integer", allocs: literalAllocs,
+			call: func() { out, err = backend.Value(literal, set) }, check: spells("42"),
+		},
+		{
+			name: "Value", caseName: "a call of another module", allocs: callAllocs,
+			call: func() { out, err = backend.Value(makeCall, set) }, check: spells(makeName + "(1)"),
+		},
+		{
+			name: "Value", caseName: "a function with one result", allocs: funcAllocs,
+			call: func() { out, err = backend.Value(fn, set) }, check: spells("|_| 42"),
+		},
+	}
 }
 
 // valueRef returns a resolved reference to an item of one module.

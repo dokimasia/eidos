@@ -22,6 +22,10 @@ const (
 	nPackage  = crateName + "/m/n"
 )
 
+// ownerID is the type whose body contains the references of the cases of
+// Self.
+var ownerID = symbol.Identity{Lang: frontend.Lang, Package: crateName, Name: "Store", Kind: symbol.KindStruct}
+
 // Resolution follows Rust's scope order through the bindings the parse
 // recorded, so the tiers each spelling probes are pinned.
 func TestScope(t *testing.T) {
@@ -126,6 +130,38 @@ func TestScope(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, resolved(scopeIn(t, "", crateName), "Self::Item"), "an associated item of a type")
+		})
+
+		t.Run("probes the owner of the scope for Self", func(t *testing.T) {
+			t.Parallel()
+
+			scope := scopeIn(t, "", crateName)
+			scope.Owner = ownerID
+			assert.Equal(t, resolved(scope, "Self"), plugin.Candidates{{ownerID}}, "the type whose body contains it")
+		})
+
+		t.Run("probes the associated item of the owner for a path from Self", func(t *testing.T) {
+			t.Parallel()
+
+			scope := scopeIn(t, "", crateName)
+			scope.Owner = ownerID
+			assert.Equal(t, resolved(scope, "Self::Item"), plugin.Candidates{{
+				{Lang: frontend.Lang, Package: crateName, Owner: ownerID.Name, Name: "Item"},
+			}}, "the item that the owner declares")
+		})
+
+		t.Run("resolves nothing for Self outside a type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, resolved(scopeIn(t, "", crateName), "Self"), "a free function has no Self")
+		})
+
+		t.Run("resolves nothing for a longer path from Self", func(t *testing.T) {
+			t.Parallel()
+
+			scope := scopeIn(t, "", crateName)
+			scope.Owner = ownerID
+			assert.Empty(t, resolved(scope, "Self::Item::X"), "the item of an associated type is unknown")
 		})
 
 		t.Run("probes a declared child module for a path from its name", func(t *testing.T) {

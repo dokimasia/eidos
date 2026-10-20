@@ -29,7 +29,7 @@ pub trait Right {}
 pub struct Boxed<T> {
     pub v: T,
 }
-pub fn shapes(a: &u8, b: [u8; 4], c: &[u8], d: (u8, bool), e: fn(u8) -> bool, g: Boxed<dyn Left + Right>, h: (u8,), m: &mut u8, n: &mut [u8]) {}
+pub fn shapes(a: &u8, b: [u8; 4], c: &[u8], d: (u8, bool), e: fn(u8) -> bool, g: Boxed<dyn Left + Right>, h: (u8,), m: &mut u8, n: &mut [u8], f: fn(u8), p: &Boxed<u8>) {}
 `
 )
 
@@ -58,6 +58,8 @@ const (
 	singletonParam = "h"
 	mutParam       = "m"
 	mutSliceParam  = "n"
+	procParam      = "f"
+	genericParam   = "p"
 )
 
 // refShape is what the parity cases compare of a reference: everything but
@@ -115,6 +117,8 @@ func TestLanguage(t *testing.T) {
 			{name: "writes a tuple of one member as the frontend records it", param: singletonParam},
 			{name: "writes a mutable borrow as the frontend records it", param: mutParam},
 			{name: "writes a mutable borrow of a slice as the frontend records it", param: mutSliceParam},
+			{name: "writes a function pointer without a result as the frontend records it", param: procParam},
+			{name: "writes a borrow of a generic type as the frontend records it", param: genericParam},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -136,6 +140,26 @@ func TestLanguage(t *testing.T) {
 
 			_, err := rusttesting.Language{}.Spell(nodetest.Optional(nodetest.Named(byteName)))
 			assert.HasError(t, err, "Rust has no optional type syntax")
+		})
+
+		t.Run("returns an error for a function type of two results", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := rusttesting.Language{}.Spell(nodetest.Func(
+				[]*node.TypeRef{nodetest.Named(byteName)},
+				[]*node.TypeRef{nodetest.Named(byteName), nodetest.Named(boolName)},
+			))
+			assert.HasError(t, err, "a function type of Rust has one return type at most")
+		})
+
+		t.Run("writes a child that the reference does not state as nothing", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := rusttesting.Language{}.Spell(&node.TypeRef{
+				Form: symbol.FormBorrow, Elems: []*node.TypeRef{nil},
+			})
+			assert.NoError(t, err, "a borrow spells")
+			assert.Equal(t, got, "&", "the borrow of no child")
 		})
 	})
 
@@ -206,6 +230,8 @@ func builtParams(tb testing.TB) map[string]refShape {
 		{Name: singletonParam, Type: nodetest.Tuple(nodetest.Named(byteName))},
 		{Name: mutParam, Type: borrowOf(symbol.MutabilityMutable, nodetest.Named(byteName))},
 		{Name: mutSliceParam, Type: borrowOf(symbol.MutabilityMutable, nodetest.List(nodetest.Named(byteName)))},
+		{Name: procParam, Type: nodetest.Func([]*node.TypeRef{nodetest.Named(byteName)}, nil)},
+		{Name: genericParam, Type: borrowOf(symbol.MutabilityImmutable, b.Ref(boxed, nodetest.Named(byteName)))},
 	}}
 	b.File(parityPackage, parityFile, left, right, boxed, shapes)
 	b.Build(tb)

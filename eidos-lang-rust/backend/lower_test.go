@@ -174,13 +174,17 @@ func TestLower(t *testing.T) {
 				name: "returns an error for a trait whose method announces two failures",
 				give: traitOf(&emit.Method{Name: closeName, Throws: twoFailures()}),
 			},
+			{
+				name: "returns an error for a struct with the deleter of a property",
+				give: structOf(&emit.Method{Name: closeName, Accessor: symbol.AccessorDelete}),
+			},
 		}
 		for _, tt := range refusals {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				_, err := backend.Lower(tt.give)
-				assert.HasError(t, err, "a result or an impl block cannot state it")
+				assert.HasError(t, err, "a result, an impl block or a field cannot state it")
 			})
 		}
 

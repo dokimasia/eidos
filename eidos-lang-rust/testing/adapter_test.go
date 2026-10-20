@@ -5,6 +5,7 @@ package testing_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,6 +29,17 @@ const (
 	plainType    = "Plain"
 	readerTrait  = "Reader"
 	nowhereTrait = "Nowhere"
+)
+
+// The directory that the cases of a missing project name below their
+// temporary directory, the file whose directory takes the place of the crate
+// root, and the modes of a crate root that the probe cannot write and of
+// the root that the cleanup restores.
+const (
+	missingDir   = "missing"
+	rootDirFile  = "src/lib.rs/mod.rs"
+	readOnlyMode = 0o444
+	writableMode = 0o644
 )
 
 // The sources of the fixtures.
@@ -64,6 +76,14 @@ fn disagrees() {
 }
 `
 	typeErrorSource = "pub fn value() -> i32 {\n    \"text\"\n}\n"
+	// printedSummarySource is a failing test that prints a summary line whose
+	// count is a word, so the output of its failure contains the line.
+	printedSummarySource = `#[test]
+fn prints() {
+    println!("test result: many passed");
+    panic!("the line is in the output of a failure");
+}
+`
 )
 
 // TestAdapter checks the adapter through the assertions of the kernel, so
@@ -192,6 +212,13 @@ func TestAdapter(t *testing.T) {
 			assert.Contains(t, err.Error(), "no Rust file", "the refusal names why")
 		})
 
+		t.Run("returns the error of the walk for a directory that does not exist", func(t *testing.T) {
+			t.Parallel()
+
+			err := adapter().Parse(t.Context(), filepath.Join(t.TempDir(), missingDir))
+			assert.ErrorIs(t, err, fs.ErrNotExist, "the walk finds no directory to read")
+		})
+
 		t.Run("returns the error of the context for a context that ended", func(t *testing.T) {
 			t.Parallel()
 
@@ -307,6 +334,18 @@ func TestAdapter(t *testing.T) {
 			report, err := adapter().RunTests(t.Context(), laidOut(t, only(libFile, "pub struct Row;\n")))
 			assert.NoError(t, err, "the run completes")
 			assert.False(t, report.OK(), "a run of nothing is not a pass")
+		})
+
+		t.Run("reads a count of a summary line that does not parse as zero", func(t *testing.T) {
+			t.Parallel()
+
+			if !toolchain.Require(t, adapter()) {
+				return
+			}
+			report, err := adapter().RunTests(t.Context(), laidOut(t, with(rowTestFile, printedSummarySource)))
+			assert.NoError(t, err, "the run completes")
+			expect.Equal(t, report.Passed, 0, "the printed line counts no test")
+			expect.Equal(t, report.Failed, 1, "the test that prints it fails")
 		})
 
 		t.Run("returns an error for a crate that does not compile", func(t *testing.T) {
@@ -429,6 +468,38 @@ func TestAdapter(t *testing.T) {
 				_, err := adapter().Satisfies(ctx, dir, rowType, readerTrait)
 				return err
 			}, "an ended context asks the compiler nothing")
+		})
+
+		t.Run("returns an error for a directory that does not exist", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := adapter().Satisfies(t.Context(), filepath.Join(t.TempDir(), missingDir), rowType, readerTrait)
+			assert.ErrorIs(t, err, fs.ErrNotExist, "the directory opens before cargo runs")
+		})
+
+		t.Run("returns an error for a crate root that cannot be read", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := adapter().Satisfies(t.Context(), laidOut(t, only(rootDirFile, libSource)), rowType, readerTrait)
+			assert.HasError(t, err, "a directory in place of the root has no source to restore")
+			assert.HasPrefix(t, err.Error(), "testing: ", "the refusal names the package")
+		})
+
+		t.Run("returns an error for a crate root that cannot be written", func(t *testing.T) {
+			t.Parallel()
+
+			if !toolchain.Require(t, adapter()) {
+				return
+			}
+			if os.Geteuid() == 0 {
+				t.Skip("the superuser writes a read-only file")
+			}
+			dir := laidOut(t, healthy())
+			root := filepath.Join(dir, filepath.FromSlash(libFile))
+			assert.NoError(t, os.Chmod(root, readOnlyMode), "the root becomes read-only")
+			t.Cleanup(func() { assert.NoError(t, os.Chmod(root, writableMode), "the cleanup removes the root") })
+			_, err := adapter().Satisfies(t.Context(), dir, rowType, readerTrait)
+			assert.ErrorIs(t, err, fs.ErrPermission, "the probe cannot declare its module")
 		})
 	})
 }

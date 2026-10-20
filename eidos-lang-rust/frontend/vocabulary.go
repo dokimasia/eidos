@@ -38,7 +38,7 @@ type vocabulary struct {
 
 	// Types.
 	genericType, referenceType, arrayType, tupleType, functionType, dynamicType, abstractType,
-	boundedType, useBounds treesitter.Kind
+	boundedType, useBounds, typeBinding treesitter.Kind
 
 	// Use trees.
 	scopedUseList, useList, useAsClause, useWildcard treesitter.Kind
@@ -117,6 +117,7 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		abstractType:  g.Kind("abstract_type"),
 		boundedType:   g.Kind("bounded_type"),
 		useBounds:     g.Kind("use_bounds"),
+		typeBinding:   g.Kind("type_binding"),
 
 		scopedUseList: g.Kind("scoped_use_list"),
 		useList:       g.Kind("use_list"),

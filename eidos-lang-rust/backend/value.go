@@ -27,6 +27,20 @@ const (
 	// emptyBraces closes a struct literal that names no field, which
 	// Rust accepts for every struct that has no field.
 	emptyBraces = " {}"
+	// mapFrom is the function of a map type of the standard library that
+	// builds a map from an array of pairs.
+	mapFrom = "from"
+	// closureOpen and closureClose enclose the parameters of a closure,
+	// and closureParam is a parameter that the body of the closure does
+	// not read.
+	closureOpen  = "|"
+	closureClose = "| "
+	closureParam = "_"
+	// emptyBlock is the body of a closure without results, and listSep
+	// separates the parameters of a closure and the results of a closure
+	// that returns a tuple.
+	emptyBlock = "{}"
+	listSep    = ", "
 	// unicodeOpen opens the braced Unicode escape of a control
 	// character, and unicodeDigits is the most hex digits a Unicode
 	// scalar value takes.
@@ -71,13 +85,25 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 
 // Callee spells the function of a call or the item of a name value under
 // the name that its use binds. The use binds the name, so nothing
-// qualifies it in the value. A declaration in no module, and an identity
-// without a name, spell their own name.
+// qualifies it in the value. A member of a type, such as a variant of an
+// enum, spells its path through its owner, as Color::Red, and an associated
+// item whose name holds its path spells it, as Duration::from_secs. The use
+// binds the first segment of the path, the type. A declaration in no
+// module, and an identity without a name, spell their own path.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	if id.Package == "" || id.Name == "" {
-		return id.Name, nil
+	path := id.Name
+	if id.Owner != "" {
+		path = strings.ReplaceAll(id.Owner, symbol.OwnerSep, pathSep) + pathSep + id.Name
 	}
-	return t.set.BindItem(id.Package, id.Name, false), nil
+	if id.Package == "" || id.Name == "" {
+		return path, nil
+	}
+	head, rest, nested := strings.Cut(path, pathSep)
+	bound := t.set.BindItem(id.Package, head, false)
+	if !nested {
+		return bound, nil
+	}
+	return bound + pathSep + rest, nil
 }
 
 // Conversion spells a value converted to a type: a cast to a numeric
@@ -97,43 +123,69 @@ func (t target) Conversion(ref *emit.TypeRef, typ, inner string) (string, error)
 	return typ + "(" + inner + ")", nil
 }
 
-// Composite spells a struct literal for a record and a vector
-// literal for a list. A struct literal that names no field closes on
-// empty braces, which Rust accepts for every struct without fields,
-// a unit struct included. A map is refused: Rust states no map
-// literal, and a collection built from an array of pairs is a call
-// the vocabulary does not express.
+// Composite spells the literal of a composite by its entries:
+//
+//   - keyed entries are a map, which Rust builds from an array of pairs
+//     through the function from of the map type, as
+//     HashMap::<String, i32>::from([("a".to_string(), 1)]);
+//   - the elements of a list are a vector literal, and the elements of an
+//     array an array expression;
+//   - the elements of a tuple are a tuple expression, with the comma that a
+//     tuple of one member needs;
+//   - the elements of any other type are the literal of a tuple struct, as
+//     Point(1, 2);
+//   - named fields are a struct literal. A struct literal that names no
+//     field closes on empty braces, which Rust accepts for every struct
+//     without fields, a unit struct included.
+//
+// A composite that mixes keyed entries, elements and named fields is
+// refused, because no literal of Rust has two of them.
 func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
+	keys, names := 0, 0
 	for _, e := range entries {
-		if e.Key != "" {
-			return "", render.RefuseValue(t.Lang(),
-				"Rust spells no map literal, and a %s value has a keyed entry", typ)
+		switch {
+		case e.Key != "":
+			keys++
+		case e.Name != "":
+			names++
 		}
-	}
-	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray) {
-		parts := make([]string, 0, len(entries))
-		for _, e := range entries {
-			parts = append(parts, e.Value)
-		}
-		if ref.Form == symbol.FormArray {
-			return "[" + strings.Join(parts, ", ") + "]", nil
-		}
-		return vecMacro + strings.Join(parts, ", ") + "]", nil
 	}
 	parts := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.Name == "" {
-			return "", render.RefuseValue(t.Lang(),
-				"a %s value has a positional element, and a struct literal names every field", typ)
+	switch {
+	case keys > 0 && keys < len(entries), names > 0 && names < len(entries):
+		return "", render.RefuseValue(t.Lang(),
+			"a %s value mixes the forms of its entries, and a literal of Rust has one form", typ)
+	case keys > 0:
+		for _, e := range entries {
+			parts = append(parts, "("+e.Key+", "+e.Value+")")
 		}
-		parts = append(parts, e.Name+": "+e.Value)
+		return typ + pathSep + mapFrom + "([" + strings.Join(parts, ", ") + "])", nil
+	case names > 0:
+		for _, e := range entries {
+			parts = append(parts, e.Name+": "+e.Value)
+		}
+		return typ + " { " + strings.Join(parts, ", ") + " }", nil
 	}
-	if len(parts) == 0 {
+	for _, e := range entries {
+		parts = append(parts, e.Value)
+	}
+	elements := strings.Join(parts, ", ")
+	switch {
+	case ref != nil && ref.Form == symbol.FormArray:
+		return "[" + elements + "]", nil
+	case ref != nil && ref.Form == symbol.FormList:
+		return vecMacro + elements + "]", nil
+	case ref != nil && ref.Form == symbol.FormTuple && len(parts) == 1:
+		return "(" + elements + ",)", nil
+	case ref != nil && ref.Form == symbol.FormTuple:
+		return "(" + elements + ")", nil
+	case len(parts) == 0:
 		return typ + emptyBraces, nil
+	default:
+		return typ + "(" + elements + ")", nil
 	}
-	return typ + " { " + strings.Join(parts, ", ") + " }", nil
 }
 
 // Address spells a shared borrow, which is Rust's address of a
@@ -152,6 +204,69 @@ func (target) Address(inner emit.Value, spelled string) (string, error) {
 func (t target) Construction(ref *emit.TypeRef, _ []string) (string, error) {
 	return "", render.RefuseValue(t.Lang(),
 		"Rust builds a value through a struct literal or a call, and has no construction of %s", ref.Spelling)
+}
+
+// Func spells a closure of a function type, as |_| 0. It writes a
+// wildcard pattern for each parameter of the type. The body of the
+// closure is the result, and a function without results has an empty
+// block, as |_, _| {}. A function of two or more results returns them as
+// a tuple, because its function type returns a tuple. A closure without captures coerces to a function pointer. Func
+// does not write a type, so the file does not use anything for the
+// closure. A reference that is not a function type refuses, such as the
+// Box of a trait object, whose value is a call that boxes a closure.
+func (t target) Func(ref *emit.TypeRef, results []string) (string, error) {
+	if ref.Form != symbol.FormFunc {
+		return "", render.RefuseValue(t.Lang(),
+			"Rust writes a closure of a function type, and %s is not one", ref.Spelling)
+	}
+	params := max(ref.Split, 0)
+	n := len(closureOpen) + params*(len(closureParam)+len(listSep)) + len(closureClose) + len(emptyBlock) + len("()")
+	for _, r := range results {
+		n += len(r) + len(listSep)
+	}
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(closureOpen)
+	for i := range params {
+		if i > 0 {
+			b.WriteString(listSep)
+		}
+		b.WriteString(closureParam)
+	}
+	b.WriteString(closureClose)
+	switch len(results) {
+	case 0:
+		b.WriteString(emptyBlock)
+	case 1:
+		b.WriteString(results[0])
+	default:
+		b.WriteByte('(')
+		for i, r := range results {
+			if i > 0 {
+				b.WriteString(listSep)
+			}
+			b.WriteString(r)
+		}
+		b.WriteByte(')')
+	}
+	return b.String(), nil
+}
+
+// Make refuses: Rust has no make.
+func (t target) Make(_ *emit.TypeRef, typ string) (string, error) {
+	return "", render.RefuseValue(t.Lang(), "Rust has no make of %s", typ)
+}
+
+// Value spells one value of the value tree as Rust, through a target that
+// uses in set the items that the references and the callees of the value
+// name. The value builtin calls it, so a template writes a value as a
+// body of the same file writes it. A value that Rust has no form for
+// returns a [render.ValueError].
+//
+// Value allocates what [scaffold.Value] allocates: the text of each part
+// of the value that it joins. A literal does not allocate.
+func Value(v emit.Value, set *render.ImportSet) (string, error) {
+	return scaffold.Value(target{set: set}, v)
 }
 
 // number spells a number for Rust. A float written without a

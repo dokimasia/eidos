@@ -450,6 +450,43 @@ func TestDecl(t *testing.T) {
 			})
 		}
 
+		borrows := []struct {
+			name           string
+			give           string
+			wantMutability symbol.Mutability
+		}{
+			{
+				name: "lowers the receiver of &self as an immutable borrow of Self", give: "&self",
+				wantMutability: symbol.MutabilityImmutable,
+			},
+			{
+				name: "lowers the receiver of &mut self as a mutable borrow of Self", give: "&mut self",
+				wantMutability: symbol.MutabilityMutable,
+			},
+			{
+				name: "lowers the receiver of a self with a lifetime as a borrow of Self", give: "&'a mut self",
+				wantMutability: symbol.MutabilityMutable,
+			},
+		}
+		for _, tt := range borrows {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				recv := traitOf(t, "    fn f("+tt.give+");\n").Methods[0].Receiver.Type
+				expect.Equal(t, recv.Form, symbol.FormBorrow, "the receiver is a borrow")
+				expect.Equal(t, recv.Mutability, tt.wantMutability, "the mutability of the borrow")
+				expect.Equal(t, spellingsOf(recv.Elems), []string{"Self"}, "the borrow of Self")
+			})
+		}
+
+		t.Run("lowers the receiver of mut self as Self without a borrow", func(t *testing.T) {
+			t.Parallel()
+
+			recv := traitOf(t, "    fn f(mut self);\n").Methods[0].Receiver.Type
+			expect.Equal(t, recv.Form, symbol.FormNamed, "a binding of a value")
+			expect.Empty(t, recv.Elems, "Self has no children")
+		})
+
 		t.Run("lowers a typed self parameter as the receiver of its type", func(t *testing.T) {
 			t.Parallel()
 

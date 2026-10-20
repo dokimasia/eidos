@@ -40,6 +40,9 @@ import (
 //   - A field that another type receives refuses, because Rust has no
 //     extension field. The annotations of a file refuse, because the
 //     skeleton does not write the header that a generator states.
+//   - The passing of a parameter takes the [render.Holds] verdict, because
+//     a Rust caller passes every argument by position. A wire name rejects, because a Rust file writes
+//     the key of a wire format in a serde attribute.
 //
 // Coverage builds the table on every call, which the caller keeps: four
 // allocations of the fact map, and two of the exception map with two for
@@ -70,6 +73,8 @@ func Coverage() render.Coverage {
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Refuses,
 			symbol.FactVariadic:         render.Refuses,
+			symbol.FactPassing:          render.Holds,
+			symbol.FactWire:             render.Rejects,
 			symbol.FactNamedReturn:      render.Refuses,
 			symbol.FactFields:           render.Refuses,
 			symbol.FactMethods:          render.Refuses,

@@ -186,7 +186,23 @@ func (s *scope) first(module []string) string {
 // to the names that the glob imports of the module import. A path refers
 // to its last segment in the module of its other segments, as
 // [scope.packages] places a module path.
+//
+// Self refers to the owner of the scope: the struct, the enum or the trait
+// whose definition, impl block or trait body contains the reference. A path
+// of one item from Self, as Self::Item, refers to the associated item of
+// the name that the owner declares. Rust declares no type inside another
+// type, so the owner of the item is the name of the owner. Neither resolves
+// outside a type, and a longer path from Self resolves nothing.
 func resolve(s plugin.ImportScope, spelling string) plugin.Candidates {
+	if head, item, _ := strings.Cut(spelling, pathSeparator); head == keywordSelfType {
+		switch {
+		case s.Owner.IsZero() || strings.Contains(item, pathSeparator):
+			return nil
+		case item == "":
+			return plugin.Candidates{{s.Owner}}
+		}
+		return plugin.Candidates{{{Lang: Lang, Package: s.Owner.Package, Owner: s.Owner.Name, Name: item}}}
+	}
 	sc, _ := s.Bindings.(*scope)
 	if sc == nil {
 		return nil

@@ -17,7 +17,8 @@ const memberIndent = "    "
 
 // New returns the Rust rendering backend: the module's declared pieces
 // composed through the kernel's kit into a [backend.Backend]. Its spoke
-// is [spell.Type], which spells a type of another language in Rust.
+// is [spell.Type], which spells a type of another language in Rust, and
+// [spell.Supertype] spells a supertype of another language.
 // Rendered files finalise through the shared normalizer, which strips
 // trailing whitespace and blank-line runs and keeps the templates'
 // spelling otherwise, because the module does not include a printer and
@@ -38,10 +39,12 @@ func New() backend.Backend {
 		Packages(spell.Package).
 		Respell(spell.Name).
 		Types(spell.Type).
+		Supertypes(spell.Supertype).
 		Lower(Lower).
 		Cluster(Cluster).
 		Groups(Groups()).
 		Scaffold(Scaffold).
+		Value(Value).
 		MemberIndent(memberIndent).
 		Imports(Imports).
 		TemplateImport(TemplateImport).

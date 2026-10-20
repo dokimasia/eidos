@@ -27,7 +27,8 @@ const integerSuffix = "iu"
 //   - A name, a path and a primitive type are Named. A generic type is
 //     Named with its bare name or path as its spelling and its arguments
 //     in Args, where a lifetime, a const argument and an associated type
-//     binding are each Named with their spelling. A path records its
+//     binding are each Named with their spelling. A binding, as Item = T,
+//     has the type that it binds as its one argument. A path records its
 //     module as its package, and so does a name that a use declaration
 //     binds.
 //   - &T is an immutable Borrow of T, and &mut T a mutable one.
@@ -106,11 +107,10 @@ func (l *lowering) traitBounds(n treesitter.Node, out *[]treesitter.Node) {
 }
 
 // structural lowers a composite whose children are the given types, in
-// order. A composite without children has nil children.
+// order. Every composite of the grammar has a child: a bounded type has a
+// type operand, and the parse puts a missing node in place of an operand
+// that the source leaves out.
 func (l *lowering) structural(n treesitter.Node, form symbol.TypeForm, children ...treesitter.Node) *node.TypeRef {
-	if len(children) == 0 {
-		return plugin.Composite(n.Compact(), n.Pos(), form)
-	}
 	elems := make([]*node.TypeRef, 0, len(children))
 	for _, child := range children {
 		elems = append(elems, l.typeRef(child))
@@ -159,11 +159,17 @@ func (l *lowering) funcRef(n treesitter.Node) *node.TypeRef {
 	return plugin.FuncType(n.Compact(), n.Pos(), params, results)
 }
 
-// typeArgs lowers a type argument list, every argument in order.
+// typeArgs lowers a type argument list, every argument in order. An
+// associated type binding keeps its spelling and has the type that it binds
+// as its one argument, so the rules can fold the Item of an Iterator.
 func (l *lowering) typeArgs(args treesitter.Node) []*node.TypeRef {
 	var out []*node.TypeRef
 	for arg := range args.Content() {
-		out = append(out, l.typeRef(arg))
+		ref := l.typeRef(arg)
+		if arg.Kind() == l.v.typeBinding {
+			ref.Args = []*node.TypeRef{l.typeRef(arg.Child(l.v.fieldType))}
+		}
+		out = append(out, ref)
 	}
 	return out
 }
