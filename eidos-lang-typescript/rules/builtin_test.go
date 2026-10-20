@@ -153,6 +153,19 @@ func TestBuiltin(t *testing.T) {
 			expect.Equal(t, shape.Elems[0].Form, symbol.FormScalar, "the child is the number")
 		})
 
+		t.Run("folds the first argument of AsyncGenerator into the stream's child", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			generator := &node.TypeRef{Spelling: "AsyncGenerator", Args: []*node.TypeRef{
+				{Spelling: numberName}, {Spelling: stringName}, {Spelling: "boolean"},
+			}}
+			shape := rules.NewBound(tsrules.New(), f.view, nil).TypeOf(generator)
+			assert.Equal(t, shape.Form, symbol.FormStream, "a generator of three arguments is a stream")
+			assert.Length(t, shape.Elems, 1, "a stream has one child")
+			expect.Equal(t, shape.Elems[0].Form, symbol.FormScalar, "the child is the number that it yields")
+		})
+
 		t.Run("folds a Record of one argument to opaque", func(t *testing.T) {
 			t.Parallel()
 

@@ -44,7 +44,11 @@ const (
 // exported name behind the name it binds under, and each specifier
 // once. The import is import type when every binding is type-only,
 // because one value binding makes the whole import a value import. A
-// path binding no names renders as a side-effect import. A value
+// value import writes type before each specifier whose bindings are all
+// type-only, as in import { type Arms, answer }, because tsc refuses a
+// type among the plain specifiers of a value import under
+// verbatimModuleSyntax. A path binding no names renders as a side-effect
+// import. A value
 // import runs the module too, so it replaces the side-effect import
 // of its path. TypeScript erases import type, so the side-effect
 // import renders before it. Specifiers quote single, TypeScript's own
@@ -119,8 +123,9 @@ func pathRun(entries []render.Entry) int {
 
 // pathImport is what the entries of one path render: a side-effect
 // import where a bare entry asks for the module's run and no value
-// binding runs it, and one named import of the distinct specifiers,
-// import type where every binding is type-only.
+// binding runs it, and one named import of the distinct specifiers. The
+// named import is import type where every binding is type-only, and
+// marks each type-only specifier of a value import with type otherwise.
 type pathImport struct {
 	// entries are the path's entries, all of one path.
 	entries []render.Entry
@@ -171,6 +176,9 @@ func (p pathImport) size() int {
 		if written > 0 {
 			n += len(specifierSep)
 		}
+		if !p.typeOnly && p.typeOnlyAt(i) {
+			n += len(typeKeyword)
+		}
 		if e.Item != "" {
 			n += len(e.Item) + len(renameKeyword)
 		}
@@ -204,6 +212,9 @@ func (p pathImport) write(b *strings.Builder) {
 		if written > 0 {
 			b.WriteString(specifierSep)
 		}
+		if !p.typeOnly && p.typeOnlyAt(i) {
+			b.WriteString(typeKeyword)
+		}
 		if e.Item != "" {
 			b.WriteString(e.Item)
 			b.WriteString(renameKeyword)
@@ -214,6 +225,23 @@ func (p pathImport) write(b *strings.Builder) {
 	b.WriteString(namedClose)
 	writeQuoted(b, path)
 	b.WriteString(statementEnd)
+}
+
+// typeOnlyAt reports whether every entry of the specifier at i binds its
+// name for the type checker alone. The entries of one specifier are
+// adjacent from i on, as [pathImport.specifies] states. It allocates
+// nothing.
+func (p pathImport) typeOnlyAt(i int) bool {
+	e := p.entries[i]
+	for _, other := range p.entries[i:] {
+		if other.Name != e.Name || other.Item != e.Item {
+			break
+		}
+		if !other.TypeOnly {
+			return false
+		}
+	}
+	return true
 }
 
 // specifies reports whether the i-th entry renders a specifier: it

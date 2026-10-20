@@ -54,7 +54,9 @@ const variantSep = "_"
 // an error for a payload entry named like the discriminant, because the
 // variant interface would declare that property twice. A class or an
 // interface passes through unchanged unless [members] returns an error for
-// it. Everything else passes through unchanged.
+// it. A declaration with the deleter of a property refuses through
+// [lowering.DeleteAccessor], because TypeScript writes a getter and a
+// setter alone. Everything else passes through unchanged.
 //
 // # Allocation contract
 //
@@ -67,6 +69,9 @@ const variantSep = "_"
 // the copy of its type parameters and the variant's spelling with its
 // type arguments. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	if err := lowering.DeleteAccessor(typescript.Lang, s); err != nil {
+		return nil, err
+	}
 	var sum *emit.Sum
 	switch d := s.(type) {
 	case *emit.Struct:

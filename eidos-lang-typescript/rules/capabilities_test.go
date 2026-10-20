@@ -10,6 +10,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
+	"go.dokimi.dev/eidos/lang/typescript"
 	tsrules "go.dokimi.dev/eidos/lang/typescript/rules"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -35,14 +36,18 @@ const (
 	keptName     = "Kept"
 	deepName     = "E0"
 	shallowName  = "E1"
+	manyName     = "Many"
 	causeName    = "cause"
 	messageName  = "message"
+	optionsName  = "options"
+	errorsName   = "errors"
 )
 
 // errorTree is a module of error classes. NotFound extends Error and
 // declares a cause, Labelled declares a message, Domain extends NotFound,
-// OutOfRange extends RangeError, Plain extends nothing, and Kept extends
-// Plain. E0 reaches Error through nine classes, and E1 through eight.
+// OutOfRange extends RangeError, Many extends AggregateError, Plain extends
+// nothing, and Kept extends Plain. E0 reaches Error through nine classes,
+// and E1 through eight.
 var errorTree = fstest.MapFS{
 	aFile: {Data: []byte(`export class NotFound extends Error {
   cause?: Error;
@@ -55,6 +60,8 @@ export class Labelled extends Error {
 export class Domain extends NotFound {}
 
 export class OutOfRange extends RangeError {}
+
+export class Many extends AggregateError {}
 
 export class Plain {}
 
@@ -83,6 +90,10 @@ const (
 	// constructorsAllocs counts the binding of the projection, the list
 	// of callables, and the parameter list of each of the two overloads.
 	constructorsAllocs = 4
+	// errorConstructorAllocs counts the binding of the projection, the
+	// list of one callable, and the parameter list of the constructor of
+	// Error.
+	errorConstructorAllocs = 3
 	// errorContractAllocs counts the binding of the member walk and what
 	// the walk of NotFound allocates.
 	errorContractAllocs = 3
@@ -244,6 +255,57 @@ func TestCapabilities(t *testing.T) {
 			s := &node.Struct{Name: "Free", Extends: []*node.TypeRef{nil}}
 			assert.Equal(t, tsrules.Rules{}.Constructors(s, rules.View{}), []rules.Callable{{Name: constructorName}},
 				"a nil base is not a class")
+		})
+
+		errorConstructors := []struct {
+			name      string
+			giveClass string
+		}{
+			{name: "returns the constructor of Error for a class that extends Error", giveClass: notFoundName},
+			{name: "returns the constructor of Error at the end of a chain of classes", giveClass: domainName},
+			{name: "returns the constructor of a native error class that a class extends", giveClass: rangeName},
+		}
+		for _, tt := range errorConstructors {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, errorTree)
+				got := tsrules.Rules{}.Constructors(f.class(t, tt.giveClass), f.view)
+				assert.Length(t, got, 1, "the error class declares one constructor")
+				assert.Length(t, got[0].Params, 2, "the constructor takes a message and the options")
+				expect.Equal(t, got[0].Params[0].Name, messageName, "the first parameter is the message")
+				expect.Equal(t, got[0].Params[0].Ref.Spelling, typescript.TypeString, "the message is a string")
+				expect.True(t, got[0].Params[0].Optional, "a call can leave the message out")
+				expect.Equal(t, got[0].Params[1].Name, optionsName, "the second parameter is the options")
+				expect.Equal(t, got[0].Params[1].Ref.Spelling, typescript.TypeErrorOptions,
+					"the options are ErrorOptions")
+				expect.True(t, got[0].Params[1].Optional, "a call can leave the options out")
+			})
+		}
+
+		t.Run("returns the constructor of AggregateError for a class that extends it", func(t *testing.T) {
+			t.Parallel()
+
+			f := loadedFrom(t, errorTree)
+			got := tsrules.Rules{}.Constructors(f.class(t, manyName), f.view)
+			assert.Length(t, got, 1, "AggregateError declares one constructor")
+			assert.Length(t, got[0].Params, 3, "the constructor takes the errors, a message and the options")
+			errors := got[0].Params[0]
+			expect.Equal(t, errors.Name, errorsName, "the first parameter is the errors")
+			expect.Equal(t, errors.Ref.Spelling, typescript.TypeIterable, "the errors are an Iterable")
+			expect.Equal(t, errors.Ref.Args, []*node.TypeRef{{Spelling: typescript.TypeAny}},
+				"of any value")
+			expect.False(t, errors.Optional, "a call passes the errors")
+			expect.Equal(t, got[0].Params[1].Name, messageName, "the second parameter is the message")
+			expect.Equal(t, got[0].Params[2].Name, optionsName, "the third parameter is the options")
+		})
+
+		t.Run("returns no constructor of an Error that a module exports", func(t *testing.T) {
+			t.Parallel()
+
+			s := &node.Struct{Name: plainName, Extends: []*node.TypeRef{{Spelling: "Error", Package: outsideLib}}}
+			assert.Empty(t, tsrules.Rules{}.Constructors(s, rules.View{}),
+				"the Error of a module is no global error class")
 		})
 	})
 
@@ -412,9 +474,14 @@ func capabilitiesCalls(tb assert.TB) []allocCall {
 			check: func(tb assert.TB) { assert.Length(tb, props, 2, "Properties returns the two properties") },
 		},
 		{
-			name: "Constructors", allocs: constructorsAllocs,
+			name: "Constructors", caseName: "two overloads", allocs: constructorsAllocs,
 			call:  func() { ctors = r.Constructors(overloaded, f.view) },
 			check: func(tb assert.TB) { assert.Length(tb, ctors, 2, "Constructors returns the two overloads") },
+		},
+		{
+			name: "Constructors", caseName: "the constructor of Error", allocs: errorConstructorAllocs,
+			call:  func() { ctors = r.Constructors(notFound, ef.view) },
+			check: func(tb assert.TB) { assert.Length(tb, ctors, 1, "Constructors returns the constructor of Error") },
 		},
 		{
 			name: "Comparable",

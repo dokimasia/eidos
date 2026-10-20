@@ -37,8 +37,27 @@ const (
 	setType           = "Set"
 )
 
+// The allocations of a value.
+const (
+	// literalAllocs is an integer literal, which TypeScript writes as its
+	// text.
+	literalAllocs = 0
+	// callAllocs is a call of a function of another module with one
+	// argument, in a file that imports the function already: the relative
+	// specifier of the module, and the text of the call. The specifier is
+	// below 16 bytes and has no pointers, so a heap profile misses it.
+	callAllocs = 2
+	// funcAllocs is a function with one result: the list of the spelled
+	// results, and the text of the arrow function.
+	funcAllocs = 2
+)
+
 // lineSeparator is U+2028, which the quoting escapes.
 var lineSeparator = string(rune(0x2028))
+
+// unixCall is the call unix(1) of the function unix of the module time.
+// The specs only read it.
+var unixCall = emit.Call(valueFn(timeModule, unixName), emit.Literal(emit.LiteralInt, "1"))
 
 // Every value spelling is pinned, for the reason the statement
 // spellings are: the text is spliced into generated bodies, and a
@@ -171,6 +190,59 @@ func TestValue(t *testing.T) {
 				want:    "takes none",
 				wantErr: true,
 			},
+			{
+				name: "writes a function without results as an arrow function with an empty body",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "(p0: string) => void", Form: symbol.FormFunc, Split: 1,
+					Elems: []*emit.TypeRef{{Spelling: "string"}},
+				}),
+				want: "() => {}",
+			},
+			{
+				name: "writes a function as an arrow function that returns its result",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "(p0: string) => number", Form: symbol.FormFunc, Split: 1,
+					Elems: []*emit.TypeRef{{Spelling: "string"}, {Spelling: "number"}},
+				}, emit.Literal(emit.LiteralInt, "0")),
+				want: "() => 0",
+			},
+			{
+				name: "writes an object literal that a function returns in parentheses",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "() => Row", Form: symbol.FormFunc,
+					Elems: []*emit.TypeRef{valueRef(rowName, storePath, rowName)},
+				}, emit.Composite(valueRef(rowName, storePath, rowName),
+					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1")))),
+				want: "() => ({id: 1})",
+			},
+			{
+				name: "writes the results of a function of two results as a tuple",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "() => [number, string]", Form: symbol.FormFunc,
+					Elems: []*emit.TypeRef{{Spelling: "number"}, {Spelling: "string"}},
+				}, emit.Literal(emit.LiteralInt, "0"), emit.Literal(emit.LiteralString, "a")),
+				want: "() => [0, 'a']",
+			},
+			{
+				name:    "returns a value error for a function of a type that is not a function type",
+				give:    emit.Func(valueRef(weightName, unitsModule, weightName)),
+				want:    "Weight is not one",
+				wantErr: true,
+			},
+			{
+				name: "returns a value error for a function of a constructor type",
+				give: emit.Func(&emit.TypeRef{
+					Spelling: "new () => Row", Form: symbol.FormFunc,
+					Elems: []*emit.TypeRef{valueRef(rowName, storePath, rowName)},
+				}),
+				want:    "new () => Row is a constructor type",
+				wantErr: true,
+			},
+			{
+				name: "returns a value error for a make",
+				give: emit.Make(&emit.TypeRef{Spelling: "AsyncIterable<string>", Form: symbol.FormStream}),
+				want: "no make of AsyncIterable<string>", wantErr: true,
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -260,6 +332,85 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Len(), 0, "a literal names no module")
 		})
 	})
+
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes a value as the scaffold writes it", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Value(unixCall, &render.ImportSet{})
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, "unix(1)", "the TypeScript spelling")
+		})
+
+		t.Run("imports a callee as a value", func(t *testing.T) {
+			t.Parallel()
+
+			set := &render.ImportSet{}
+			_, err := backend.Value(unixCall, set)
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeSpecifier, Name: unixName}},
+				"a call needs the function at run time")
+		})
+
+		t.Run("returns a value error for a value that TypeScript cannot spell", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.Value(emit.Address(emit.Literal(emit.LiteralInt, "1")), &render.ImportSet{})
+			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+			assert.Equal(t, refused.Lang, string(typescript.Lang), "naming the target")
+		})
+	})
+}
+
+// A literal allocates nothing, a call allocates the specifier of its
+// module and its text, and a function allocates the list of its results
+// and its text. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
+func TestValueAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls())
+}
+
+// BenchmarkValue measures the spelling of one value that a template
+// writes.
+func BenchmarkValue(b *testing.B) {
+	benchCalls(b, valueCalls())
+}
+
+// valueCalls returns a call of Value over an integer literal, over a call
+// of a function that the file imports already, and over a function with
+// one result.
+func valueCalls() []allocCall {
+	literal := emit.Literal(emit.LiteralInt, "42")
+	fn := emit.Func(&emit.TypeRef{
+		Spelling: "() => number", Form: symbol.FormFunc, Elems: []*emit.TypeRef{{Spelling: "number"}},
+	}, literal)
+	set := &render.ImportSet{}
+	var (
+		out string
+		err error
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "Value spells the value")
+			assert.Equal(tb, out, want, "Value writes the TypeScript spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "Value", caseName: "an integer", allocs: literalAllocs,
+			call: func() { out, err = backend.Value(literal, set) }, check: spells("42"),
+		},
+		{
+			name: "Value", caseName: "a call of another module", allocs: callAllocs,
+			call: func() { out, err = backend.Value(unixCall, set) }, check: spells("unix(1)"),
+		},
+		{
+			name: "Value", caseName: "a function with one result", allocs: funcAllocs,
+			call: func() { out, err = backend.Value(fn, set) }, check: spells("() => 42"),
+		},
+	}
 }
 
 // valueRef returns a resolved reference to a declaration of one

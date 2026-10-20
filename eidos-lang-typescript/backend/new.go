@@ -41,6 +41,7 @@ func New() backend.Backend {
 		Policies(typescript.Policies()...).
 		Lower(Lower).
 		Scaffold(Scaffold).
+		Value(Value).
 		MemberIndent(memberIndent).
 		Imports(Imports).
 		TemplateImport(TemplateImport).

@@ -38,6 +38,15 @@ const (
 	settledDouble = "StubRow"
 )
 
+// The source module of a builder unit, the class that the module declares,
+// the family word of the unit, and the file that a plan routes it into.
+const (
+	catalogModule = "catalog"
+	accountName   = "Account"
+	builderWord   = "builder"
+	builderPath   = "catalog.builder.ts"
+)
+
 // These constants are the allocations of a build and of the scaled
 // corpus.
 const (
@@ -158,6 +167,33 @@ func TestNew(t *testing.T) {
 			assert.That(t, body).
 				Contains("import type { Row } from './store';\n", "the type-only import").
 				Contains("  row: Row;\n", "the field through the imported name")
+		})
+
+		t.Run("returns a backend that imports a class of the source module of the unit", func(t *testing.T) {
+			t.Parallel()
+
+			module := symbol.Identity{Lang: typescript.Lang, Package: catalogModule, Kind: symbol.KindPackage}
+			account := symbol.Identity{
+				Lang: typescript.Lang, Package: catalogModule, Name: accountName, Kind: symbol.KindStruct,
+			}
+			builder := &emit.Struct{Origin: account, Name: accountName + "Builder", Visibility: symbol.VisibilityPublic}
+			builder.Fields.Append(&emit.Field{
+				Name: "value", Type: &emit.TypeRef{Spelling: accountName, Target: account},
+				Visibility: symbol.VisibilityPublic,
+			})
+			files, findings := backendtest.Rendered(t, func(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
+				e := plugin.NewEmit()
+				assert.NoError(tb, e.Add(plugin.Unit{
+					Plugin: unitWord, Per: plugin.PerSource, Word: builderWord,
+					Key: catalogModule + typescript.Extension, Pkg: module, Decls: []symbol.Symbol{builder},
+				}), "the unit is added")
+				return backend.New(), &backendtest.Fixture{Emit: e}
+			})
+			assert.Empty(t, findings, "the file renders clean")
+			assert.Length(t, files, 1, "the unit renders into one file")
+			assert.Equal(t, files[0].Path, builderPath, "the file is beside the source module, as a plan routes it")
+			assert.Contains(t, string(files[0].Body), "import type { Account } from './catalog';\n",
+				"the file imports the class from the source module")
 		})
 
 		t.Run("returns a backend that names the settled class in a list", func(t *testing.T) {

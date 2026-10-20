@@ -23,7 +23,9 @@ import (
 // fact on it. A field that another type receives refuses, because the
 // backend does not write a declaration merge. The annotations of a file
 // refuse, because the skeleton does not write the header that a
-// generator states.
+// generator states. The passing of a parameter takes the [render.Holds]
+// verdict, because a caller passes every argument by position. A wire name renders as the key of
+// its property, bare where it is an identifier and quoted otherwise.
 //
 // Coverage builds the table on every call, which the caller keeps: four
 // allocations of the fact map, and four of the exception map with two for
@@ -54,6 +56,8 @@ func Coverage() render.Coverage {
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Renders,
 			symbol.FactVariadic:         render.Renders,
+			symbol.FactPassing:          render.Holds,
+			symbol.FactWire:             render.Renders,
 			symbol.FactNamedReturn:      render.Refuses,
 			symbol.FactFields:           render.Refuses,
 			symbol.FactMethods:          render.Refuses,

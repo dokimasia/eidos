@@ -439,6 +439,10 @@ func TestType(t *testing.T) {
 				give: rules.Reference("error", rules.WellKnownError), want: &emit.TypeRef{Spelling: "Error"},
 			},
 			{
+				name: "returns AbortSignal for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext), want: &emit.TypeRef{Spelling: "AbortSignal"},
+			},
+			{
 				name: "returns unknown for the top type",
 				give: rules.Leaf(symbol.FormDynamic, "any"), want: &emit.TypeRef{Spelling: "unknown"},
 			},

@@ -23,6 +23,37 @@ const (
 	causeField   = "cause"
 )
 
+// The parameters of the constructors of the global error classes beside
+// the message: the options of an error, and the errors that an
+// AggregateError collects.
+const (
+	optionsParam = "options"
+	errorsParam  = "errors"
+)
+
+// errorConstructor and aggregateConstructor are the constructors that
+// TypeScript's standard library declares for the global error classes.
+// Error and the native error classes take an optional message and
+// options. AggregateError takes its errors before them.
+var (
+	errorConstructor = &node.Method{
+		Name: constructorName, Constructs: true, Visibility: symbol.VisibilityPublic,
+		Params: []*node.Param{
+			{Name: messageField, Type: &node.TypeRef{Spelling: typescript.TypeString}, Optional: true},
+			{Name: optionsParam, Type: &node.TypeRef{Spelling: typescript.TypeErrorOptions}, Optional: true},
+		},
+	}
+	aggregateConstructor = &node.Method{
+		Name: constructorName, Constructs: true, Visibility: symbol.VisibilityPublic,
+		Params: append([]*node.Param{{
+			Name: errorsParam,
+			Type: &node.TypeRef{
+				Spelling: typescript.TypeIterable, Args: []*node.TypeRef{{Spelling: typescript.TypeAny}},
+			},
+		}}, errorConstructor.Params...),
+	}
+)
+
 // ErrorContract returns the contract of a class whose extends chain
 // reaches a global error class of TypeScript, such as Error or TypeError,
 // through classes that the view declares. Message and Cause are the
@@ -140,12 +171,17 @@ func (r Rules) Properties(s *node.Struct, v rules.View) []rules.Property {
 // Constructors returns the public constructor signatures of a class, one
 // per overload. A class without a constructor has the constructors of
 // the class that it extends, with the type arguments of the extends
-// clause substituted. A class that does not extend a class has the
-// implicit constructor, which has no parameters. The list is empty in
-// these cases:
+// clause substituted. A class whose chain ends at a global error class,
+// such as Error, has the constructor that TypeScript's standard library
+// declares for that class. Error and the native error classes take
+// (message?: string, options?: ErrorOptions). AggregateError takes
+// (errors: Iterable<any>, message?: string, options?: ErrorOptions). A
+// class that does not extend a class has the implicit constructor, which
+// has no parameters. The list is empty in these cases:
 //
 //   - every constructor of the class is private or protected;
-//   - the class extends a type that the view does not declare as a class;
+//   - the class extends a type that the view does not declare as a class,
+//     and that is not a global error class;
 //   - the chain of classes is deeper than the kernel's default depth.
 //
 // # Allocation contract
@@ -153,7 +189,9 @@ func (r Rules) Properties(s *node.Struct, v rules.View) []rules.Property {
 // Constructors allocates the binding of the projection, the list of
 // callables, sized to the class's methods, and the lists of each
 // callable. An inherited constructor of a generic class also allocates
-// the copies that substitution makes.
+// the copies that substitution makes. The constructor of a global error
+// class allocates the list of one callable and the list of its
+// parameters.
 func (r Rules) Constructors(s *node.Struct, v rules.View) []rules.Callable {
 	b := rules.NewBound(r, v, nil)
 	// A frame maps the type parameters of the class one level up to the
@@ -190,6 +228,14 @@ func (r Rules) Constructors(s *node.Struct, v rules.View) []rules.Callable {
 			return out
 		case len(s.Extends) == 0 || s.Extends[0] == nil:
 			return []rules.Callable{{Name: constructorName}}
+		}
+		if ext := s.Extends[0]; ext.Target.IsZero() && ext.Package == "" && typescript.ErrorClass(ext.Spelling) {
+			ctor := errorConstructor
+			if ext.Spelling == typescript.TypeAggregateError {
+				ctor = aggregateConstructor
+			}
+			c, _ := b.CallableOf(ctor)
+			return []rules.Callable{c}
 		}
 		sym, _ := v.Lookup(s.Extends[0].Target)
 		base, isClass := sym.(*node.Struct)

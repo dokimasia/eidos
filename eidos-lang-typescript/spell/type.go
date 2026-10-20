@@ -325,12 +325,16 @@ func wildcard(s rules.TypeShape, spell func(rules.TypeShape) (*emit.TypeRef, err
 	return spoke.Child(s.Elems[0], spell)
 }
 
+// abortSignal is the global type of the cancellation of a call, which the
+// well-known context takes.
+const abortSignal = "AbortSignal"
+
 // reference spells a reference or a sum: the well-known timestamp and
 // duration as the choices of [typescript.Timestamp] and
 // [typescript.Duration], the well-known empty value as a record without
-// keys, the well-known error as Error, and every other referent as a
-// translated reference under its flat name, with its translated
-// arguments.
+// keys, the well-known error as Error, the well-known context as
+// AbortSignal, and every other referent as a translated reference under
+// its flat name, with its translated arguments.
 func reference(
 	s rules.TypeShape, p plugin.Policy, spell func(rules.TypeShape) (*emit.TypeRef, error),
 ) (*emit.TypeRef, error) {
@@ -346,6 +350,8 @@ func reference(
 		}, nil
 	case rules.WellKnownError:
 		return &emit.TypeRef{Spelling: typescript.TypeError}, nil
+	case rules.WellKnownContext:
+		return &emit.TypeRef{Spelling: abortSignal}, nil
 	}
 	args, err := spoke.Children(s.Args, spell)
 	if err != nil {

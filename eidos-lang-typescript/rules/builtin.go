@@ -28,11 +28,13 @@ const numberBits = 64
 //   - AsyncIterable, AsyncIterableIterator and AsyncGenerator with a type
 //     argument as an asynchronous stream.
 //
-// The kernel's fold makes the type arguments the children of a list, a
-// map or a stream. It folds a reference with another number of arguments
-// to Opaque. Every other spelling is Opaque. That includes bigint,
-// Promise and a literal type. A name that an import binds is not a
-// global, so it is Opaque too. Builtin allocates nothing.
+// The kernel's fold makes the type arguments the children of a list or a
+// map, and it folds a list or a map with another number of arguments to
+// Opaque. It makes the first type argument the child of a stream, such as
+// the T of AsyncGenerator<T, TReturn, TNext>. Every other spelling is
+// Opaque. That includes bigint, Promise and a literal type. A name that an
+// import binds is not a global, so it is Opaque too. Builtin allocates
+// nothing.
 func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	if ref == nil || ref.Form != symbol.FormNamed || !ref.Target.IsZero() || ref.Package != "" {
 		return rules.Opaque(ref)

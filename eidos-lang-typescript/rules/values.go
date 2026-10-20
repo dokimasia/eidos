@@ -41,7 +41,12 @@ const (
 //
 //   - number, string and boolean take a fixed pair, and the pair of a
 //     string contains the hint;
+//   - unknown and any take the pair of a string, because they take every
+//     value;
 //   - bigint, Date and Uint8Array take a fixed pair of TypeScript text;
+//   - a global error class takes a construction of the class with a
+//     message that contains the hint, and an AggregateError takes an
+//     empty array of errors before the message;
 //   - a literal type takes its one value, and refuses the second value;
 //   - a list, an Array and a ReadonlyArray take an array of one element,
 //     and the two arrays differ in the element;
@@ -74,14 +79,17 @@ const (
 // a key of a Map, the value of a key and a property. DeriveSamples reads
 // them through [rules.View.Authored], and derives each value without an
 // author's statement. A stream, a function type, an intersection and an
-// inline object type refuse with no literal. A keyword type, such as
-// unknown, refuses with no literal too. A named type outside the view
-// refuses as unresolved.
+// inline object type refuse with no literal. Every other keyword type,
+// such as never, refuses with no literal too. A named type outside the
+// view refuses as unresolved.
 //
 // # Allocation contract
 //
 //   - A builtin's pair allocates the hinted texts of a string, and
 //     nothing else.
+//   - An error class's pair allocates the hinted texts, the reference to
+//     the class and the list of arguments of each construction. The pair
+//     of an AggregateError also allocates its empty array.
 //   - A composite's pair allocates the reference to its type and the list
 //     of each composite.
 //   - A construction's pair allocates the reference to its class, the
@@ -226,20 +234,23 @@ func (r Rules) unionPair(ref *node.TypeRef, hint string, v rules.View, depth int
 // builtinPair derives the pair of a named reference without a target
 // through the builtin table.
 func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth int) (rules.Sample, rules.Sample) {
+	if hint == "" {
+		hint = defaultHint
+	}
 	switch shape := r.Builtin(ref, v); shape.Form {
 	case symbol.FormScalar:
 		return rules.NumberPair(emit.LiteralFloat, sampleNumber, alternateNumber, numberBits)
 	case symbol.FormBool:
 		return rules.Pair(emit.LiteralBool, spellTrue, spellFalse)
-	case symbol.FormText:
-		if hint == "" {
-			hint = defaultHint
-		}
+	case symbol.FormText, symbol.FormDynamic:
 		return rules.Pair(emit.LiteralString, hint+sampleSuffix, hint+alternateSuffix)
 	case symbol.FormBytes:
 		return rules.Of(emit.Raw(typescript.Lang, sampleBytes)), rules.Of(emit.Raw(typescript.Lang, alternateBytes))
 	case symbol.FormReference:
-		return rules.Of(emit.Raw(typescript.Lang, sampleDate)), rules.Of(emit.Raw(typescript.Lang, alternateDate))
+		if shape.Ref == rules.WellKnownTimestamp {
+			return rules.Of(emit.Raw(typescript.Lang, sampleDate)), rules.Of(emit.Raw(typescript.Lang, alternateDate))
+		}
+		// The well-known error takes the pair of a global error class below.
 	case symbol.FormList:
 		return r.listPair(rules.EmitRef(ref), ref.Args[0], hint, v, depth)
 	case symbol.FormMap:
@@ -262,9 +273,11 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 		(ref.Spelling == typescript.TypeSet || ref.Spelling == typescript.TypeReadonlySet):
 
 		return r.setPair(ref, hint, v, depth)
+	case ref.Package == "" && typescript.ErrorClass(ref.Spelling):
+		return errorPair(ref, hint)
 	case ref.Package == "" && typescript.KeywordType(ref.Spelling):
-		// string, number and boolean take their pairs through the builtin
-		// table above, so a keyword type here has no value.
+		// string, number, boolean, any and unknown take their pairs through
+		// the builtin table above, so a keyword type here has no value.
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	if lit, scanned := scanLiteral(ref.Spelling); scanned && lit.kind != literalPath {
@@ -272,6 +285,21 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string, v rules.View, depth i
 		return rules.Of(value), rules.Refused(rules.RefusedNoLiteral)
 	}
 	return rules.RefusedPair(rules.RefusedUnresolved)
+}
+
+// errorPair returns the pair of a global error class. Each value constructs
+// the class with a message that contains the hint. An AggregateError takes
+// an empty array of errors before the message.
+func errorPair(ref *node.TypeRef, hint string) (rules.Sample, rules.Sample) {
+	class := rules.EmitRef(ref)
+	sample := emit.Literal(emit.LiteralString, hint+sampleSuffix)
+	alternate := emit.Literal(emit.LiteralString, hint+alternateSuffix)
+	if ref.Spelling != typescript.TypeAggregateError {
+		return rules.Of(emit.Construction(class, sample)), rules.Of(emit.Construction(class, alternate))
+	}
+	list := &emit.TypeRef{Form: symbol.FormList, Elems: []*emit.TypeRef{{Spelling: typescript.TypeAny}}}
+	errors := emit.Composite(list)
+	return rules.Of(emit.Construction(class, errors, sample)), rules.Of(emit.Construction(class, errors, alternate))
 }
 
 // setPair returns the pair of a Set or a ReadonlySet of one type argument.

@@ -74,6 +74,14 @@ func TestLower(t *testing.T) {
 			assert.Empty(t, out, "a nil list keeps the declaration unchanged")
 		})
 
+		t.Run("returns an error for a class with the deleter of a property", func(t *testing.T) {
+			t.Parallel()
+
+			host := classOf(nil, []*emit.Method{{Name: areaName, Accessor: symbol.AccessorDelete}})
+			_, err := backend.Lower(host)
+			assert.HasError(t, err, "TypeScript writes a getter and a setter alone")
+		})
+
 		t.Run("returns one interface per variant before the union alias", func(t *testing.T) {
 			t.Parallel()
 

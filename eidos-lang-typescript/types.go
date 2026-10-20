@@ -40,10 +40,12 @@ const (
 	TypePromise               = "Promise"
 	TypeDate                  = "Date"
 	TypeUint8Array            = "Uint8Array"
+	TypeIterable              = "Iterable"
 	TypeAsyncIterable         = "AsyncIterable"
 	TypeAsyncIterableIterator = "AsyncIterableIterator"
 	TypeAsyncGenerator        = "AsyncGenerator"
 	TypeAbortSignal           = "AbortSignal"
+	TypeErrorOptions          = "ErrorOptions"
 )
 
 // The global error classes of TypeScript's standard library. They are
@@ -77,8 +79,8 @@ var errorClasses = []string{
 // error classes last.
 var globalTypes = slices.Concat([]string{
 	TypeArray, TypeReadonlyArray, TypeRecord, TypePartial, TypeReadonly, TypeMap, TypeReadonlyMap, TypeSet,
-	TypeReadonlySet, TypePromise, TypeDate, TypeUint8Array, TypeAsyncIterable, TypeAsyncIterableIterator,
-	TypeAsyncGenerator, TypeAbortSignal,
+	TypeReadonlySet, TypePromise, TypeDate, TypeUint8Array, TypeIterable, TypeAsyncIterable,
+	TypeAsyncIterableIterator, TypeAsyncGenerator, TypeAbortSignal, TypeErrorOptions,
 }, errorClasses)
 
 // KeywordType reports whether name is a keyword type of TypeScript. It

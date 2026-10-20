@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -174,29 +175,131 @@ func TestRestate(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Grouped", func(t *testing.T) {
+		t.Parallel()
+
+		named := &emit.TypeRef{}
+		list := &emit.TypeRef{Form: symbol.FormList}
+		union := &emit.TypeRef{Form: symbol.FormUnion}
+		intersection := &emit.TypeRef{Form: symbol.FormIntersection}
+		fn := &emit.TypeRef{Form: symbol.FormFunc}
+		frozenList := &emit.TypeRef{Form: symbol.FormList, Mutability: symbol.MutabilityImmutable}
+		frozenTuple := &emit.TypeRef{Form: symbol.FormTuple, Mutability: symbol.MutabilityImmutable}
+		tests := []struct {
+			name      string
+			giveOuter symbol.TypeForm
+			giveChild *emit.TypeRef
+			want      bool
+		}{
+			{
+				name:      "reports true for a union inside a list",
+				giveOuter: symbol.FormList, giveChild: union, want: true,
+			},
+			{
+				name:      "reports true for an intersection inside a list",
+				giveOuter: symbol.FormList, giveChild: intersection, want: true,
+			},
+			{
+				name:      "reports true for a function type inside a list",
+				giveOuter: symbol.FormList, giveChild: fn, want: true,
+			},
+			{
+				name:      "reports true for an immutable list inside a list",
+				giveOuter: symbol.FormList, giveChild: frozenList, want: true,
+			},
+			{
+				name:      "reports true for an immutable tuple inside a list",
+				giveOuter: symbol.FormList, giveChild: frozenTuple, want: true,
+			},
+			{
+				name:      "reports false for a mutable list inside a list",
+				giveOuter: symbol.FormList, giveChild: list,
+			},
+			{
+				name:      "reports false for a named type inside a list",
+				giveOuter: symbol.FormList, giveChild: named,
+			},
+			{name: "reports false for a nil child", giveOuter: symbol.FormList},
+			{
+				name:      "reports true for a function type inside a union",
+				giveOuter: symbol.FormUnion, giveChild: fn, want: true,
+			},
+			{
+				name:      "reports false for an intersection inside a union",
+				giveOuter: symbol.FormUnion, giveChild: intersection,
+			},
+			{
+				name:      "reports true for a union inside an intersection",
+				giveOuter: symbol.FormIntersection, giveChild: union, want: true,
+			},
+			{
+				name:      "reports true for a function type inside an intersection",
+				giveOuter: symbol.FormIntersection, giveChild: fn, want: true,
+			},
+			{
+				name:      "reports false for a list inside an intersection",
+				giveOuter: symbol.FormIntersection, giveChild: list,
+			},
+			{
+				name:      "reports false for a union inside a tuple",
+				giveOuter: symbol.FormTuple, giveChild: union,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, typescript.Grouped(tt.giveOuter, tt.giveChild), tt.want,
+					"Grouped reports the parentheses that TypeScript needs around the child")
+			})
+		}
+	})
 }
 
-// A restatement allocates the spelling that it returns. The ordinary
-// run, which runs no benchmark, checks the ceiling here.
+// A restatement allocates the spelling that it returns, and the grouping
+// rule allocates nothing. The ordinary run, which runs no benchmark,
+// checks the ceilings here.
 func TestRestateAllocs(t *testing.T) {
 	ref, elems := restatedList()
-	var got string
-	assert.MaxAllocs(t, func() { got, _ = typescript.Restate(ref, elems) }, restateAllocs,
+	union := &emit.TypeRef{Form: symbol.FormUnion}
+	var (
+		got     string
+		grouped bool
+	)
+	expect.MaxAllocs(t, func() { got, _ = typescript.Restate(ref, elems) }, restateAllocs,
 		"Restate allocates the spelling")
-	assert.Equal(t, got, "readonly string[]", "Restate writes the list")
+	expect.MaxAllocs(t, func() { grouped = typescript.Grouped(symbol.FormList, union) }, 0,
+		"Grouped allocates nothing")
+	expect.Equal(t, got, "readonly string[]", "Restate writes the list")
+	expect.True(t, grouped, "a union inside a list needs parentheses")
 }
 
 // BenchmarkRestate measures the restatement of a composite that the
-// backend writes for each substituted reference.
+// backend writes for each substituted reference, and the grouping rule
+// that the backend applies to each rest parameter.
 func BenchmarkRestate(b *testing.B) {
-	ref, elems := restatedList()
-	c := bench.Start(b).MaxAllocs(restateAllocs)
-	defer c.End()
-	var got string
-	for c.Loop() {
-		got, _ = typescript.Restate(ref, elems)
-	}
-	assert.Equal(b, got, "readonly string[]", "Restate writes the list")
+	b.Run("Restate", func(b *testing.B) {
+		ref, elems := restatedList()
+		c := bench.Start(b).MaxAllocs(restateAllocs)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got, _ = typescript.Restate(ref, elems)
+		}
+		assert.Equal(b, got, "readonly string[]", "Restate writes the list")
+	})
+
+	b.Run("Grouped", func(b *testing.B) {
+		union := &emit.TypeRef{Form: symbol.FormUnion}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var grouped bool
+		for c.Loop() {
+			grouped = typescript.Grouped(symbol.FormList, union)
+		}
+		assert.True(b, grouped, "a union inside a list needs parentheses")
+	})
 }
 
 // restatedList returns an immutable list of strings and the spelling of
