@@ -11,10 +11,10 @@ import (
 	"testing"
 	"unsafe"
 
+	tsts "github.com/dokimasia/tree-sitter-typescript/bindings/go"
 	ts "github.com/tree-sitter/go-tree-sitter"
 	tsjava "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	tsrust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
-	tsts "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
