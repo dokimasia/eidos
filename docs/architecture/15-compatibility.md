@@ -15,8 +15,10 @@ every compatibility claim in both directions.
 ## Kernel versioning
 
 The kernel follows semver, and the working rule is that a minor
-release only adds. The generated mirrors keep adding cheap: a new
-kind or field is a schema edit plus a regeneration
+release only adds. In v0 a minor release can break the API, as
+Semantic Versioning allows for major version zero, and the changeset of
+each break starts with `**Breaking:**`. The generated mirrors keep
+adding cheap: a new kind or field is a schema edit plus a regeneration
 ([02-symbol-model.md](02-symbol-model.md)).
 
 The kernel declares one **contract version**, `plugin.ContractVersion`,
@@ -77,11 +79,24 @@ replace directives and replaces the kernel and the SDK facade with the
 checkout. It then runs `go test` over the packages of the release. A
 module without a release is unpublished, and the job does not test it.
 
+The job does not test a release of an earlier compatibility line
+either. The line of a version in v0 is its major and its minor, such as
+v0.3, and the line of a later version is its major. The job compares
+the line that the go.mod of a release requires of the kernel and of the
+facade with the line of the version that the checkout releases. That
+version is the version of the replace directive in `go.work`, raised by
+the highest bump of the pending changesets. A release of an earlier
+line cannot know the API of the new line. The job reports such a
+release as earlier and does not count it as a failure. The release of
+the new line also releases each module of the ring with the new
+requirement. The next run tests those releases.
+
 The release job publishes a commit only after a CI run passed on the
 same content, so a ring failure blocks the tag. Real consumers test
-"only adds" before each release, and no changelog has to promise it. A
-human decides with the failure in hand whether the fix is kernel-side
-or a coordinated satellite release.
+before each release that a change of the kernel keeps the API of its
+line, and no changelog has to promise it. A human decides with the
+failure in hand whether the fix is kernel-side or a coordinated
+satellite release.
 
 ## Deprecation
 

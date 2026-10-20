@@ -94,3 +94,4 @@ way.
 | [0073](0073-the-rust-rules-fold-the-standard-library-through-a-table.md) | The Rust rules fold the standard library through a table | Accepted |
 | [0074](0074-the-projection-of-an-rpc-states-its-context-and-its-failure.md) | The projection of an rpc states its context and its failure | Accepted |
 | [0075](0075-a-policy-of-the-target-selects-the-grpc-binding.md) | A policy of the target selects the gRPC binding | Accepted |
+| [0076](0076-the-ring-reports-a-release-of-an-earlier-line.md) | The ring reports a release of an earlier compatibility line | Accepted |
