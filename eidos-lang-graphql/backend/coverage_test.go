@@ -105,6 +105,18 @@ func TestCoverage(t *testing.T) {
 				name: "returns Refuses for an embed",
 				kind: symbol.KindEmbed, fact: symbol.FactComment, want: render.Refuses,
 			},
+			{
+				name: "returns Refuses for the contracts of an enum",
+				kind: symbol.KindEnum, fact: symbol.FactImplements, want: render.Refuses,
+			},
+			{
+				name: "returns Rejects for an overload signature of a field with arguments",
+				kind: symbol.KindMethod, fact: symbol.FactOverload, want: render.Rejects,
+			},
+			{
+				name: "returns Renders for the contracts of a sum",
+				kind: symbol.KindSum, fact: symbol.FactImplements, want: render.Renders,
+			},
 		}
 		coverage := backend.Coverage()
 		for _, tt := range tests {

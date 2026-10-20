@@ -37,7 +37,7 @@ const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template, the five kind templates and the extend template, and the
 	// function maps that text/template keeps for each template.
-	newAllocs = 432
+	newAllocs = 434
 	// renderAllocs is one render of the scaled corpus of 10,000 files. One
 	// run counted 1,583,833: about 1.1 million in text/template's execution
 	// of the kind templates and its reflective calls of the vocabulary, about

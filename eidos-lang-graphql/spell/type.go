@@ -58,12 +58,12 @@ const (
 // intersection, a function type, a synchronous stream, a borrow, a wildcard,
 // an inline type and an opaque type, because GraphQL has no form for them
 // and its ecosystem has no common mapping. It refuses the well-known error,
-// the well-known empty value and a reference with type arguments, because
-// GraphQL does not declare a failure value, an empty value or a generic
-// type. It refuses an optional of an optional, because a GraphQL type has
-// one nullability, and an asynchronous stream inside another form. It
-// refuses a form whose child it refuses, and the error contains the source
-// spelling of the child.
+// the well-known empty value, a type parameter and a reference with type
+// arguments, because GraphQL does not declare a failure value, an empty
+// value or a generic type. It refuses an optional of an optional, because
+// a GraphQL type has one nullability, and an asynchronous stream inside
+// another form. It refuses a form whose child it refuses, and the error
+// contains the source spelling of the child.
 //
 // # Allocation contract
 //

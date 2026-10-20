@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/graphql"
+	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -20,10 +21,13 @@ import (
 //     and the directives of the sum. Each variant becomes an object type
 //     named after the sum and the variant, with the documentation, the
 //     comment, the directives and the fields of the variant, and the union
-//     joins them. The specification requires at least one field of an object
+//     joins them. Each object type implements the contracts of the sum
+//     through its own copy of them, because the settle rewrites a reference
+//     in place. The specification requires at least one field of an object
 //     type, so a variant without a field is refused.
 //   - Under the marker graphql:input, a sum becomes an input object with the
-//     directive oneOf, as [lowerOneOf] writes it.
+//     directive oneOf, as [lowerOneOf] writes it. An input object implements
+//     no interface, so a sum with contracts is refused there.
 //   - A sum with type parameters becomes a union with the parameters, which
 //     the coverage rejects at the render.
 //
@@ -33,7 +37,8 @@ import (
 //
 // The union allocates its alias, its target, the spelling of its target and
 // the lists of its declarations, its members and its object types, once
-// each. Each variant allocates the name of its object type.
+// each. Each variant allocates the name of its object type, and the copy of
+// the contracts of a sum with contracts.
 func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 	set, err := checkAnnotations(symbol.KindSum, s.Name, s.Annotations)
 	if err != nil {
@@ -48,6 +53,10 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 			"and the sum %s states no variant", s.Name)
 	}
 	if set&inputBit != 0 && len(s.TypeParams) == 0 {
+		if len(s.Implements) > 0 {
+			return nil, fmt.Errorf(refusalPrefix+"an input object implements no interface, "+
+				"and the sum %s implements %s", s.Name, s.Implements[0].Spelling)
+		}
 		return lowerOneOf(s)
 	}
 	u := &emit.Alias{
@@ -83,7 +92,7 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 		}
 		objects[k] = emit.Struct{
 			Origin: s.Origin, Doc: v.Doc, Comment: v.Comment, Name: name, Visibility: s.Visibility,
-			Annotations: v.Annotations, Fields: emit.SlotOf(fields...),
+			Implements: lowering.CopyTypeRefs(s.Implements), Annotations: v.Annotations, Fields: emit.SlotOf(fields...),
 		}
 		members[k] = emit.TypeRef{Spelling: name}
 		elems[k] = &members[k]

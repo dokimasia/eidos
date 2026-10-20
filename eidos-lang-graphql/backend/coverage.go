@@ -28,12 +28,15 @@ import (
 //   - A return writes no comment, because a field has one trailing comment,
 //     which is the comment of its method.
 //   - A value of an enum refuses, because GraphQL serializes a value by its
-//     name.
+//     name. The contracts of an enum refuse, because only an object type and
+//     an interface implement interfaces. The object type of each variant of a
+//     sum implements the contracts of the sum.
 //   - The level of a nested type holds, because a type at file level binds
 //     to no instance. A static field or method has no form in a schema, so
 //     the declaration does not render with the fact or without it.
 //   - A type parameter, an accessor, an index signature, a construct
-//     signature and a computed name have no form in a schema either.
+//     signature, a computed name and an overload signature have no form in
+//     a schema either.
 //   - The passing of a parameter takes the [render.Holds] verdict, because
 //     a caller always names an argument. A wire name renders as the name of its field, and the
 //     lowering refuses a wire name that is not a GraphQL name or that
@@ -55,6 +58,7 @@ func Coverage() render.Coverage {
 			symbol.FactAbstract:         render.Refuses,
 			symbol.FactFinal:            render.Holds,
 			symbol.FactOverride:         render.Refuses,
+			symbol.FactOverload:         render.Rejects,
 			symbol.FactDefaultBody:      render.Refuses,
 			symbol.FactAccessor:         render.Rejects,
 			symbol.FactIndexer:          render.Rejects,
@@ -99,6 +103,9 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindFunction: {
 				symbol.FactMultiReturn: render.Holds, // the selection set states the result
+			},
+			symbol.KindEnum: {
+				symbol.FactImplements: render.Refuses, // only an object type and an interface implement
 			},
 			symbol.KindEnumVariant: {
 				symbol.FactValue: render.Refuses, // a value serializes by its name

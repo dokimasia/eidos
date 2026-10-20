@@ -77,6 +77,30 @@ func TestSum(t *testing.T) {
 				},
 			},
 			{
+				name: "returns object types that implement the contracts of the sum",
+				give: &emit.Sum{
+					Origin: rowOrigin, Name: "shape", Implements: []*emit.TypeRef{{Spelling: nodeName}},
+					Variants: emit.SlotOf(&emit.SumVariant{
+						Name:   "circle",
+						Fields: emit.SlotOf(&emit.Field{Name: idField, Type: &emit.TypeRef{Spelling: idType}}),
+					}),
+				},
+				want: []symbol.Symbol{
+					&emit.Alias{
+						Origin: rowOrigin, Name: "shape", Defined: true,
+						Target: &emit.TypeRef{
+							Spelling: "ShapeCircle",
+							Form:     symbol.FormUnion,
+							Elems:    []*emit.TypeRef{{Spelling: "ShapeCircle"}},
+						},
+					},
+					&emit.Struct{
+						Origin: rowOrigin, Name: "ShapeCircle", Implements: []*emit.TypeRef{{Spelling: nodeName}},
+						Fields: emit.SlotOf(&emit.Field{Name: idField, Type: &emit.TypeRef{Spelling: idType}}),
+					},
+				},
+			},
+			{
 				name: "returns the types that the fields of a variant need after the object types",
 				give: &emit.Sum{
 					Origin: rowOrigin, Name: "shape",
@@ -332,6 +356,34 @@ func TestSum(t *testing.T) {
 			})
 		}
 
+		t.Run("returns object types with their own copies of the contracts", func(t *testing.T) {
+			t.Parallel()
+
+			sum := &emit.Sum{
+				Origin: rowOrigin, Name: "shape", Implements: []*emit.TypeRef{{Spelling: nodeName}},
+				Variants: emit.SlotOf(
+					&emit.SumVariant{
+						Name:   "circle",
+						Fields: emit.SlotOf(&emit.Field{Name: idField, Type: &emit.TypeRef{Spelling: idType}}),
+					},
+					&emit.SumVariant{
+						Name:   "square",
+						Fields: emit.SlotOf(&emit.Field{Name: idField, Type: &emit.TypeRef{Spelling: idType}}),
+					},
+				),
+			}
+			got, err := backend.Lower(sum)
+			assert.NoError(t, err, "GraphQL writes the sum")
+			assert.Length(t, got, 3, "the union and two object types")
+			circle, is := got[1].(*emit.Struct)
+			assert.True(t, is, "the first variant is an object type")
+			square, is := got[2].(*emit.Struct)
+			assert.True(t, is, "the second variant is an object type")
+			assert.NoDuplicates(t, func() ([]*emit.TypeRef, error) {
+				return []*emit.TypeRef{sum.Implements[0], circle.Implements[0], square.Implements[0]}, nil
+			}, "the settle rewrites each reference of an object type once", assert.ByIdentity())
+		})
+
 		refusals := []struct {
 			name string
 			give *emit.Sum
@@ -378,6 +430,15 @@ func TestSum(t *testing.T) {
 					Name: "circle", Fields: emit.SlotOf(&emit.Field{Name: "radius"}),
 				})},
 				want: "graphql: a field of GraphQL has a type, and radius of ShapeCircle states none",
+			},
+			{
+				name: "returns an error for a sum with contracts under the marker graphql:input",
+				give: &emit.Sum{
+					Name: "RowKey", Annotations: symbol.Annotations{inputMarker},
+					Implements: []*emit.TypeRef{{Spelling: nodeName}},
+					Variants:   emit.SlotOf(&emit.SumVariant{Name: "latest"}),
+				},
+				want: "graphql: an input object implements no interface, and the sum RowKey implements Node",
 			},
 			{
 				name: "returns an error for a variant of an input object with an annotation that is not a GraphQL name",
