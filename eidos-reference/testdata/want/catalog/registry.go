@@ -12,4 +12,5 @@ import (
 func init() {
 	gob.Register(Item{})
 }
+
 // reference:provenance sha256:f8c367c04a436baf6a398e53edad323e6e1dd8188d3794fb9292c2f26f625300

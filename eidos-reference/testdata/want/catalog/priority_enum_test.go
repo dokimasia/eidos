@@ -98,4 +98,5 @@ func TestPriorityEnum(t *testing.T) {
 		}
 	})
 }
+
 // reference:provenance sha256:7daa7b137d6af6e43cbfdba064b331a9d287e021b178b64b0d1d395768a55939

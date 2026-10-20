@@ -134,4 +134,5 @@ func NewAddress() *AddressBuilder {
 func NewAddressFrom(v Address) *AddressBuilder {
 	return &AddressBuilder{value: v}
 }
+
 // reference:provenance sha256:a21f86d862c4b310a90658cdf4dd7e2c84ec664192aaa23afbb66c473300cf6e

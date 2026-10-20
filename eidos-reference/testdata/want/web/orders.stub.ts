@@ -23,4 +23,5 @@ export class OrdersStub implements Orders {
 export interface OrdersCountCall {
   filter: {product:Product;limit:number};
 }
+
 // reference:provenance sha256:fa4f7f602765759e8bd22ada8b158e6a842cabbff0e76fdee5b99c0c48317fe9

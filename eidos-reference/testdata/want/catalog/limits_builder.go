@@ -43,4 +43,5 @@ func NewLimits() *LimitsBuilder {
 func NewLimitsFrom(v Limits) *LimitsBuilder {
 	return &LimitsBuilder{value: v}
 }
+
 // reference:provenance sha256:d01699db12a8bfab97893beb349ebc075a2405a32498bee14fc1b82fc00bd6b3

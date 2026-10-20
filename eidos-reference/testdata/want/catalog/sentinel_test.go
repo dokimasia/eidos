@@ -19,8 +19,8 @@ func TestCatalogErrors(t *testing.T) {
 		err  error
 	}
 	all := []sentinel{
-		{"ErrConflict", ErrConflict},
 		{"ErrNotFound", ErrNotFound},
+		{"ErrConflict", ErrConflict},
 	}
 	var assigned []sentinel
 	for _, e := range all {
@@ -114,4 +114,5 @@ func TestCatalogErrors(t *testing.T) {
 		}
 	})
 }
-// reference:provenance sha256:9382aa263b405e9d18ac273a327e697e2ef92d37231d4335328cd11aec08439a
+
+// reference:provenance sha256:59395cb678a5cde6ccdd92edbec009428e22d1ae518376f3e05c04346cc03845

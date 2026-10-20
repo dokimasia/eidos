@@ -18,4 +18,5 @@ type ClockMock[D ~int32 | time.Duration] struct {
 func (c *ClockMock[D]) Now() D {
 	return c.NowFunc()
 }
+
 // reference:provenance sha256:0c482d44fa3dc9b4803df4d227b327f573164b113c1a1d649e0ee43925be31b2

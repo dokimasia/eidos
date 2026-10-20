@@ -14,4 +14,5 @@ export class MapperMock<T> implements Mapper<T> {
     return this.mapFunc!(v, f);
   }
 }
+
 // reference:provenance sha256:dc6b54eee54c1c09e423c1b6de8d512fffcf2b2891c35007ae4978bc532452d1

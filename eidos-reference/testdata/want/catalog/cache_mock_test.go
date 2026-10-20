@@ -21,4 +21,5 @@ func (c *CacheMock[T]) Get(key string) (T, bool) {
 func (c *CacheMock[T]) Put(key string, value T) {
 	c.PutFunc(key, value)
 }
+
 // reference:provenance sha256:21f6248a2464d41d79dad110c97c401132683138fe8a950b53646ae43b82d04a

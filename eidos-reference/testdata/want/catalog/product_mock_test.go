@@ -50,4 +50,5 @@ func (p *ProductRepositoryMock) Delete(ctx context.Context, id string) error {
 	log.Printf("audit: %s", "Product.Delete")
 	return p.DeleteFunc(ctx, id)
 }
+
 // reference:provenance sha256:8c81dd7bb3151f41e20584e23d9ff71cf154dabcd07a5247ebf43b96e8400a18

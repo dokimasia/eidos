@@ -38,4 +38,5 @@ func (c *CacheStub[T]) Put(key string, value T) {
 	c.PutCalls = append(c.PutCalls, CachePutCall[T]{Key: key, Value: value})
 	c.PutFunc(key, value)
 }
+
 // reference:provenance sha256:0f61d00c6022949eb02e49f1aef015932fbb08126d2b5e07f8a8fb2812589a6b

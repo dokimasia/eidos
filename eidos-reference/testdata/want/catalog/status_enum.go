@@ -69,4 +69,5 @@ func (v *Status) UnmarshalText(text []byte) error {
 	*v = parsed
 	return nil
 }
+
 // reference:provenance sha256:d6c735e1c1e795ef51e01677a934e2bb38a126f997d7127bb8c56c60d9e85422

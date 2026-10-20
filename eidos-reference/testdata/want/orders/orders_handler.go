@@ -29,4 +29,5 @@ func (o *OrdersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errors.Recover(w, r)
 	audit.Record(w, r)
 }
+
 // reference:provenance sha256:7cca3976177a514ab987d46bb98dd631d4137cf0b32049609ef2ea769082a666

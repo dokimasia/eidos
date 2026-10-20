@@ -22,4 +22,5 @@ func OrdersMiddleware(h http.Handler) http.Handler {
 	h = tracing.StartSpan(h)
 	return h
 }
+
 // reference:provenance sha256:3e7e01bbc4665573bbba3dfb1a42839304f0049e477dc61294b3703b7e55bcf3

@@ -57,4 +57,5 @@ func testCacheStubPut[T any](t *testing.T) {
 		t.Errorf("Put records %d calls instead of one", len(stub.PutCalls))
 	}
 }
+
 // reference:provenance sha256:c3b60631214f8151c0205796bb9bf4f0f179122161ec806b6caaa8c5cf23b083

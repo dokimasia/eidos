@@ -23,4 +23,5 @@ func (p *ProbeStub) Check(item string, append0 int) error {
 	p.CheckCalls = append(p.CheckCalls, ProbeCheckCall{Item: item, Append0: append0})
 	return p.CheckFunc(item, append0)
 }
+
 // reference:provenance sha256:e3bc247b65d1c4cc66939bbb4e4b5d301b88fdb73874af77e78076479bd6edcc
