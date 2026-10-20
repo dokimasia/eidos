@@ -77,6 +77,14 @@ const (
 	pythonVersionRow = "| python.version: 3.11 | none | none | none | none | none | none | `str \\| None` |\n"
 )
 
+// The rows of a type parameter and of a list of a type parameter. Protobuf
+// and GraphQL have no type parameters.
+const (
+	paramRow     = "| Type parameter | `T` | `T` | `T` | `T` | refused | refused | `T` |\n"
+	paramListRow = "| List of a type parameter | `[]T` | `T[]` | `List<T>` | `Vec<T>` | refused | refused | " +
+		"`list[T]` |\n"
+)
+
 // The policy of the stub target that the cases declare, and the error of
 // a policy without a probe.
 const (
@@ -160,6 +168,8 @@ func TestHub(t *testing.T) {
 			{name: "writes the spelling of each GraphQL type of a map", want: graphqlMapChoices},
 			{name: "writes the spelling of each type of a dynamic value of Python", want: pythonDynamicChoices},
 			{name: "writes the optional of text for a version of Python", want: pythonVersionRow},
+			{name: "writes the name of a type parameter in each target with type parameters", want: paramRow},
+			{name: "writes a list of a type parameter in each target with type parameters", want: paramListRow},
 		}
 		for _, tt := range rows {
 			t.Run(tt.name, func(t *testing.T) {

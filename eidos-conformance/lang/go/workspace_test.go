@@ -21,11 +21,18 @@ import (
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/core/workspace/workspacetest"
+	gobackend "go.dokimi.dev/eidos/lang/go/backend"
+	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
+	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	eidos "go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/backend"
+	"go.dokimi.dev/eidos/sdk/backendtest"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/plugintest"
+	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
@@ -67,6 +74,19 @@ const (
 	externalClause           = "package svc_test\n"
 	svcImport                = "\t\"" + acmeModule + "/svc\"\n"
 	subjectField             = "\tSubject svc.Session\n"
+)
+
+// The tree of the internal checks: its module, its store with an exported
+// and an unexported struct, the file of the checks that test the package
+// from inside, the clause of the package under test, and the field of the
+// check of the unexported struct.
+const (
+	internalMod   = "module " + acmeModule + "\n\ngo 1.27\n"
+	internalStore = "package svc\n\n// Session is a session.\ntype Session struct {\n\tKey string\n}\n\n" +
+		"// entry is an entry of the store.\ntype entry struct {\n\tkey string\n}\n"
+	internalFile   = "svc/store_check_internal_test.go"
+	internalClause = "package svc\n"
+	entryField     = "\tSubject entry\n"
 )
 
 // The files of a tree that vendors the module example.com/dep, the pattern
@@ -222,6 +242,55 @@ func TestWorkspace(t *testing.T) {
 				workspacetest.Generated(t, root, golang.Brand, os.DirFS(workspaceTree), goExt))
 		})
 
+		t.Run("writes the check of an unexported struct into the internal test file of svc", func(t *testing.T) {
+			t.Parallel()
+
+			root := internalRoot(t)
+			expect.That(t, files.Read(t, filepath.Join(root, filepath.FromSlash(internalFile)))).
+				Contains(internalClause, "the internal test file declares the package under test").
+				Contains(entryField, "the internal test file refers to the unexported struct without a qualifier")
+			expect.That(t, files.Read(t, filepath.Join(root, filepath.FromSlash(checkFile)))).
+				Contains(externalClause, "the external test file declares the external test package of svc").
+				NotContains(entryField, "the external test file has no check of the unexported struct")
+		})
+
+		t.Run("writes an internal test file that go vet passes", func(t *testing.T) {
+			t.Parallel()
+
+			if !toolchain.Require(t, gotesting.New()) {
+				return
+			}
+			root := internalRoot(t)
+			gotesting.AssertVets(t.Context(), t, workspacetest.Generated(t, root, golang.Brand, os.DirFS(root), goExt))
+		})
+
+		t.Run("renders through the test kits the bodies of the files that the workspace writes", func(t *testing.T) {
+			t.Parallel()
+
+			p := checks()
+			f := plugintest.Loaded(t, plugintest.Source{
+				Tree: os.DirFS(files.Workspace(t, internalTree())), Brand: golang.Brand,
+				Frontends: []plugin.Frontend{gofrontend.New(nil)}, Rules: []rules.SourceRules{gorules.New()},
+				Plugins: []plugin.Plugin{p},
+			})
+			generated := f.Generate(t, p)
+			assert.NoError(t, generated.Err, "the checks generate")
+			rendered := backendtest.RenderSettled(t, func(tb assert.TB) (backend.Backend, *backendtest.Fixture) {
+				return gobackend.New(), &backendtest.Fixture{Emit: generated.Emit, Layout: f.Layout(tb, p)}
+			})
+			got := make([]string, 0, len(rendered))
+			for _, r := range rendered {
+				got = append(got, r.Path)
+			}
+			assert.Equal(t, got, []string{internalFile, checkFile},
+				"the kits render the internal and the external test file, in path order")
+			root := internalRoot(t)
+			for _, r := range rendered {
+				expect.Contains(t, files.Read(t, filepath.Join(root, filepath.FromSlash(r.Path))), string(r.Body),
+					"the workspace writes the body that the kits render for "+r.Path)
+			}
+		})
+
 		t.Run("writes no file for a struct of a vendored package", func(t *testing.T) {
 			t.Parallel()
 
@@ -364,7 +433,8 @@ func peek(seen *sight) plugin.Generator {
 // checks returns a generator that writes a check of each struct of its
 // scope into a test family whose files test their package from outside.
 // The check has a field of the type of the struct, so the file refers to a
-// declaration of the package under test.
+// declaration of the package under test. The check of a struct that is not
+// exported tests its package from inside.
 func checks() plugin.Generator {
 	return eidos.NewPlugin(checksID).
 		Output(plugin.Output{Tag: eidos.TagTest, Per: plugin.PerSource, Word: checkWord, External: true}).
@@ -376,10 +446,33 @@ func checks() plugin.Generator {
 				Visibility: symbol.VisibilityPublic,
 				Type:       &emit.TypeRef{Spelling: s.Name, Target: s.ID},
 			})
-			e.File(eidos.TagTest).Append(check)
+			out := e.File(eidos.TagTest)
+			if s.Visibility != symbol.VisibilityPublic {
+				out = out.Internal()
+			}
+			out.Append(check)
 			return nil
 		})).
 		Generator()
+}
+
+// internalTree returns the tree of the internal checks: a module whose
+// store declares an exported and an unexported struct.
+func internalTree() files.Tree {
+	return files.Tree{goModFile: files.Text(internalMod), storeFile: files.Text(internalStore)}
+}
+
+// internalRoot writes the tree of the internal checks into a new
+// directory, runs the stubs plan with the generator of checks alone over
+// it, and returns the directory. The run is clean.
+func internalRoot(t *testing.T) string {
+	t.Helper()
+
+	root := files.Workspace(t, internalTree())
+	plan := golang.WorkspacePlans()[0]
+	plan.Generators = []plugin.Generator{checks()}
+	runClean(t, root, []workspace.Plan{plan})
+	return root
 }
 
 // probes returns a generator that writes a probe of each struct of its

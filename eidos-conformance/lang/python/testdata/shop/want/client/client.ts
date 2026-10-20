@@ -73,6 +73,8 @@ export type Sku = string;
 
 export type Lines = Line[];
 
+export type Pair<T_co extends Line = Line> = readonly [T_co, T_co];
+
 export type Grade = string;
 
 /**
@@ -130,4 +132,4 @@ export interface Order {
   channel: string;
 }
 
-// acme:provenance sha256:829260136e45317a236352a670a910c056967c01550c3a52426d7760b6d89cc3
+// acme:provenance sha256:5ac055092ad15f4e61a03b424c1d4b39dbe77afe9494feccd6d5c9e90aafd1b8

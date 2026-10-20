@@ -56,10 +56,8 @@ func ClientPlan() workspace.Plan {
 //     the Protocol states a setter of its name;
 //   - an enum is an enum whose value for each member is the text of the
 //     member;
-//   - an alias without type parameters is a type alias of its target, and a
-//     NewType an alias of the type that it wraps. The kernel folds a type
-//     parameter inside a structural type into the opaque shape, which no
-//     spoke spells, so the generator writes no alias with type parameters.
+//   - an alias is a type alias of its target with the type parameters of the
+//     alias, and a NewType is an alias of the type that it wraps.
 //
 // A property has the Python name of its field, because the name is a key of
 // the JSON of a value. Each property is a wire field, so the settle keeps its
@@ -175,12 +173,14 @@ func clientEnum(m *eidos.EnumMatch, e *eidos.Emitter) error {
 	return nil
 }
 
-// clientAlias writes the TypeScript alias of a type alias and of a NewType
-// without type parameters. It withholds the alias where TypeScript has no
-// spelling of its target, after the Emitter reports the refusal.
+// clientAlias writes the TypeScript alias of a type alias, with the type
+// parameters of the alias that the Emitter translates, and of a NewType. It
+// withholds the alias where TypeScript has no spelling of its target or of a
+// type of a type parameter, after the Emitter reports the refusal.
 func clientAlias(m *eidos.AliasMatch, e *eidos.Emitter) error {
 	a := m.Alias
-	if len(a.TypeParams) > 0 {
+	params, spelled := e.TypeParams(a.ID, a.TypeParams)
+	if !spelled {
 		return nil
 	}
 	target, spelled := e.Type(a.ID, a.Target)
@@ -188,7 +188,7 @@ func clientAlias(m *eidos.AliasMatch, e *eidos.Emitter) error {
 		return nil
 	}
 	e.PlanFile().Append(&emit.Alias{
-		Origin: a.ID, Doc: a.Doc, Name: a.ID.FlatName(), Visibility: a.Visibility, Target: target,
+		Origin: a.ID, Doc: a.Doc, Name: a.ID.FlatName(), Visibility: a.Visibility, TypeParams: params, Target: target,
 	})
 	return nil
 }

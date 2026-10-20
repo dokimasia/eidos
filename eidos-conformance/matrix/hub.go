@@ -42,11 +42,12 @@ const (
 const probeLang symbol.Lang = "probe"
 
 // The package and the names of the declarations that the probes
-// reference.
+// reference, and the name of the type parameter of Session.
 const (
 	probePkg    = "svc"
 	sessionName = "Session"
 	resultName  = "Result"
+	paramName   = "T"
 )
 
 // The source spellings of the probes' shapes. A spoke spells a shape by
@@ -103,13 +104,22 @@ var (
 	})
 	duration   = rules.Reference(textSource, rules.WellKnownDuration)
 	sessionRef = rules.Reference(sessionName, session)
+	// param is the shape of the type parameter T of Session, which the
+	// kernel's fold returns as Opaque with the identity of the parameter.
+	param = rules.TypeShape{
+		Form:     symbol.FormOpaque,
+		Spelling: paramName,
+		Ref: symbol.Identity{
+			Lang: probeLang, Package: probePkg, Owner: sessionName, Name: paramName, Kind: symbol.KindTypeParam,
+		},
+	}
 )
 
 // probes are the rows of the hub, one or more for each form of a
 // canonical shape. The rows run from the scalars and the other leaves
-// through the structural forms to the references, and Opaque is the last
-// row. The kernel's fold does not return the form Named, so the hub does
-// not have a row of it.
+// through the structural forms to the references and the type parameters,
+// and Opaque is the last row. The kernel's fold does not return the form
+// Named, so the hub does not have a row of it.
 var probes = []probe{
 	{label: "Scalar int, 8 bits", shape: rules.Scalar(intSource, rules.ScalarInt, byteBits)},
 	{label: "Scalar int, 16 bits", shape: rules.Scalar(intSource, rules.ScalarInt, shortBits)},
@@ -182,6 +192,8 @@ var probes = []probe{
 	{label: "Empty", shape: rules.Reference(textSource, rules.WellKnownEmpty)},
 	{label: "Error", shape: rules.Reference(textSource, rules.WellKnownError)},
 	{label: "Context", shape: rules.Reference(textSource, rules.WellKnownContext)},
+	{label: "Type parameter", shape: param},
+	{label: "List of a type parameter", shape: rules.TypeShape{Form: symbol.FormList, Elems: []rules.TypeShape{param}}},
 	{label: "Opaque", shape: rules.Opaque(nil)},
 }
 
@@ -192,6 +204,7 @@ var probes = []probe{
 // its rows contain one spelling, the optional of text.
 var policyProbes = map[plugin.PolicyKey]rules.TypeShape{
 	golang.GRPC:             protoMessage,
+	typescript.GRPC:         protoMessage,
 	typescript.Int64:        wideInt,
 	typescript.Absent:       optional,
 	typescript.Timestamp:    timestamp,

@@ -53,9 +53,31 @@ const (
 	storeFile             = "store.proto"
 )
 
-// The failure that a Go server method declares for an rpc, which the Go
-// backend lowers into the error result.
-const errorType = "error"
+// The plans of the binding fixture, their handler generators, the family
+// word of each generator, and the file that each plan writes for
+// svc/store.proto. Each generator writes the interface <Service><Word> of
+// each service, so the files of the two Go plans declare two names in one
+// package.
+const (
+	grpcPlan                 = "go-grpc"
+	connectPlan              = "go-connect"
+	connectESPlan            = "ts-connect"
+	grpcgenID      plugin.ID = "grpcgen"
+	connectgenID   plugin.ID = "connectgen"
+	connectesgenID plugin.ID = "connectesgen"
+	grpcWord                 = "grpc"
+	connectWord              = "connect"
+	handlerWord              = "handler"
+	grpcFile                 = "store_grpc.go"
+	connectFile              = "store_connect.go"
+	connectESFile            = "store_handler.ts"
+)
+
+// serverDir is the directory below which the plan go-connect writes. A
+// handler of connect-go names the stream types of the connect package, and
+// that package imports the messages, so the handler is in a package of its
+// own.
+const serverDir = "server"
 
 // The schema that the edit of the service fixture changes, the field of
 // Summary before and after the edit, and the mode of the file that the
@@ -105,6 +127,59 @@ func ServicePlans() []workspace.Plan {
 			},
 		},
 	}
+}
+
+// BindingPlans returns the plans of the binding fixture over the graph of
+// the service fixture, which write the handlers of each rpc under the gRPC
+// binding that [BindingConfig] selects for each plan. The plan go-grpc runs
+// grpcgen toward the Go backend, and it writes svc/store_grpc.go. The plan
+// go-connect runs connectgen toward the same Go backend, and it writes
+// server/svc/store_connect.go. The plan ts-connect runs connectesgen toward the
+// TypeScript backend, and it writes svc/store_handler.ts. Each call returns
+// new generators and backends.
+func BindingPlans() []workspace.Plan {
+	gob := gobackend.New()
+	return []workspace.Plan{
+		{
+			Name:       grpcPlan,
+			Generators: []plugin.Generator{handlergen(grpcgenID, grpcWord)},
+			Backend:    gob,
+			Layout: layout.Config{
+				ImportBase: serviceBase,
+				Families:   map[layout.Family]layout.Refinement{{Plugin: grpcgenID}: {File: grpcFile}},
+			},
+		},
+		{
+			Name:       connectPlan,
+			Generators: []plugin.Generator{handlergen(connectgenID, connectWord)},
+			Backend:    gob,
+			Layout: layout.Config{
+				ImportBase: serviceBase,
+				Families: map[layout.Family]layout.Refinement{{Plugin: connectgenID}: {
+					Policy: layout.PolicyCentralised, Dir: serverDir, File: connectFile,
+				}},
+			},
+		},
+		{
+			Name:       connectESPlan,
+			Generators: []plugin.Generator{handlergen(connectesgenID, handlerWord)},
+			Backend:    tsbackend.New(),
+			Layout: layout.Config{
+				Families: map[layout.Family]layout.Refinement{{Plugin: connectesgenID}: {File: connectESFile}},
+			},
+		},
+	}
+}
+
+// BindingConfig returns the config of the binding fixture. It selects
+// grpc-go for the plan go-grpc, connect-go for go-connect, and connect-es
+// for ts-connect.
+func BindingConfig() workspace.Config {
+	return workspace.Config{Plans: map[string]workspace.PlanConfig{
+		grpcPlan:      {Policies: map[plugin.PolicyKey]plugin.Choice{golang.GRPC: golang.GRPCGo}},
+		connectPlan:   {Policies: map[plugin.PolicyKey]plugin.Choice{golang.GRPC: golang.GRPCConnect}},
+		connectESPlan: {Policies: map[plugin.PolicyKey]plugin.Choice{typescript.GRPC: typescript.GRPCConnect}},
+	}}
 }
 
 // SchemaPlan returns the plan proto-schema of the service fixture. It runs
@@ -158,6 +233,29 @@ func servergen() plugin.Generator {
 			eidos.OnStruct(serverMessage), eidos.OnSum(sumOf), eidos.OnEnum(enumOf),
 			eidos.OnInterface(serverService),
 		).
+		Generator()
+}
+
+// handlergen returns the handler generator id of the binding fixture under
+// the family word word. It writes the interface <Service><Word> of each
+// service, with the method that [eidos.Emitter.Handler] returns for each
+// rpc. handlergen withholds the interface where the target cannot serve an
+// rpc, after the Emitter reports the refusal.
+func handlergen(id plugin.ID, word string) plugin.Generator {
+	return eidos.NewPlugin(id).
+		Output(plugin.Output{Per: plugin.PerSource, Word: word}).
+		Handle(eidos.OnInterface(func(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
+			service := m.Interface
+			out := &emit.Interface{
+				Origin: service.ID, Doc: service.Doc, Name: e.JoinName(word, service.Name),
+				Visibility: service.Visibility,
+			}
+			if !handlers(out, service, e) {
+				return nil
+			}
+			e.File().Append(out)
+			return nil
+		})).
 		Generator()
 }
 
@@ -273,36 +371,38 @@ func enumOf(m *eidos.EnumMatch, e *eidos.Emitter) error {
 }
 
 // serverService writes the Go interface <Service>Server of one service,
-// with a method for each rpc. A method takes the context of the call and
-// the request of the rpc, as the projection states them, and declares a
-// failure where the projection states one. The Go backend lowers the
-// failure into the error result, because a Go server reports a failed call
-// through it. A streaming side translates as an iterator over pairs of a
-// message and an error. serverService withholds the interface where Go has
-// no spelling of a type, after the Emitter reports the refusal.
+// with the method that [eidos.Emitter.Handler] returns for each rpc. Under
+// the binding none, a method takes the context of the call and the request
+// of the rpc, as the projection states them, and declares the failure of
+// the projection, which the Go backend lowers into the error result. A
+// streaming side translates as an iterator over pairs of a message and an
+// error. serverService withholds the interface where Go cannot serve an
+// rpc, after the Emitter reports the refusal.
 func serverService(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 	service := m.Interface
 	out := &emit.Interface{
 		Origin: service.ID, Doc: service.Doc, Name: e.JoinName(serverWord, service.Name),
 		Visibility: service.Visibility,
 	}
-	bound := m.Rules()
-	for _, method := range service.Methods {
-		// An rpc is a method, so the projection reports true.
-		c, _ := bound.CallableOf(method)
-		lowered := &emit.Method{
-			Origin: method.ID, Doc: method.Doc, Name: method.Name, Visibility: method.Visibility,
-		}
-		if c.Errors != rules.ErrorsNone {
-			lowered.Throws = []*emit.TypeRef{{Spelling: errorType}}
-		}
-		if !signature(lowered, c.Params, c.Returns, method.ID, e) {
-			return nil
-		}
-		out.Methods.Append(lowered)
+	if !handlers(out, service, e) {
+		return nil
 	}
 	e.File().Append(out)
 	return nil
+}
+
+// handlers appends the method that [eidos.Emitter.Handler] returns for each
+// rpc of service to out, in the order of the rpcs. It reports false where
+// the target cannot serve an rpc, after the Emitter reports the refusal.
+func handlers(out *emit.Interface, service *node.Interface, e *eidos.Emitter) bool {
+	for _, rpc := range service.Methods {
+		h, served := e.Handler(rpc)
+		if !served {
+			return false
+		}
+		out.Methods.Append(h)
+	}
+	return true
 }
 
 // clientService writes the TypeScript interface <Service>Client of one

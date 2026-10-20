@@ -103,6 +103,7 @@ func mirrorFunction(m *eidos.FunctionMatch, e *eidos.Emitter) error {
 	f := m.Function
 	place(m, e, f, &emit.Function{
 		Origin: f.ID, Doc: f.Doc, Comment: f.Comment, Name: f.Name, Visibility: f.Visibility, Async: f.Async,
+		Overload:    f.Overload,
 		TypeParams:  restatedTypeParams(f.TypeParams, f.ID.Package),
 		Params:      emit.SlotOf(restatedParams(m, f.Params, f.ID.Package)...),
 		Returns:     emit.SlotOf(restatedReturns(f.Returns, f.ID.Package)...),
@@ -267,7 +268,7 @@ func restatedMethod(m eidos.Matcher, method *node.Method) *emit.Method {
 		Visibility: method.Visibility, Level: method.Level, Abstract: method.Abstract, Final: method.Final,
 		Override: method.Override, HasDefault: method.HasDefault, Async: method.Async, Accessor: method.Accessor,
 		Indexer: method.Indexer, Constructs: method.Constructs, Hard: method.Hard, Optional: method.Optional,
-		Mutability: method.Mutability, Computed: method.Computed,
+		Mutability: method.Mutability, Computed: method.Computed, Overload: method.Overload,
 		TypeParams:  restatedTypeParams(method.TypeParams, home),
 		Params:      emit.SlotOf(restatedParams(m, method.Params, home)...),
 		Returns:     emit.SlotOf(restatedReturns(method.Returns, home)...),

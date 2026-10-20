@@ -39,6 +39,7 @@ import (
 const (
 	serviceTree   = "testdata/service"
 	serviceWant   = "testdata/service/want"
+	bindingWant   = "testdata/service/binding"
 	baseVersion   = "proto3"
 	schemaPath    = "svc/store.proto"
 	serverPath    = "svc/store_server.go"
@@ -242,6 +243,33 @@ func TestService(t *testing.T) {
 		})
 	})
 
+	t.Run("BindingPlans", func(t *testing.T) {
+		t.Parallel()
+
+		for _, version := range versions {
+			t.Run("writes the handlers of each binding from the "+version+" schema", func(t *testing.T) {
+				t.Parallel()
+
+				workspacetest.AssertGolden(t, bindingFixture(version), t.TempDir(), bindingWant)
+			})
+		}
+	})
+
+	t.Run("BindingConfig", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("selects a binding for each plan of the binding fixture", func(t *testing.T) {
+			t.Parallel()
+
+			root := serviceRoot(t, baseVersion)
+			_, err := protobuf.ComposeService(root).
+				Plans(protobuf.BindingPlans()...).
+				Config(protobuf.BindingConfig()).
+				Build()
+			assert.NoError(t, err, "each plan of the config is a plan of the composition")
+		})
+	})
+
 	t.Run("SchemaPlan", func(t *testing.T) {
 		t.Parallel()
 
@@ -315,6 +343,19 @@ func serviceFixture(t *testing.T, version string) workspacetest.Fixture {
 		Plans:   protobuf.ServicePlans,
 		Want:    workspacetest.Want(t, serviceWant),
 		Edit:    protobuf.EditService,
+	}
+}
+
+// bindingFixture returns the fixture of the binding plans over the schema
+// of one version: the version's tree, the service composition under the
+// config that selects the binding of each plan, and the binding plans.
+func bindingFixture(version string) workspacetest.Fixture {
+	return workspacetest.Fixture{
+		Tree: os.DirFS(filepath.Join(filepath.FromSlash(serviceTree), version)),
+		Compose: func(root string) (*workspace.Builder, error) {
+			return protobuf.ComposeService(root).Config(protobuf.BindingConfig()), nil
+		},
+		Plans: protobuf.BindingPlans,
 	}
 }
 
