@@ -26,9 +26,13 @@ const treeRoot = "."
 // Package names the package a Go file at a routed path declares, the
 // way the Go frontend names the package of a directory it loads:
 //
-//   - for a test file, the package of the file's origin where a file of
-//     the directory declares it, such as the external test package
-//     store_test;
+//   - for a test file of an external family, the external test package
+//     of the directory. That is the package with the suffix _test that a
+//     file of the directory declares, or else the package of the
+//     directory with _test after its path and its name;
+//   - for any other test file, the package of the file's origin where a
+//     file of the directory declares it, such as the external test
+//     package store_test;
 //   - the package the directory's non-test files declare, with the
 //     name their clause writes, main included;
 //   - in a directory without one, the innermost module that contains
@@ -39,25 +43,52 @@ const treeRoot = "."
 //     directory.
 //
 // Any other test file declares the directory's package, so it compiles
-// into the package's test binary and reads its unexported names. A
-// directory outside every module and outside the import base's
-// directory derives no package, and Package returns an error naming
-// the directory.
+// into the package's test binary and reads its unexported names. A file
+// of an external family that is not a test file declares the directory's
+// package too, because Go declares an external test package in test
+// files alone. A directory outside every module and outside the import
+// base's directory derives no package, and Package returns an error
+// naming the directory.
 //
 // # Allocation contract
 //
 // Package returns a resident's package without allocating, and
 // allocates the import path it derives for a directory without one,
 // one allocation, and one more where the qualifier of the path is
-// escaped. A refusal allocates its error.
+// escaped. The external test package of a directory without a resident
+// one allocates its path and its name, two allocations more. A refusal
+// allocates its error.
 func Package(p plugin.Placement) (symbol.Identity, error) {
-	if strings.HasSuffix(p.Path, testFile) {
+	test := strings.HasSuffix(p.Path, testFile)
+	if test && !p.External {
 		for _, r := range p.Residents {
 			if r.Pkg.Lang == golang.Lang && r.Pkg.Package == p.Origin.Package {
 				return r.Pkg, nil
 			}
 		}
 	}
+	pkg, err := directory(p)
+	if err != nil || !test || !p.External {
+		return pkg, err
+	}
+	for _, r := range p.Residents {
+		if r.Pkg.Lang == golang.Lang && r.Pkg.Package != pkg.Package &&
+			strings.TrimSuffix(r.Pkg.Package, golang.TestSuffix) == pkg.Package {
+
+			return r.Pkg, nil
+		}
+	}
+	pkg.Package += golang.TestSuffix
+	pkg.Name += golang.TestSuffix
+	return pkg, nil
+}
+
+// directory returns the package of the directory of a routed path: the
+// package that the directory's non-test files declare, else the package
+// that the innermost module containing the directory derives, else the
+// package that the plan's import base derives. It returns an error naming
+// the directory where none of the three applies.
+func directory(p plugin.Placement) (symbol.Identity, error) {
 	for _, r := range p.Residents {
 		if r.Pkg.Lang == golang.Lang && !strings.HasSuffix(r.File, testFile) {
 			return r.Pkg, nil

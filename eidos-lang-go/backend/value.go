@@ -109,3 +109,46 @@ func (t target) Construction(ref *emit.TypeRef, _ []string) (string, error) {
 	return "", render.RefuseValue(t.Lang(),
 		"Go builds a value through a composite literal or a call, and has no construction of %s", ref.Spelling)
 }
+
+// Func spells a function literal of a function type, as
+// func(context.Context) error { return nil }. It writes the signature
+// through the file's [Speller], so the file imports each type of the
+// signature. The body returns the results, and a function without results
+// has an empty body, as func(string) {}. The literal has the parameter
+// names of the type. A type that is not a function type refuses, because
+// Go writes a literal of a defined function type through a conversion of
+// the literal of its signature.
+func (t target) Func(ref *emit.TypeRef, results []string) (string, error) {
+	if ref.Form != symbol.FormFunc {
+		return "", render.RefuseValue(t.Lang(),
+			"Go writes a function literal of a function type, and %s is not one", ref.Spelling)
+	}
+	sig, err := NewSpeller(t.set).Spell(ref)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return sig + " {}", nil
+	}
+	return sig + " { return " + strings.Join(results, ", ") + " }", nil
+}
+
+// Make spells make of a type, which Go writes for a channel of every
+// direction, a map and a slice: make(chan string). The type is in the
+// spelling of the file, which records its imports.
+func (target) Make(_ *emit.TypeRef, typ string) (string, error) {
+	return "make(" + typ + ")", nil
+}
+
+// Value spells one value of the value tree as Go, through a target that
+// binds in set the packages that the references and the callees of the
+// value name. The value builtin calls it, so a template writes a value as
+// a body of the same file writes it. A value that Go has no form for
+// returns a [render.ValueError].
+//
+// Value allocates what [scaffold.Value] allocates: the text of each part
+// of the value that it joins, and the qualified name of a callee of
+// another package. A literal does not allocate.
+func Value(v emit.Value, set *render.ImportSet) (string, error) {
+	return scaffold.Value(target{set: set}, v)
+}

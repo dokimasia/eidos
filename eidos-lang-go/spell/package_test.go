@@ -28,8 +28,12 @@ const (
 )
 
 // derivedAllocs is the package of a directory no loaded package
-// declares: its import path.
-const derivedAllocs = 1
+// declares: its import path. externalAllocs is the external test package
+// of a directory without a resident one: its path and its name.
+const (
+	derivedAllocs  = 1
+	externalAllocs = 2
+)
 
 // A Go file declares its directory's package. A routed file joins the
 // package the frontend loads from that directory.
@@ -86,6 +90,35 @@ func TestPackage(t *testing.T) {
 				name: "returns the directory's package for a non-test file of an external test package",
 				give: plugin.Placement{
 					Path: "svc/store/stub.go", Origin: origin(testPath), Residents: storeResidents(),
+				},
+				want: declared(storePath, "store"),
+			},
+			{
+				name: "returns the external test package of a resident for a test file of an external family",
+				give: plugin.Placement{
+					Path: "svc/store/store_check_test.go", Origin: origin(storePath), Residents: storeResidents(),
+					External: true,
+				},
+				want: declared(testPath, testName),
+			},
+			{
+				name: "returns the external test package of the directory's package for a test file of an external family",
+				give: externalPlacement(),
+				want: declared(testPath, testName),
+			},
+			{
+				name: "returns the external test package of the module's import path for a test file of an external family",
+				give: plugin.Placement{
+					Path: "svc/store/store_check_test.go", Origin: origin(storePath), Modules: []plugin.Module{acme()},
+					External: true,
+				},
+				want: declared(testPath, testName),
+			},
+			{
+				name: "returns the directory's package for a non-test file of an external family",
+				give: plugin.Placement{
+					Path: "svc/store/store_check.go", Origin: origin(storePath), Residents: storeResidents(),
+					External: true,
 				},
 				want: declared(storePath, "store"),
 			},
@@ -199,6 +232,11 @@ func TestPackageAllocs(t *testing.T) {
 		"Package allocates the derived import path")
 	assert.NoError(t, err, "Package derives the module's package")
 	assert.Equal(t, got, declared(svcModule+"/gen", "gen"), "Package returns the derived package")
+	external := externalPlacement()
+	assert.MaxAllocs(t, func() { got, err = spell.Package(external) }, externalAllocs,
+		"Package allocates the path and the name of the derived external test package")
+	assert.NoError(t, err, "Package derives the external test package")
+	assert.Equal(t, got, declared(testPath, testName), "Package returns the external test package")
 }
 
 // BenchmarkPackage measures the package a backend names once per routed
@@ -216,6 +254,12 @@ func BenchmarkPackage(b *testing.B) {
 			give:   modulePlacement(),
 			allocs: derivedAllocs,
 			want:   declared(svcModule+"/gen", "gen"),
+		},
+		{
+			name:   "a test file of an external family",
+			give:   externalPlacement(),
+			allocs: externalAllocs,
+			want:   declared(testPath, testName),
 		},
 	}
 	b.Run("Package", func(b *testing.B) {
@@ -265,6 +309,18 @@ func residentPlacement() plugin.Placement {
 	return plugin.Placement{
 		Path:      "svc/store/store_stub.go",
 		Residents: []plugin.Resident{{File: "svc/store/store.go", Pkg: declared(storePath, "store")}},
+	}
+}
+
+// externalPlacement returns a test file of an external family routed into
+// the store directory, whose source declares the package and no file the
+// external test package.
+func externalPlacement() plugin.Placement {
+	return plugin.Placement{
+		Path:      "svc/store/store_check_test.go",
+		Origin:    origin(storePath),
+		Residents: []plugin.Resident{{File: "svc/store/store.go", Pkg: declared(storePath, "store")}},
+		External:  true,
 	}
 }
 

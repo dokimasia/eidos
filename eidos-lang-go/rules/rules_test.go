@@ -598,7 +598,8 @@ type Tagged struct {
 // Uncomparable has a slice field.
 type Uncomparable struct{ Items []int }
 
-// Hooked's first exported field has no literal, and its second has one.
+// Hooked's first exported field is a function, which no composite takes
+// as a part, and its second field has a literal.
 type Hooked struct {
 	OnDone func()
 	Name   string

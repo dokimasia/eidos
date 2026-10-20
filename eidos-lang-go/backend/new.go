@@ -33,6 +33,7 @@ func New() backend.Backend {
 		Types(spell.Type).
 		Lower(Lower).
 		Scaffold(Scaffold).
+		Value(Value).
 		Imports(Imports).
 		TemplateImport(TemplateImport).
 		Finalise(format.Source).

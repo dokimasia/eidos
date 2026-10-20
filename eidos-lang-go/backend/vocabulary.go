@@ -27,6 +27,8 @@ const (
 	FuncDocs = render.HelperDocs
 	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
 	// FuncSpellValue is the template name of [Speller.Spell] in a value
@@ -496,15 +498,16 @@ func (s Speller) param(p *emit.Param) (string, error) {
 // that composes a variant backend registers the vocabulary with its own
 // additions. Every helper takes a fixed list of arguments, because
 // text/template allocates the list of a variadic call and a value for
-// each string argument in a template. Funcs allocates the map of
-// nineteen helpers in four allocations, and the seven bound helpers of the
-// speller. spell and spellvalue share one bound helper.
+// each string argument in a template. Funcs allocates the map of twenty
+// helpers in four allocations, and the seven bound helpers of the speller.
+// spell and spellvalue share one bound helper.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	spell := s.Spell
 	return template.FuncMap{
 		FuncDocs:             Docs,
 		FuncMemberDocs:       MemberDocs,
+		FuncWrapDocs:         WrapDocs,
 		FuncSpell:            spell,
 		FuncSpellValue:       spell,
 		FuncTypeParams:       s.TypeParams,
@@ -537,6 +540,14 @@ func Docs(lines []string) string {
 // and of a method in an interface. It allocates what [Docs] allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.LineDocs(lines, docMark, memberIndent)
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that [Docs]
+// and [MemberDocs] write. A Go comment reads an unindented line as text,
+// so no word of the text is markup. It allocates what [textfmt.Wrap]
+// allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupNone)
 }
 
 // Constraint writes the build constraint of a source file as a //go:build
