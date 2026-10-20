@@ -312,7 +312,7 @@ func TestParse(t *testing.T) {
 			assert.ErrorIs(t, err, context.Canceled, "the parse of the second member ends with the context")
 		})
 
-		t.Run("parses the embedded library with the one construct that the grammar does not read", func(t *testing.T) {
+		t.Run("parses every file of the embedded library without a syntax error", func(t *testing.T) {
 			t.Parallel()
 
 			entries, err := fs.ReadDir(library.Files, library.Dir)
@@ -330,8 +330,7 @@ func TestParse(t *testing.T) {
 				}
 				tree.Close()
 			}
-			assert.Equal(t, got, []string{"lib.es2015.symbol.wellknown.d.ts:106:12"},
-				"tree-sitter-typescript does not read keyof before a readonly array")
+			assert.Empty(t, got, "the grammar parses each construct of the library")
 		})
 	})
 }

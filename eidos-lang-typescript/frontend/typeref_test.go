@@ -101,6 +101,22 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, ref.Package, "./lib", "and its import")
 		})
 
+		operators := []struct {
+			name string
+			give string
+		}{
+			{name: "lowers a readonly array before | null as an immutable List", give: "readonly Imported[] | null"},
+			{name: "lowers a readonly array before & as an immutable List", give: "readonly Imported[] & Local"},
+		}
+		for _, tt := range operators {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, targetOf(t, tt.give).Elems[0].Mutability, symbol.MutabilityImmutable,
+					"readonly applies to the array before the operator")
+			})
+		}
+
 		t.Run("lowers a tuple as a mutable Tuple of its members", func(t *testing.T) {
 			t.Parallel()
 

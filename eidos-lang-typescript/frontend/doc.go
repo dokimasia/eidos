@@ -15,15 +15,16 @@
 //
 // # Parsing
 //
-// The frontend parses with tree-sitter-typescript through lang/treesitter,
-// and a .tsx file with its TSX grammar. Every ERROR and MISSING node
-// reports at its position under [UnparsedFile], ten for each file and one
-// finding that counts the rest, and every declaration that the parser
-// recovered loads. A tsconfig chain that does not read whole reports under
-// [BadConfig], and a package.json that does not read or parse under
-// [BadPackage]. [BadConfig], [BadPackage], [ReadonlyRest],
-// [RelativeAugmentation] and [UnknownLibrary] are warnings. A member of a
-// library does not report a syntax error.
+// The frontend parses with the grammar of the fork
+// dokimasia/tree-sitter-typescript through lang/treesitter, and a .tsx file
+// with its TSX grammar. Every ERROR and MISSING node reports at its
+// position under [UnparsedFile], ten for each file and one finding that
+// counts the rest, and every declaration that the parser recovered loads. A
+// tsconfig chain that does not read whole reports under [BadConfig], and a
+// package.json that does not read or parse under [BadPackage].
+// [BadConfig], [BadPackage], [ReadonlyRest], [RelativeAugmentation] and
+// [UnknownLibrary] are warnings. A member of a library does not report a
+// syntax error.
 //
 // # Packages
 //
