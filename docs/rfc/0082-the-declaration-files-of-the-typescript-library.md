@@ -8,7 +8,7 @@ updated: 2026-10-20
 discussion: https://github.com/dokimasia/eidos/issues/48
 supersedes: none
 superseded-by: none
-produces-adr: ADR-0084, ADR-0085, ADR-0086
+produces-adr: ADR-0084, ADR-0085, ADR-0086, ADR-0087
 ---
 
 <!--
@@ -57,6 +57,7 @@ bounds of their type parameters completes the change.
 | TypeScript frontend | `eidos-lang-typescript/frontend` | selects the library of each project, declares it as a shared input, places it in a dependency round, lowers its files, and resolves global names into it |
 | TypeScript rules | `eidos-lang-typescript/rules` | classify a reference to a declaration of the library as they classify a global name today |
 | TypeScript backend | `eidos-lang-typescript/backend` | writes a reference to a declaration of the library without an import |
+| TypeScript grammar | `eidos-lang/treesitter/typescript` | pins the fork `dokimasia/tree-sitter-typescript`, whose grammars parse every file of the library |
 | Kernel | `eidos-core/rules` | the member walk lists a computed member, and `GapComputed` is removed |
 | Kernel | `eidos-core/frontend/load` | the discriminator of two overloads that it does not tell apart spells the bounds of their type parameters |
 | Kernel | `eidos-core/store` | `Graph.AddDependencyPackage` adds a package of a dependency round to a graph that `New` returns, and `Graph.Dependency` reports it |
@@ -200,11 +201,12 @@ func Stores(getenv func(key string) string) (map[string]fs.FS, error)
 - A merged property of a name that the interface already has does not add a member either,
   because TypeScript requires both declarations of a property to have one type.
   `lib.es2021.intl.d.ts` declares four properties of `Intl.DateTimeFormatOptions` again.
-- The frontend does not report a syntax error of a library member. The grammar does not parse one
-  construct of the release, `[K in keyof readonly any[]]?: boolean` in
-  `lib.es2015.symbol.wellknown.d.ts`, because tree-sitter-typescript v0.23.2 reads `keyof` before a
-  primary type only. A spec of the satellite lists the syntax errors of the embedded library, so a
-  new error of a refresh fails the spec.
+- The frontend does not report a syntax error of a library member, because the author of the
+  workspace cannot change the library. The grammar of the fork `dokimasia/tree-sitter-typescript`
+  parses every file of the release, `[K in keyof readonly any[]]?: boolean` in
+  `lib.es2015.symbol.wellknown.d.ts` included. A spec of the satellite requires every file of the
+  embedded library to parse without a syntax error, so a refresh with a construct that the grammar
+  does not parse fails the spec.
 
 ### Resolution
 
@@ -277,24 +279,24 @@ keeps its discriminator. Overloads whose type parameters are equal too remain a 
 
 ### The fixture of a plugin
 
-A plan admits each dependency package of its language, so the walk of a plugin crosses into the
-library in a run. The fixture of a spec of the plugin contains the same packages:
+A plan admits each dependency package of its language, so the walk of a plugin visits the library
+in a run. The fixture of a spec of the plugin contains the same packages:
 
-- `plugintest.Loaded` adds each package that a dependency round loaded, beside the packages that
-  `Source.Packages` lists. A fixture whose source lists its packages and contains the store of the
-  library folds `Map<string, string>` to the map form. Its walk of an interface that extends
-  `Error` is complete.
-- `Fixture.LoadDependencies` adds such a package through `store.Graph.AddDependencyPackage`, so
-  `Graph.Dependency` reports it in a graph that `store.New` returns. A rule of the generate phase
-  then does not run on a declaration of the package, as in a run, and an annotator does.
+- `plugintest.Loaded` adds each package of a dependency round. It adds them also where
+  `Source.Packages` lists the packages of the tree. A fixture whose source lists its packages and
+  contains the store of the library folds `Map<string, string>` to the map form. Its walk of an
+  interface that extends `Error` is complete.
+- `Fixture.LoadDependencies` adds such a package through `store.Graph.AddDependencyPackage`.
+  `Graph.Dependency` then reports the package in a graph that `store.New` returns. A rule of the
+  generate phase does not run on a declaration of the package, and an annotator does. A run treats
+  the package the same way.
 
 ```go
 package store
 
-// AddDependencyPackage adds a parsed package that a dependency round
-// loaded, as [Graph.AddPackage] adds a package. After [Graph.Freeze],
-// [Graph.Dependency] reports true for the package and each of its
-// declarations.
+// AddDependencyPackage adds a parsed package of a dependency round in the
+// same way as [Graph.AddPackage]. After [Graph.Freeze], [Graph.Dependency]
+// reports true for the package and each of its declarations.
 //
 // Error modes: the errors of [Graph.AddPackage].
 func (g *Graph) AddDependencyPackage(p *node.Package) error
@@ -303,9 +305,9 @@ func (g *Graph) AddDependencyPackage(p *node.Package) error
 ```go
 package plugintest
 
-// LoadDependencies adds parsed packages that a dependency round loaded to
-// the graph. A rule of the generate phase does not run on their
-// declarations, and an annotator and a rule of the emit phase do.
+// LoadDependencies adds parsed packages of a dependency round to the graph.
+// A rule of the generate phase does not run on their declarations, and an
+// annotator and a rule of the emit phase do.
 func (f *Fixture) LoadDependencies(tb assert.TB, pkgs ...*node.Package) *Fixture
 ```
 
@@ -357,7 +359,8 @@ cores.
 | A merge of a global declaration of the workspace with the library | out | the model has no relation for a declaration that two units declare, which merges across the files of the workspace lack too | a design of declaration merges across units |
 | A computed member in the walk | in | a generator of TypeScript implements `[Symbol.asyncDispose]` and `[Symbol.iterator]`, and the backends of the other languages reject or refuse the fact already | none known |
 | The bounds in the discriminator of overloads that collide | in | the overloads are distinct in TypeScript and in Java, and every other identity keeps its spelling | none known |
-| A syntax error of a library member | no finding | the author of the workspace cannot change the library, and the spec of the satellite lists the errors | a grammar release that parses the whole library |
+| A syntax error of a library member | no finding | the author of the workspace cannot change the library, and the spec of the satellite requires the library to parse without an error | none known |
+| The grammar of the fork `dokimasia/tree-sitter-typescript` | in | the upstream grammar does not parse `keyof readonly any[]` of the library, and it reads `readonly` before a union as the `readonly` of the union | a release of the upstream grammar that parses both |
 | The dependency packages in the fixture of a plugin that lists its packages | in | a plan admits them, so a spec sees the fold and the walk of a run | none known |
 
 ## Alternatives
@@ -430,10 +433,11 @@ callable of TypeScript, Python and Java would change, also where no other overlo
 - A reference directive of a source file applies to its own file, where TypeScript applies it to
   the program.
 - `GapComputed` is removed, which breaks the kernel and the SDK.
-- An annotator in the fixture of a plugin with a store visits the declarations of the library, as
-  it does in a run, also where the source lists its packages.
-- A refresh of the library also refreshes the two tables of typescript-go and the spec of the syntax
-  errors.
+- An annotator in a fixture with the store of the library visits the declarations of the library.
+  A source that lists its packages does not change that, and a run visits them too.
+- A refresh of the library also refreshes the two tables of typescript-go. A construct of the new
+  release that the grammar does not parse needs a change of the fork.
+- The fork of the grammar takes each change of upstream by hand.
 
 ## Open questions
 
@@ -444,7 +448,6 @@ None.
 - The declaration files below `node_modules`, through the same store kind and the dependent role.
 - A merge of declarations across units, which a global augmentation of the library and a merge
   across the files of the workspace both need.
-- A release of tree-sitter-typescript that parses `keyof readonly T[]`.
 
 ## References
 
@@ -456,4 +459,4 @@ None.
 | typescript-go 7.0.2, the names of the library | <https://github.com/microsoft/typescript-go/blob/typescript/v7.0.2/internal/tsoptions/enummaps.go> |
 | typescript-go 7.0.2, the load of library files | <https://github.com/microsoft/typescript-go/blob/typescript/v7.0.2/internal/compiler/fileloader.go> |
 | The TypeScript handbook, triple-slash directives | <https://www.typescriptlang.org/docs/handbook/triple-slash-directives.html> |
-| tree-sitter-typescript v0.23.2, the rule of `keyof` | <https://github.com/tree-sitter/tree-sitter-typescript/blob/v0.23.2/common/define-grammar.js> |
+| The fork of the grammar | <https://github.com/dokimasia/tree-sitter-typescript> |

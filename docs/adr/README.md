@@ -105,3 +105,4 @@ way.
 | [0084](0084-the-typescript-frontend-loads-the-library-of-each-project.md) | The TypeScript frontend loads the library of each project from the embedded release | Accepted |
 | [0085](0085-the-member-walk-lists-a-computed-member.md) | The member walk lists a member with a computed name | Accepted |
 | [0086](0086-colliding-overloads-spell-their-type-parameters.md) | The discriminator of colliding overloads spells their type parameters | Accepted |
+| [0087](0087-eidos-reads-typescript-through-the-fork-of-tree-sitter-typescript.md) | eidos reads TypeScript through the fork of tree-sitter-typescript | Accepted |

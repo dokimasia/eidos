@@ -513,7 +513,7 @@ keeps even the parser deviation invisible downstream:
 | Language | Parser | Why |
 |---|---|---|
 | Go | stdlib `go/parser` | the reference grammar as a zero-dependency pure-Go library, with exact positions and comment attachment |
-| TypeScript | tree-sitter | proven in the current satellite. The native TS 7 compiler is written in Go but ships internal packages only, so there is nothing importable to pin |
+| TypeScript | the fork `dokimasia/tree-sitter-typescript` of tree-sitter-typescript, pinned to a commit | proven in the current satellite. The native TS 7 compiler is written in Go but ships internal packages only, so there is nothing importable to pin. The upstream grammar has not changed since v0.23.2 of 2024-11-11, and the fork applies `readonly` to the type before a union or an intersection. It also parses a readonly type and an infer type after `keyof`. The embedded library has the first form |
 | protobuf | the experimental parser of `bufbuild/protocompile`, pinned to a commit | pure Go and declarative. The released parser stops at Edition 2023, and a file of Edition 2026, whose grammar is Edition 2024's, parses as Edition 2024 |
 | GraphQL | the fork `dokimasia/gqlparser/v2` of gqlparser, pinned to a commit | the parser of gqlgen, pure Go, with the comments of a document and their positions. Its validator types each selection against its schema. The fork fixes four forms that gqlparser refuses, and the satellite contributes the fixes upstream |
 | Rust | tree-sitter-rust | no production pure-Go Rust parser exists, and the grammar is org-maintained |
