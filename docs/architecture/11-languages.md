@@ -104,12 +104,16 @@ call before its request, through `ContextRules`, and with the error
 model `raised`, because every binding of gRPC passes a context to a
 handler and fails a call with a status. Under the choices `grpc-go` and
 `connect-go` of the policy `golang.grpc`, the Go spoke spells a reference
-to a protobuf declaration as protoc-gen-go names it. A group loads as a nested message of the
-group's name and a field of that name in lower case. The field has the
-marker `protobuf.delimited`. An extend block loads as its fields, each
-with the extended message as its `Receives`. Each field is a
-declaration of the scope of the block, which is the file or a message.
-An extension is not a field of the message that declares it.
+to a protobuf declaration as protoc-gen-go names it. Under the choice
+`connect-es` of `typescript.grpc`, the TypeScript spoke spells it as
+protobuf-es names it. Both spokes mark such a reference bound, because
+the code generator of the binding writes its referent. A group loads as
+a nested message of the group's name and a field of that name in lower
+case. The field has the marker `protobuf.delimited`. An extend block
+loads as its fields, each with the extended message as its `Receives`.
+Each field is a declaration of the scope of the block, which is the
+file or a message. An extension is not a field of the message that
+declares it.
 
 The backend writes each construct in the syntax of the version of its
 file. A generator states a construct through one of five channels: a
@@ -200,6 +204,21 @@ parses generated files with the `ast` module of CPython, type-checks
 them with pyright in its strict mode and runs their tests with
 unittest.
 
+The TypeScript and Python frontends mark an overload signature with
+`Overload`, and the callable of its name without the mark is the
+implementation. The render writes the declarations of a TypeScript file
+and of a Python module in the order that the module evaluates them: the
+signatures of a name right before its implementation, and a class after
+its bases and its decorators. A Python stub file keeps the order of the
+flush and states signatures without an implementation.
+
+The TypeScript backend writes the variance of a type parameter of a
+class, of an interface, and of an alias of a function type or an object
+type. tsc refuses a variance annotation on every other declaration, so
+the lowering leaves out the variance of the type parameters of a
+function, a method and every other alias. TypeScript infers the variance
+of a generic type from its structure.
+
 The rules of `eidos-lang-rust` project a crate without a load of the
 standard library. A type of the standard library that a signature names
 folds through the table of builtins of the rules: the primitives and the
@@ -214,10 +233,12 @@ A return of `Result<T, E>`, of an alias of the crate for it and of a
 model. The kernel splits it into the views of its value and its failure
 through `ResultRules`. The frontend resolves `Self` to the struct, the
 enum or the trait of its impl block or its body, and a receiver `&self` is
-a borrow of `Self`. The rules derive the values of Rust's grammar of
-expressions, such as `String::from("a")`, `vec![x]` and
-`HashMap::from([(k, v)])`, and an authored text of a `String` takes its
-call through `TextRules`.
+a borrow of `Self`. A trait impl adds its trait to the `Implements` of the
+struct, the enum or the data enum that it names. The rules read it for the
+error contract, the equality and the zero value of the type. The rules
+derive the values of Rust's grammar of expressions, such as
+`String::from("a")`, `vec![x]` and `HashMap::from([(k, v)])`, and an
+authored text of a `String` takes its call through `TextRules`.
 
 ## The language landscape
 
@@ -234,7 +255,8 @@ names the language that forced the model or tier addition
 |---|---|---|
 | Variance on type params | Kotlin, C#, Java wildcards | Tier 1 symbol |
 | Extends and Implements against Embeds | JVM and Python against Go | Tier 1 symbol |
-| Overloads | Java, Kotlin, C#, TS | a model rule: member slices |
+| The contracts of an enum and a sum | Java and Kotlin enums, Rust trait impls of enums | Tier 1 symbol |
+| Overloads | Java, Kotlin, C#, TS, Python | a model rule: member slices, and Tier 1 `Overload` for a signature without a body |
 | Sum against Union | Rust enums, sealed classes and `oneof` against TS unions | Tier 1, two shapes |
 | Normalized Visibility | Java, Kotlin `internal`, Rust `pub(crate)` | Tier 1 symbol, raw spelling in metadata |
 | Instance and Type member level | JVM statics, companions | Tier 1 symbol |
@@ -392,8 +414,22 @@ backend.New(name, target, syntax).
     Scaffold(spellStmt).         // the neutral statement vocabulary
     Imports(renderImports).      // grouping/sorting are language facts
     Finalise(format.Source).
+    Binder(serveRPC, homeOf).    // the handler of an rpc and the package of
+                                 // the code of each gRPC binding
     Build()                      // panics on a declaration defect
 ```
+
+A target with a gRPC binding declares `Binder`
+([10-cross-language.md](10-cross-language.md)). Its handler writes
+the method that serves an rpc in the form of the binding that the
+policy selects. The Go binder writes the forms of protoc-gen-go-grpc
+and protoc-gen-connect-go, and the TypeScript binder writes the
+`ServiceImpl` of Connect-ES. Its home returns the package of the code
+that the binding generates for a schema: the Go package of the
+directory of the schema, the connect package below it for a service,
+and the module `<stem>_pb` beside the schema in TypeScript. A backend
+without a binder serves the canonical method of an rpc, and the layout
+refuses each bound reference of its plan.
 
 The kit does the same work for every satellite: the filename and
 package halves the plan's layout routes files through

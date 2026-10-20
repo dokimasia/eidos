@@ -493,6 +493,21 @@ other families of the plugin keep the package of their directory.
 Output(Output{Tag: TagTest, Per: PerSource, Word: "check", External: true}) // package store_test
 ```
 
+A test of an unexported declaration compiles only in the package under
+test. A handler marks such a test through `Out.Internal`, and the flush
+lists the origin of each marked declaration in `Unit.Inside`. The Go
+target writes the marked declarations into the internal test file of the
+family, `store_check_internal_test.go`, which declares `store`. The other
+declarations of the family keep `store_test`.
+
+```go
+out := e.File(TagTest)
+if s.Visibility != symbol.VisibilityPublic {
+    out = out.Internal() // store_check_internal_test.go, package store
+}
+out.Append(check)
+```
+
 ## The lowering guarantee
 
 This is the layer boundary's contract. Every rule set lowers to the
@@ -602,6 +617,7 @@ func (e *Emitter) PackageFile(tag ...Tag) *Out             // per package
 func (e *Emitter) PlanFile(tag ...Tag) *Out                // per plan
 func (o *Out) Append(decls ...symbol.Symbol)               // declarations of the file
 func (o *Out) Record(data any, decls ...symbol.Symbol)     // records of a claimed family, with their data
+func (o *Out) Internal() *Out                              // later placements test their package from inside
 func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] // one slot's write view
 func (v SlotView[T]) Append(values ...T)                   // names a weaver among the contributors
 func (e *Emitter) JoinName(tail, head string) string       // head, then tail raised

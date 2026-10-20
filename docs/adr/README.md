@@ -95,3 +95,10 @@ way.
 | [0074](0074-the-projection-of-an-rpc-states-its-context-and-its-failure.md) | The projection of an rpc states its context and its failure | Accepted |
 | [0075](0075-a-policy-of-the-target-selects-the-grpc-binding.md) | A policy of the target selects the gRPC binding | Accepted |
 | [0076](0076-the-ring-reports-a-release-of-an-earlier-line.md) | The ring reports a release of an earlier compatibility line | Accepted |
+| [0077](0077-a-bound-reference-takes-the-package-of-its-binder.md) | A bound reference takes the package that the binder of its target returns | Accepted |
+| [0078](0078-a-test-fixture-routes-through-the-layout-of-a-plan.md) | A test fixture routes through the layout of a plan | Accepted |
+| [0079](0079-a-handler-marks-the-internal-tests-of-an-external-family.md) | A handler marks the internal tests of an external family | Accepted |
+| [0080](0080-an-enum-and-a-sum-state-their-contracts.md) | An enum and a sum state the contracts that they implement | Accepted |
+| [0081](0081-a-callable-marks-an-overload-signature.md) | A function and a method mark an overload signature | Accepted |
+| [0082](0082-the-render-orders-the-declarations-of-a-file.md) | The render orders the declarations of a file | Accepted |
+| [0083](0083-the-spoke-spells-a-type-parameter.md) | The spoke spells a type parameter at every depth of a type | Accepted |

@@ -94,3 +94,7 @@ the decision is already made and there is nothing left to argue, write an
 | [0075](0075-dependency-packages-the-routing-of-a-placement-authored-literals-the-trailer-and-the-external-test-package.md) | Dependency packages, the routing of a placement, authored literals, the trailer and the external test package | Draft |
 | [0076](0076-the-projection-rules-of-rust.md) | The projection rules of Rust | Accepted |
 | [0077](0077-the-grpc-bindings-of-a-protobuf-service.md) | The gRPC bindings of a protobuf service | Accepted |
+| [0078](0078-the-layout-of-a-test-fixture-and-internal-tests.md) | The layout of a test fixture and the internal tests of an external family | Accepted |
+| [0079](0079-the-implements-clause-of-an-enum-and-a-sum.md) | The implements clause of an enum and a sum | Accepted |
+| [0080](0080-overload-signatures-and-the-order-of-a-file.md) | Overload signatures and the order of the declarations of a file | Accepted |
+| [0081](0081-a-type-parameter-inside-a-structural-type.md) | A type parameter inside a structural type | Accepted |

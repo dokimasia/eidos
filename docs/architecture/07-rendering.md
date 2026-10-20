@@ -387,7 +387,16 @@ flow runs the same way in every satellite:
    is the import home its references qualify against.
 2. **Render declarations** through the language's kind templates, in
    canonical order: the source position of each origin, then the
-   unit's declaration order. A plugin's claimed file template takes the whole file
+   unit's declaration order. A language that states `Evaluated` or is
+   `Implemented` orders the declarations of the file. The functions of
+   one name form one block with the overload signatures first, and a
+   block follows each block of a name that one of its declarations
+   evaluates when a module runs, the lowest canonical position first. A
+   cycle keeps the canonical order. In an implemented language the pass
+   skips a block of overload signatures without an implementation, and
+   each implementation after the first, under `UnimplementedOverload`.
+   TypeScript and the Python modules state both. A plugin's claimed file
+   template takes the whole file
    instead, per the order above. A backend declares each kind its
    language cannot spell refused, with a reason, and the pass
    skips a declaration of that kind under an Error that states

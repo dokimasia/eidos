@@ -135,7 +135,7 @@ Callables:
 | `@staticmethod`, `@classmethod` | a method at type level, and the annotation. A static method has no receiver | a method at type level, with a receiver for a class method |
 | `__init__`, `__new__` | a method that constructs. `__new__` is at type level | a method that constructs |
 | `@property`, `@functools.cached_property`, `@x.getter`, `@x.setter`, `@x.deleter` | methods with the accessors get, set and delete | methods with an accessor |
-| `@overload` | a callable for each overload with the annotation as written, and the implementation with the stamp `python.implementation` | callables with the annotation, in order |
+| `@overload` | a callable for each overload with the annotation as written and the mark `Overload`, and the implementation without the mark | callables with the mark `Overload`, and the implementation without it |
 | `@abstractmethod` of `abc`, `@final` and `@override` of `typing` or `typing_extensions` | an abstract, a final and an overriding method, and the annotation | the fields `Abstract`, `Final` and `Override` |
 | A function whose own body yields | the stamp `python.generator`, at every depth | a result such as `Iterator[T]` |
 | Parameter before `/` | `Passing` positional | `Passing` positional |
@@ -364,8 +364,8 @@ declares loads as a struct with the base in `Extends`.
   call of it returns its iterator at once, so it is not `Async`. Its result folds to an asynchronous
   stream. The parse reads whether a body yields at signature depth too, so a dependency loads its
   generators.
-- The overloads of a name load as one callable each, with the annotation `overload`. The
-  implementation loads after them with the stamp `python.implementation`.
+- The overloads of a name load as one callable each, with the annotation `overload` and the mark
+  `Overload`. The implementation loads after them without the mark.
 - A getter, a setter and a deleter of one property are three methods of one name.
 - A method of a Protocol is abstract where its body has no statement beside a docstring, `...` and
   `pass`. Every other method of a Protocol has `DefaultBody`, which a class that names the Protocol
@@ -383,6 +383,7 @@ changes the calls that the callable accepts:
 | A parameter that a caller passes by position alone | `/` after its type |
 | `*args`, `**kwargs` | `...` and `**` before the type |
 | A deleter | `del`, a keyword of Python, in place of the empty list of the getter |
+| The implementation of an overloaded name | `=` before the discriminator of its parameters |
 
 So `def __init__(self, sku: str, *, qty: int = 1)` spells `str,qty=int`, and the setter
 `def total(self, value)` spells `_`. A default does not change the discriminator.
@@ -1613,12 +1614,10 @@ keeps every other annotation a value.
 - `New` and `Stubs` are two backends of the target `python`. Build refuses two backends of one target
   among the enabled plans, so one composition writes modules or stub files, and a project that needs
   both runs two compositions.
-- The backend writes the declarations of a unit in the order of the flush of the kernel. A module
-  evaluates its bases, and the overloads of a function before the implementation, in the order of
-  its statements. The backend refuses a base or an overload that the order puts after its use, so a
-  mirror equals its source only where the flush keeps the order of the source. A generator from Go,
-  whose files declare in any order, gives a refused class where its source declares a type before
-  the type that it embeds.
+- The backend of modules writes the declarations of a file in the order that a module evaluates
+  them: a base before its class, and the overload signatures of a function right before its
+  implementation. A cycle of bases keeps the order of the flush of the kernel, and the backend
+  refuses the base that comes too early. The backend of stub files keeps the order of the flush.
 - The mirror of a module drops what only a body states: the check of a version that the options
   decided, the body of an async generator and the assignments of `__init__`.
 - The tests of the toolchain adapter need `python3` and pyright on the machine.

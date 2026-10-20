@@ -515,6 +515,13 @@ reference to a type parameter into its argument the same way for every
 language, so the member walk and `Witnesses` do not assert a
 capability.
 
+**A type parameter folds to Opaque.** The argument of a parameter
+decides its shape, so the fold returns a reference to a type parameter
+as `Opaque` with the identity of the parameter in `Ref`. A reader that
+classifies a shape by its form, such as `DeriveSamples`, reads an
+unknown shape. The spoke of a target spells the shape at every depth of
+a type ([10-cross-language.md](10-cross-language.md)).
+
 Witnesses are usually authored rather than derived. A language can
 derive one only where the constraint's type set is knowable without
 loading the package that declares it, which in Go means `any` and

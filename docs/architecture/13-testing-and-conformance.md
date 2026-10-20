@@ -119,7 +119,13 @@ checks are the output contract's and join the suite with it.
 the files and the findings of one settle and render, and
 `Fixture.Context` lowers a fixture to the context of one render call,
 so the test of a satellite pins a finding of its backend without the
-plumbing.
+plumbing. A hand-built fixture routes each file beside its source, as
+`backendtest.Files` routes it. A fixture whose `Layout` is the input
+that `plugintest.Fixture.Layout` returns routes its store through the
+layout of a plan instead, with the families of its plugins, the
+directives that route a subject and the qualification of references.
+Its files are then the files that a workspace writes for the same
+units.
 
 **pipelinetest**, through `RunPipelineSuite(t, f workspacetest.Fixture)`,
 where the fixture is the workspace kit's fixture with one plan: a source

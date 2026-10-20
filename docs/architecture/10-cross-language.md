@@ -174,6 +174,16 @@ positions apart through `plugin.SupertypeSpeller`. Rust spells a value
 of a trait as `Box<dyn Node>` and a supertrait as `Node`. Every other
 target spells both positions alike.
 
+A type parameter crosses under its name. The fold gives it an opaque
+shape with the identity of the parameter, and `Emitter.Type` passes the
+shape to the spoke at every depth of a type. The spokes of Go,
+TypeScript, Java, Rust and Python spell it through `spoke.Param`, so a
+list of `T` is `[]T` in Go and `list[T]` in Python. protobuf and
+GraphQL have no type parameters, and their spokes refuse it. The hub
+has a row for a type parameter and a row for a list of one. A generator
+translates the type parameters of a declaration through
+`Emitter.TypeParams`, which translates each bound as a supertype.
+
 The timing matters. The stamps arrive during **Annotate**, written by
 a naming annotator that each target language provides and the
 workspace registers automatically whenever a plan targets that
@@ -202,6 +212,28 @@ types are emit references that no projection reads. A binding
 generator that needs a declaration's type reads the shape of the
 declaration's origin through its own reader, which needs the
 origin's package in its plan's scope.
+
+## The bindings of gRPC
+
+A plan that writes code against a protobuf service compiles against the
+code of one gRPC binding. The lowering policy `golang.grpc` selects
+`none`, `grpc-go` or `connect-go`, and `typescript.grpc` selects `none`
+or `connect-es`. Under a binding, the spoke spells a reference to a
+protobuf declaration as the code generator of the binding names it, and
+marks the reference bound through `emit.TypeRef.Bound`. The plan does
+not emit the referent of a bound reference. The layout qualifies the
+reference by the package that the binder of the target returns
+([18-routing-and-layout.md](18-routing-and-layout.md)).
+
+A generator writes the handler of an rpc through `Emitter.Handler`. The
+Emitter projects the rpc, and the `plugin.Binder` of the backend
+returns the method in the form of the binding: the form of
+protoc-gen-go-grpc, of protoc-gen-connect-go or of the `ServiceImpl` of
+Connect-ES. Under `none`, and for a backend without a binder, the
+method is the canonical method of the projection: the context, the
+request and the response, and the failure under the error model
+`raised`. A binder that cannot serve an rpc refuses it, and the Emitter
+reports the refusal under `RefusedHandler` at the rpc.
 
 ## Consistency
 

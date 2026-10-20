@@ -148,11 +148,13 @@ each addition:
 | `Param.Doc` | the documentation of a parameter: the description of a GraphQL argument. A language that documents a parameter in the documentation of its callable leaves it empty |
 | `Param.Passing` | `Default \| Positional \| Keyword`: whether a caller passes the argument by position alone, by keyword alone, or in the way of the language. A Python parameter before the `/` of its signature is positional, and one after its `*` a keyword. Every other language leaves the default |
 | `Method.Accessor` | `None \| Get \| Set \| Delete`: the accessors of a property. The delete accessor is the deleter of a Python property, and every backend but the Python backend refuses it |
+| `Function.Overload` / `Method.Overload` | an overload signature without a body: a TypeScript signature before its implementation, and a Python callable under `@overload`. The callable of the name without the mark is the implementation, and the TypeScript and Python backends write it after the signatures. Every other language leaves it false |
 | `Field.Wire` | an emit field whose name is a key of a wire format, such as the `__typename` of a GraphQL response. The settle keeps the name that the generator wrote, and the node side has no such field |
 | `TypeRef.Mutability` | whether a holder can write through a list, an array, a tuple, a map or a borrow: TypeScript's `readonly T[]`, and Rust's `&T` and `&mut T` |
 | `TypeRef.Absent` | the members of a source union that an optional folds, in source order, such as the `null` of TypeScript's `T \| null`. It is on the node side alone, and an optional that a mark states, such as Go's `*T`, has none |
 | `Enum.Underlying` | the representation that an enum declares: the target of Go's `type Level uint8` and the integer of Rust's `#[repr(u8)]`. TypeScript, protobuf and Java leave it nil |
 | `Enum.Methods` | Java enums are classes with members. Most languages leave it empty |
+| `Enum.Implements` / `Sum.Implements` | the contracts of an enum or a sum: the interfaces of a Java enum, and the traits that the trait impls of Rust implement for an enum or a data enum. Every other language leaves them empty |
 | `Package.Path` | hierarchical segments. Rust `mod` nesting, TypeScript namespaces and a proto package's dotted name map into them, and the original spelling stays in language metadata |
 
 ## Symbol identity
@@ -166,7 +168,9 @@ receiver that states one, because a Python stub overloads on the
 annotation of `self`. A parameter without a type spells `_`, so the
 setter of a property without annotations differs from its getter. A
 deleter of a property takes no parameter, as its getter does, so its
-discriminator is `del`.
+discriminator is `del`. The discriminator of the implementation of an
+overloaded name starts with `=`, so the implementation differs from an
+overload signature whose parameters spell as its own.
 
 Identity survives reparsing. A reloaded file yields symbols with the
 same identities wherever the declarations did not change. Everything

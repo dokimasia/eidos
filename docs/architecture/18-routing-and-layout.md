@@ -192,12 +192,19 @@ declare ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
 | Target | The package of a routed file |
 |---|---|
-| Go | the package the directory's non-test files declare, and for a test file of an external test package's declarations that package. For a test file of a family that states `External`, the external test package of the directory: the one that a file of the directory declares, or else the package of the directory with `_test` after its path and its name. In a directory without one, the innermost containing module's path joined with the directory's path below its root. Outside every module, `importBase` joined with the path below the output directory |
+| Go | the package the directory's non-test files declare, and for a test file of an external test package's declarations that package. For a test file of a family that states `External`, the external test package of the directory: the one that a file of the directory declares, or else the package of the directory with `_test` after its path and its name. The declarations whose origins a unit lists in `Unit.Inside` go into the internal test file of the family, as `store_check_internal_test.go`, which declares the package of the directory. In a directory without one, the innermost containing module's path joined with the directory's path below its root. Outside every module, `importBase` joined with the path below the output directory |
 | TypeScript | the file itself, a module named by its path without the extension |
 | Java | the package its declarations derive from, because a Java file states its package in its clause |
 | Rust | the module the directory's files belong to, joined with the file's stem. A `mod.rs` or a crate root names the directory's module, and a crate root is a file whose module is a crate the `gen.module` facts name |
 | protobuf | the file itself, named by its import path, because a protobuf file imports a file. The name of the package is the protobuf package that the file declares |
 | GraphQL | one package for every file of the plan, because a schema has one namespace |
+
+A routed unit keeps the origins of `Unit.Inside` that its own
+declarations derive from. The layout passes `Placement.External` as
+true where the family of the first unit of a file states `External` and
+no unit of the file has such an origin. The Go target splits a unit with
+such an origin through `spell.Split`, so the declarations that test from
+inside take a file of their own.
 
 The names of a file are in the namespace of its package, except where
 the target names another namespace through `plugin.NameScoper`. The
@@ -223,6 +230,19 @@ target whose every file states its package refuses the file itself:
 every Go file opens with a package clause, so the Go backend
 withholds a Go file whose package derives none, under a positioned
 Error.
+
+A reference to code that a gRPC binding generates is bound
+([10-cross-language.md](10-cross-language.md)). The plan does not emit
+its referent, so the package comes from the `plugin.Binder` of the
+backend. Its `Home` takes the target of the reference and the
+placement of its source file at the path where the default placement
+of the plan writes the code of that file. The layout qualifies the
+reference where that package differs from the package of the
+referencing file, and records the package among the referents of the
+file. The layout refuses a bound reference under `UnderivedPackage`
+where `Home` returns an error or the target has no source file in the
+workspace. A plan whose backend has no binder refuses it under
+`UntranslatedReference`.
 
 ## The source file of a routed file
 
@@ -267,7 +287,8 @@ carrier line of the directive that caused them:
 | EID-0051 | `NoDestination` | a declaration with no resolvable directory |
 | EID-0052 | `EscapingPath` | an `out=` path that is absolute or leaves the workspace root |
 | EID-0053 | `PathCollision` | two routed paths one tree cannot contain |
-| EID-0054 | `UnderivedPackage` | a reference into a file whose package the target derives none for |
+| EID-0054 | `UnderivedPackage` | a reference into a file whose package the target derives none for, or a bound reference whose binder derives no package |
+| EID-0070 | `UntranslatedReference` | a translated reference to a declaration that the plan does not emit, or a bound reference in a plan whose backend has no binder |
 | EID-0031 | `CollidingNames` | two file-level declarations of one namespace and receiver with one settled name |
 
 A refused declaration is left out, and the rest of its file renders.
