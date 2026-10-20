@@ -63,12 +63,13 @@ const (
 // intersection, a function type, a synchronous stream, a wildcard, an
 // inline type and an opaque type, because protobuf has no spelling of
 // them. It refuses a borrow, because a message holds a copy of its data.
-// It refuses the well-known error and a reference with type arguments,
-// because protobuf declares neither a failure value nor a generic type. It
-// refuses an optional of an optional, because a field has one presence,
-// and a read-only list or map, because every protobuf runtime writes
-// through a repeated field and a map. It refuses a form whose child it
-// refuses, and the error contains the source spelling of the child.
+// It refuses the well-known error, a type parameter and a reference with
+// type arguments, because protobuf declares neither a failure value nor a
+// generic type. It refuses an optional of an optional, because a field has
+// one presence, and a read-only list or map, because every protobuf
+// runtime writes through a repeated field and a map. It refuses a form
+// whose child it refuses, and the error contains the source spelling of
+// the child.
 //
 // # Allocation contract
 //

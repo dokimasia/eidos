@@ -33,8 +33,9 @@ import (
 //   - Nothing promotes members, so the coverage refuses an embed with every
 //     fact on it.
 //   - A type parameter, an accessor, an index signature, a construct
-//     signature and a computed name have no form in a schema, so the
-//     declaration does not render with the fact or without it.
+//     signature, a computed name and an overload signature have no form in
+//     a schema, so the declaration does not render with the fact or without
+//     it.
 //   - The passing of a parameter takes the [render.Holds] verdict, because
 //     an rpc takes one request.
 //     A wire name renders as the name of its field, and the lowering
@@ -56,6 +57,7 @@ func Coverage() render.Coverage {
 			symbol.FactAbstract:         render.Refuses,
 			symbol.FactFinal:            render.Holds,
 			symbol.FactOverride:         render.Refuses,
+			symbol.FactOverload:         render.Rejects,
 			symbol.FactDefaultBody:      render.Refuses,
 			symbol.FactAccessor:         render.Rejects,
 			symbol.FactIndexer:          render.Rejects,
