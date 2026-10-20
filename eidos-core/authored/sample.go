@@ -28,12 +28,12 @@ type carrier interface {
 
 // Sample returns the annotator of the sample directive. It runs once for
 // each validated instance on a field, a parameter, a return, a variable, a
-// constant, an alias, a struct, an enum or a sum. It stamps the value
-// under gen.sample and the alternate under gen.alternate where the
-// instance states them, both as the text that the author wrote. It
+// constant, an alias, a struct, an interface, an enum or a sum. It stamps
+// the value under gen.sample and the alternate under gen.alternate where
+// the instance states them, both as the text that the author wrote. It
 // refuses an instance that states neither under [EmptySample] at the
-// carrier. A callable and an interface have several types or none, so the
-// fact store refuses the stamp at the subject.
+// carrier. A callable has several types or none, so the fact store
+// refuses the stamp at the subject.
 func Sample() plugin.Annotator {
 	return eidos.NewPlugin(SamplePlugin).
 		Handle(eidos.Gated(directive.KernelSample,
@@ -44,14 +44,14 @@ func Sample() plugin.Annotator {
 			eidos.OnConstant(func(m *eidos.ConstantMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
 			eidos.OnAlias(func(m *eidos.AliasMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
 			eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
+			eidos.OnInterface(func(m *eidos.InterfaceMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
 			eidos.OnEnum(func(m *eidos.EnumMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
 			eidos.OnSum(func(m *eidos.SumMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
-			// A callable and an interface have several types or none, so
-			// the key admits neither. The fact store refuses the stamp at
-			// the subject under its own code.
+			// A callable has several types or none, so the key does not
+			// admit it. The fact store refuses the stamp at the subject
+			// under its own code.
 			eidos.OnFunction(func(m *eidos.FunctionMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
 			eidos.OnMethod(func(m *eidos.MethodMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
-			eidos.OnInterface(func(m *eidos.InterfaceMatch, st *eidos.Stamper) error { return stampSample(m, st) }),
 		)).
 		Annotator()
 }

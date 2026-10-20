@@ -102,9 +102,9 @@ func (in Input) check() error {
 //
 // # Cost
 //
-// Route reads the overrides on each declaration's origin once, and
-// visits a unit's declarations again only where one of them has an
-// override. A unit without one joins its file whole, without a copy,
+// Route reads the overrides on each declaration's origin once, and on the
+// subject that placed a declaration whose origin has none. It visits a
+// unit's declarations again only where one of them has an override. A unit without one joins its file whole, without a copy,
 // so no declaration allocates. Each file costs its path, and the
 // target's filename and split of the unit it comes from. The header of
 // a file costs what [plugin.HeaderOf] allocates, which is nothing for a
@@ -249,7 +249,10 @@ type building struct {
 
 // readOverrides reads the routing on every declaration's origin once,
 // before any declaration is placed, because an ambiguity depends on
-// every family an origin's declarations are placed in.
+// every family an origin's declarations are placed in. A declaration
+// whose origin states no routing takes the routing of the subject that
+// placed it, which [plugin.Unit.Subjects] records, and the subject is then
+// the origin of the routing.
 func (r *router) readOverrides() {
 	k := 0
 	for i := range r.units {
@@ -262,9 +265,13 @@ func (r *router) readOverrides() {
 			}
 			origin, _ := emit.OriginOf(d)
 			ov := r.overrideOf(origin, u.Plugin)
+			if subject, placed := u.Subjects[origin]; placed && ov == (override{}) {
+				origin, ov = subject, r.overrideOf(subject, u.Plugin)
+			}
 			if ov == (override{}) {
 				continue
 			}
+			ov.origin = origin
 			if r.overrides == nil {
 				r.overrides = map[int]override{}
 			}
@@ -352,13 +359,14 @@ func (r *router) overridden(k, n int) bool {
 
 // destine resolves the destination of one declaration with an
 // override: the family its tag names, the key the family's cardinality
-// derives, and the directory its path names. It also returns the route of
-// the destination. It reports false, with the finding on the sink, where
-// no destination resolves.
+// derives, and the directory its path names. The origin of the override
+// derives the key and the directory, and positions a finding. destine also
+// returns the route of the destination. It reports false, with the finding
+// on the sink, where no destination resolves.
 func (r *router) destine(
 	u *plugin.Unit, d symbol.Symbol, own plugin.Output, ov override,
 ) (destination, plugin.Route, bool) {
-	origin, _ := emit.OriginOf(d)
+	origin := ov.origin
 	fam, family := own, plugin.RouteHandler
 	if u.Tag == "" && ov.tag != "" {
 		moved, known := familyOf(r.in.Outputs[u.Plugin], ov.tag)
@@ -555,20 +563,23 @@ func (r *router) name() error {
 // packages names each file's package through the target's package
 // half, or gives it its first unit's package where the target has
 // none. It gives each file its header first, so the package half reads
-// the annotations of the header. A target's error leaves the file with
-// the zero package and keeps the reason, which a reference into the file
-// reports.
+// the annotations of the header. The family of the first unit states
+// whether the file tests its package from outside. A target's error
+// leaves the file with the zero package and keeps the reason, which a
+// reference into the file reports.
 func (r *router) packages() {
 	for fi := range r.files {
 		f := &r.files[fi]
 		f.file.Header = plugin.HeaderOf(f.file.Units)
-		origin := f.file.Units[0].Pkg
+		first := f.file.Units[0]
 		if r.in.Packager == nil {
-			f.file.Pkg = origin
+			f.file.Pkg = first.Pkg
 			continue
 		}
+		fam, _ := familyOf(r.in.Outputs[first.Plugin], first.Tag)
 		at := plugin.Placement{
-			Path: f.file.Path, Origin: origin, Modules: r.in.Modules, Header: f.file.Header.Annotations,
+			Path: f.file.Path, Origin: first.Pkg, Modules: r.in.Modules, Header: f.file.Header.Annotations,
+			External: fam.External,
 		}
 		if r.in.Residents != nil {
 			at.Residents = r.in.Residents(path.Dir(f.file.Path))

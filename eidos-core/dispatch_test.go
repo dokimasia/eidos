@@ -861,6 +861,25 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, origins, []string{"Alpha"}, "the negated origin's value is not visited")
 		})
 
+		t.Run("visits a value whose origin is a declaration of a dependency package", func(t *testing.T) {
+			t.Parallel()
+
+			g, gamma := dependencyGraph()
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			seed(t, ctx, emitted(gamma))
+			var origins []string
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnEmit(symbol.KindStruct,
+					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+						origins = append(origins, m.Origin().Name)
+						return nil
+					})).
+				Generator()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, origins, []string{"Gamma"}, "the value is output of the plan")
+		})
+
 		t.Run("reports at the origin's position", func(t *testing.T) {
 			t.Parallel()
 
@@ -922,7 +941,7 @@ func TestDispatch(t *testing.T) {
 				names = append(names, s.Name)
 			}
 			assert.Equal(t, names, []string{"ForAlpha", "ForBeta"},
-				"the contributions are in origin identity order, not match order")
+				"the contributions are in the order of the positions of their origins, not match order")
 			assert.Equal(t, got.Origins, []symbol.Identity{alpha.ID, beta.ID}, "the provenance is sorted")
 		})
 	})
@@ -1215,6 +1234,49 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, *visited, []string{"Alpha"}, "the override instance gates the rule")
 		})
 
+		t.Run("skips a subject of a dependency package under a bare rule", func(t *testing.T) {
+			t.Parallel()
+
+			g, _ := dependencyGraph()
+			_, facts := boolKey(t)
+			p, visited := visitingStructs(contextPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "the struct of the dependency package is not visited")
+		})
+
+		t.Run("skips a subject of a dependency package under a fact-gated rule", func(t *testing.T) {
+			t.Parallel()
+
+			g, gamma := dependencyGraph()
+			key, facts := boolKey(t)
+			for _, id := range []symbol.Identity{gamma.ID, coretest.Struct(coretest.StorePath, "Alpha").ID} {
+				assert.NoError(t, meta.Stamp(facts, key, true, meta.Claim{Subject: id}), "the fact stamps")
+			}
+			p, visited := visitingStructs(contextPlugin, func(h emitHandler) eidos.Rule {
+				return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
+			})
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the stamped struct of the dependency package is not visited")
+		})
+
+		t.Run("visits a subject of a dependency package under a stamper rule", func(t *testing.T) {
+			t.Parallel()
+
+			g, gamma := dependencyGraph()
+			key, facts := boolKey(t)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+					eidos.Stamp(st, key, true)
+					return nil
+				})).
+				Annotator()
+			assert.NoError(t, p.Annotate(annContext(t, facts, ix)), "the annotate call passes")
+			assert.Contains(t, slices.Collect(facts.ByKey(key.ID())), gamma.ID,
+				"an annotator stamps a fact that every plan can read")
+		})
+
 		t.Run("visits a subject with another plugin's negated directive", func(t *testing.T) {
 			t.Parallel()
 
@@ -1486,6 +1548,19 @@ func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 		"the fixture package is admitted")
 	g.Freeze()
 	return g, alpha, beta
+}
+
+// dependencyGraph returns a sealed graph and its struct Gamma. The
+// partition loaded the structs Alpha and Beta of the store package, and a
+// dependency round loaded Gamma of the cache package.
+func dependencyGraph() (*store.Graph, *node.Struct) {
+	gamma := coretest.Struct(coretest.CachePath, "Gamma")
+	g := coretest.Dependent(
+		[]*node.Package{coretest.Package(coretest.CachePath, gamma)},
+		coretest.Package(coretest.StorePath,
+			coretest.Struct(coretest.StorePath, "Alpha"), coretest.Struct(coretest.StorePath, "Beta")),
+	)
+	return g, gamma
 }
 
 // genContext returns a generator context over the fixture graph.

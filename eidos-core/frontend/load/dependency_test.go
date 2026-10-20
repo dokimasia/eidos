@@ -555,6 +555,25 @@ func depStore() fstest.MapFS {
 	}
 }
 
+// vendorTree returns the dependency tree with the library as a file of
+// the workspace, which imports nothing.
+func vendorTree() fstest.MapFS {
+	tree := depTree()
+	tree[libFile] = &fstest.MapFile{Data: []byte("package " + libPath + "\ntype " + libName + " string\n")}
+	return tree
+}
+
+// vendoring returns the scripted language in the dependent role with a
+// selection that claims the service tree alone, and a first round that
+// returns the library's file of the workspace, as a round loads a
+// vendored package.
+func vendoring() *fixedRounds {
+	rec := recorded()
+	rec.Sel = []string{serviceSelection}
+	rec.units = map[int][][]plugin.SourceRef{1: {{{Path: libFile}}}}
+	return rec
+}
+
 // absentTree returns the directory whose three files import a package
 // no store declares, the packages listing the files out of path order.
 func absentTree() fstest.MapFS {

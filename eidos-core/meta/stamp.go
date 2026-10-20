@@ -22,8 +22,8 @@ type RawStamp struct {
 	Key KeyName
 
 	// Value is one term of the vocabulary: string, int64, bool,
-	// []string or [symbol.Identity]. A value of any other type
-	// returns an error when the stamp applies.
+	// []string, [symbol.Identity] or a list of identities. A value of
+	// any other type returns an error when the stamp applies.
 	Value any
 
 	// Pos locates the source the classification read.
@@ -65,7 +65,7 @@ func (f *Facts) StampRaw(s RawStamp, c Claim) error {
 		return err
 	}
 	switch s.Value.(type) {
-	case string, int64, bool, []string, symbol.Identity:
+	case string, int64, bool, []string, symbol.Identity, []symbol.Identity:
 	default:
 		return fmt.Errorf("meta: %s is stamped with a %T, which is outside the value vocabulary",
 			s.Key, s.Value)

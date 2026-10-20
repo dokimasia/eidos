@@ -131,6 +131,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("BuiltinValue", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.BuiltinValue, core.BuiltinValue, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("UnspeltKind", func(t *testing.T) {
 		t.Parallel()
 
@@ -568,6 +578,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, render.HelperResults, core.HelperResults, "the facade re-declares the kernel's value")
+		})
+	})
+
+	t.Run("HelperWrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.HelperWrapDocs, core.HelperWrapDocs, "the facade re-declares the kernel's value")
 		})
 	})
 }

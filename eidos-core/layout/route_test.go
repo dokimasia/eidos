@@ -513,6 +513,67 @@ func TestRoute(t *testing.T) {
 			})
 		}
 
+		// placed returns the primary unit of stubgen for storeFile with the
+		// double of Store and the double of other, which the handler of Store
+		// placed.
+		placed := func(other symbol.Identity, name string) plugin.Unit {
+			u := stubOf(storeFile, storePkg, generated(storeID, "StoreProbe"), generated(other, name))
+			u.Subjects = map[symbol.Identity]symbol.Identity{other: storeID}
+			return u
+		}
+		subjects := []struct {
+			name string
+			give func() *fixture
+			want []string
+		}{
+			{
+				name: "returns a declaration in the directory of the out of the subject that placed it",
+				give: func() *fixture {
+					return newFixture(placed(cacheID, "CacheProbe")).
+						on(storeID, written(stubDirective, 1, keyOut, "probetest/"))
+				},
+				want: []string{"svc/store/probetest/store_stub.go: StoreProbe CacheProbe"},
+			},
+			{
+				name: "returns a declaration in the directory of the out of its own origin",
+				give: func() *fixture {
+					return newFixture(placed(rowID, "RowProbe")).
+						on(storeID, written(stubDirective, 1, keyOut, "probetest/")).
+						on(rowID, written(stubDirective, 2, keyOut, "mocks/"))
+				},
+				want: []string{
+					"svc/store/mocks/store_stub.go: RowProbe",
+					"svc/store/probetest/store_stub.go: StoreProbe",
+				},
+			},
+			{
+				name: "returns a declaration in the family that the tag of the subject that placed it names",
+				give: func() *fixture {
+					return newFixture(placed(cacheID, "CacheProbe")).
+						on(storeID, written(stubDirective, 1, keyTag, tagPkg))
+				},
+				want: []string{"svc/store/suite_pkg.go: StoreProbe CacheProbe"},
+			},
+			{
+				name: "returns a declaration of a unit without subjects beside its source",
+				give: func() *fixture {
+					u := placed(cacheID, "CacheProbe")
+					u.Subjects = nil
+					return newFixture(u).on(storeID, written(stubDirective, 1, keyOut, "probetest/"))
+				},
+				want: []string{"svc/store/probetest/store_stub.go: StoreProbe", "svc/store/store_stub.go: CacheProbe"},
+			},
+		}
+		for _, tt := range subjects {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				files, sink := tt.give().route(t)
+				assert.Equal(t, layoutOf(files), tt.want, "the routed files")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
 		sources := []struct {
 			name            string
 			give            func() *fixture
@@ -858,6 +919,19 @@ func TestRoute(t *testing.T) {
 			assert.Length(t, seen, 1, "one file is placed")
 			assert.Equal(t, seen[0].Header, symbol.Annotations{syntaxMarker},
 				"the placement has the annotations of the header")
+		})
+
+		t.Run("hands the target the external mark of the family of the first unit of a file", func(t *testing.T) {
+			t.Parallel()
+
+			var seen []plugin.Placement
+			f := newFixture(unitOf(stubgen, families()[stubgen][1], storeFile, coretest.PackageID(storePkg),
+				generated(storeID, "StoreCheck")))
+			f.outputs[stubgen][1].External = true
+			f.packager = recording{seen: &seen}
+			f.route(t)
+			assert.Length(t, seen, 1, "one file is placed")
+			assert.True(t, seen[0].External, "the test family of stubgen tests its package from outside")
 		})
 
 		t.Run("hands the target no residents for an input without a residents function", func(t *testing.T) {

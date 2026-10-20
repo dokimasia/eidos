@@ -190,6 +190,42 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 	}}
 }
 
+// EnumVariantMatch is the OnEnumVariant subject.
+type EnumVariantMatch struct {
+	subjectMatch
+	EnumVariant *node.EnumVariant
+}
+
+var _ SubjectMatch = (*EnumVariantMatch)(nil)
+
+// unbind zeroes the match for the next phase call of its lane, and
+// returns the key under which the lane keeps released EnumVariantMatch
+// values.
+func (m *EnumVariantMatch) unbind() any {
+	*m = EnumVariantMatch{}
+	return (*EnumVariantMatch)(nil)
+}
+
+// OnEnumVariant runs the handler once for each subject of its kind in
+// scope, or once for each gating instance under a Directive wrapper.
+// The effect parameter selects the role. An Emitter generates, and a
+// Stamper annotates.
+func OnEnumVariant[E Effect](h func(*EnumVariantMatch, E) error) Rule {
+	return Rule{leaf: &leaf{
+		kind:  symbol.KindEnumVariant,
+		phase: phaseOf[E](),
+		invoke: func(inv invocation) error {
+			decl, held := inv.value.(*node.EnumVariant)
+			if !held {
+				return nil
+			}
+			m := bindMatch[EnumVariantMatch](inv)
+			m.EnumVariant = decl
+			return h(m, effectFor[E](inv.rs, &m.match))
+		},
+	}}
+}
+
 // SumMatch is the OnSum subject.
 type SumMatch struct {
 	subjectMatch

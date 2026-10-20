@@ -125,6 +125,17 @@ func (b *Builder) Scaffold(
 	return b
 }
 
+// Value sets the language's writer of values: how one value of the
+// value tree spells, recording into the file's import set the imports
+// of its references and its callees. The value builtin calls it. A
+// backend that declares none fails every call of the builtin.
+func (b *Builder) Value(
+	f func(v emit.Value, set *render.ImportSet) (string, error),
+) *Builder {
+	b.lang.Value = f
+	return b
+}
+
 // MemberIndent sets the indentation of a member's statements in the
 // body of its type, which the memberbody builtin writes before each
 // line of a member's content. A language that leaves it unset places

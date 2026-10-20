@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
 )
 
 // ValueError is the error a language's scaffold returns for a
@@ -41,4 +42,24 @@ func refusalCode(err error) diag.Code {
 		return UnspeltValue
 	}
 	return RefusedTemplate
+}
+
+// value writes one value through the language's [Language.Value] into
+// the import set of the file under render. It is the value builtin of
+// every template of the file, so a template writes a value as a body of
+// the file writes it.
+//
+// Error modes: a language without a writer returns an error that names
+// the language, and the render skips the declaration under
+// [RefusedTemplate]. A value that the writer cannot spell returns the
+// writer's [ValueError], and the render skips the declaration under
+// [UnspeltValue].
+//
+// It allocates what the writer allocates, and the error of a language
+// without a writer.
+func (f *frame) value(v emit.Value) (string, error) {
+	if f.pass.value == nil {
+		return "", fmt.Errorf("render: %s writes no values", f.pass.name)
+	}
+	return f.pass.value(v, &f.set)
 }

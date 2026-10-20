@@ -293,7 +293,7 @@ func ownership(existing []byte, brand Brand) Found {
 	switch {
 	case !held || f.record.Brand != brand:
 		return FoundForeign
-	case !attests(f.body, f.record.Hash):
+	case !f.intact():
 		return FoundDrifted
 	default:
 		return FoundIntact

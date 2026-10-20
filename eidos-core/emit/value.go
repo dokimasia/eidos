@@ -36,6 +36,15 @@ const (
 	// expression of TypeScript and Java, spells it with the import of the
 	// type. A target without such a form refuses it.
 	ValueConstruction
+	// ValueFunc is a function of the function type Type that returns Args:
+	// func(context.Context) error { return nil }. Each function literal is
+	// a new function value, so two of them differ. A target without a
+	// function literal refuses it.
+	ValueFunc
+	// ValueMake is the empty value of Type that make returns: make(chan
+	// string). Each make is a new value, so two of them differ. A target
+	// without make refuses it.
+	ValueMake
 )
 
 // String returns the spelling of the kind, and the decimal number of a
@@ -58,6 +67,10 @@ func (k ValueKind) String() string {
 		return "name"
 	case ValueConstruction:
 		return "construction"
+	case ValueFunc:
+		return "func"
+	case ValueMake:
+		return "make"
 	default:
 		return strconv.Itoa(int(k))
 	}
@@ -122,10 +135,10 @@ type Value struct {
 	Text    string          `json:"text,omitzero"`
 	Bits    int             `json:"bits,omitzero"`   // LiteralInt and LiteralFloat: the width in bits of the number type, 0 for none
 	Lang    symbol.Lang     `json:"lang,omitzero"`   // LiteralRaw: the language of the text
-	Type    *TypeRef        `json:"type,omitzero"`   // Conversion, Composite and Construction: the type of the result
+	Type    *TypeRef        `json:"type,omitzero"`   // Conversion, Composite, Construction, Func and Make: the type of the result
 	Callee  symbol.Identity `json:"callee,omitzero"` // Call and Name: the declaration that the target spells and imports
 	Fields  []ValueField    `json:"fields,omitzero"` // Composite
-	Args    []Value         `json:"args,omitzero"`   // Call and Construction
+	Args    []Value         `json:"args,omitzero"`   // Call and Construction: the arguments, and Func: the results
 	Inner   *Value          `json:"inner,omitzero"`  // Conversion and Address
 }
 
@@ -143,6 +156,19 @@ type ValueField struct {
 // IsZero reports whether the value is the zero Value. It allocates
 // nothing.
 func (v Value) IsZero() bool { return v.Kind == 0 }
+
+// Fresh reports whether v is a function or a make, also under
+// conversions. Each is a new value wherever a body writes it, so a check
+// compares it by its identity, and two of them differ although their
+// trees are equal. A composite with a function inside is not fresh. Fresh
+// allocates nothing.
+func (v Value) Fresh() bool {
+	inner := v
+	for inner.Kind == ValueConversion && inner.Inner != nil {
+		inner = *inner.Inner
+	}
+	return inner.Kind == ValueFunc || inner.Kind == ValueMake
+}
 
 // Literal returns a literal of one kind. Use [Raw] for raw text, because
 // only the backend of its language can spell it. Literal allocates
@@ -220,4 +246,20 @@ func Name(id symbol.Identity) Value {
 // call, one allocation, and nothing without arguments.
 func Construction(t *TypeRef, args ...Value) Value {
 	return Value{Kind: ValueConstruction, Type: t, Args: args}
+}
+
+// Func returns a function of the function type t that returns the values
+// results, in the order of the results of t. A backend imports each type
+// of the signature, as it does for the type of a composite. Func allocates
+// the list of results of a variadic call, one allocation, and nothing
+// without results.
+func Func(t *TypeRef, results ...Value) Value {
+	return Value{Kind: ValueFunc, Type: t, Args: results}
+}
+
+// Make returns the empty value of the type t that make returns, such as a
+// channel. A backend imports the type, as it does for the type of a
+// composite. Make allocates nothing.
+func Make(t *TypeRef) Value {
+	return Value{Kind: ValueMake, Type: t}
 }

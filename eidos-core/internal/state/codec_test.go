@@ -38,6 +38,12 @@ func TestCodec(t *testing.T) {
 			{name: "round-trips a bool", give: true},
 			{name: "round-trips a list of strings", give: []string{"a", "", "a"}},
 			{name: "round-trips an identity", give: coretest.Struct(coretest.CachePath, "Cache").ID},
+			{
+				name: "round-trips a list of identities",
+				give: []symbol.Identity{
+					coretest.Struct(coretest.CachePath, "Cache").ID, coretest.Struct(coretest.StorePath, "Store").ID,
+				},
+			},
 			{name: "round-trips no value", give: nil},
 		}
 		for _, tt := range tests {

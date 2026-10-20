@@ -4,6 +4,7 @@
 package workspace_test
 
 import (
+	"io/fs"
 	"path"
 	"strconv"
 	"testing"
@@ -11,12 +12,15 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
@@ -44,6 +48,18 @@ const (
 // outsideSource is a file of the store package outside the directory of
 // the store package.
 const outsideSource = "other/col.zz"
+
+// The packages, the files and the generator of the dependency cases. The
+// application imports the library, which a store provides or a file of
+// the tree declares.
+const (
+	appPkg              = "svc/app"
+	libPkg              = "ext/lib"
+	appSource           = "svc/app/app.zz"
+	libSource           = "ext/lib/lib.zz"
+	libBody             = "package " + libPkg + "\ntype Lib string\n"
+	rosterID  plugin.ID = "roster"
+)
 
 // relocatorID is the name of the annotator that stamps the module of the
 // store package.
@@ -264,6 +280,95 @@ func TestSources(t *testing.T) {
 				"the packages a module scope admits")
 		})
 
+		dependencies := []struct {
+			name    string
+			sources workspace.Sources
+		}{
+			{
+				name:    "admits a dependency package of its language for a pattern",
+				sources: workspace.Sources{Lang: coretest.Lang, Packages: []string{"./svc/..."}},
+			},
+			{
+				name:    "admits a dependency package of its language for a module",
+				sources: workspace.Sources{Lang: coretest.Lang, Module: billingMod},
+			},
+			{
+				name:    "admits a dependency package of every language for a pattern without a language",
+				sources: workspace.Sources{Packages: []string{"./svc/..."}},
+			},
+		}
+		for _, tt := range dependencies {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				g := coretest.Dependent([]*node.Package{stored()}, golangRoot())
+				assert.Equal(t, admitted(t, tt.sources, g), []string{contextPkg},
+					"the scope admits the dependency package and refuses the root package")
+			})
+		}
+
+		t.Run("admits no dependency package of another language", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Dependent([]*node.Package{pkgIn(otherLang, contextPkg, contextFile)}, golangRoot())
+			assert.Equal(t, admitted(t, workspace.Sources{Lang: coretest.Lang, Packages: []string{"./..."}}, g),
+				[]string{rootPkg}, "the scope of a plan of one language refuses a package of another")
+		})
+
+		t.Run("returns a dependency package to the reader of a plan that a pattern narrows", func(t *testing.T) {
+			t.Parallel()
+
+			p := &probe{}
+			sealedRun(t, dependentOf(t, workspace.Sources{Packages: []string{"svc/..."}}, p),
+				workspace.Input{Tree: dependentTree(), Stores: libStore()})
+			assert.Permutation(t, p.seen, []string{appPkg, libPkg}, "the reader returns the library of the store")
+		})
+
+		t.Run("writes no file for a declaration of a dependency package", func(t *testing.T) {
+			t.Parallel()
+
+			report := sealedRun(t, dependentOf(t, workspace.Sources{Lang: frontendtest.ScriptedLang}, mirror(mirrorID)),
+				workspace.Input{Tree: dependentTree(), Stores: libStore()})
+			assert.Length(t, report.Manifest.Files, 1, "the mirror writes the file of the application alone")
+			assert.HasPrefix(t, report.Manifest.Files[0].Path, appPkg+"/", "beside the application")
+		})
+
+		narrowed := workspace.Sources{Packages: []string{"svc/..."}}
+		moved := []struct {
+			name          string
+			before, after func() fstest.MapFS
+		}{
+			{
+				name:   "renders the files of a package that a dependency round brings into its sources",
+				before: vendoredTree,
+				after:  dependentTree,
+			},
+			{
+				name:   "renders the files of a package that the partition takes out of its sources",
+				before: dependentTree,
+				after:  vendoredTree,
+			},
+		}
+		for _, tt := range moved {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				w := dependentOf(t, narrowed, roster())
+				first := sealedRun(t, w, workspace.Input{Tree: tt.before(), Stores: libStore()})
+				warm, err := w.Run(t.Context(), workspace.Input{
+					Tree: editedAfter(tt.before(), tt.after()), Stores: libStore(),
+				})
+				assert.NoError(t, err, "the warm run is clean")
+				assert.False(t, warm.Stats.Cold, "the run after the edit reads the sealed state")
+				cold := sealedRun(t, dependentOf(t, narrowed, roster()),
+					workspace.Input{Tree: tt.after(), Stores: libStore()})
+				assert.NotEqual(t, cold.Manifest.Files, first.Manifest.Files,
+					"the edit moves the library across the sources", assert.EquateEmpty())
+				assert.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
+					"the warm run records the same entries as the cold run", assert.EquateEmpty())
+			})
+		}
+
 		t.Run("decodes no region for a scoped plan over an unchanged tree", func(t *testing.T) {
 			t.Parallel()
 
@@ -389,6 +494,63 @@ func relocating(tb assert.TB, sources workspace.Sources) *workspace.Workspace {
 	tb.Helper()
 
 	return built(tb, roundsBuilder(tb, ledger.NewMem(), sources, mirror(mirrorID)).Annotators(relocator{}))
+}
+
+// roster returns a generator whose graph rule writes one struct for each
+// package that the reader of its plan returns, into the file of its plan.
+func roster() plugin.Generator {
+	return eidos.NewPlugin(rosterID).
+		Output(plugin.Output{Per: plugin.PerPlan, Word: "roster"}).
+		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+			for s := range m.Reader().ByKind(symbol.KindPackage) {
+				if d, named := s.(node.Declaration); named {
+					e.PlanFile().Append(&emit.Struct{Name: "For" + path.Base(d.Identity().Package)})
+				}
+			}
+			return nil
+		})).
+		Generator()
+}
+
+// dependentTree returns a tree whose one file of the application imports
+// the library.
+func dependentTree() fstest.MapFS {
+	return fstest.MapFS{
+		appSource: {Data: []byte("package " + appPkg + "\nimport lib " + libPkg + "\ntype App lib.Lib\n")},
+	}
+}
+
+// vendoredTree returns the dependent tree with the library as a file of
+// the tree, which the partition loads.
+func vendoredTree() fstest.MapFS {
+	tree := dependentTree()
+	tree[libSource] = &fstest.MapFile{Data: []byte(libBody)}
+	return tree
+}
+
+// libStore returns the stores of a run, in which the store of the
+// scripted dependent provides the library.
+func libStore() map[string]fs.FS {
+	return map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{libSource: {Data: []byte(libBody)}}}
+}
+
+// dependentOf returns a composition over the scripted dependent that
+// records into a new memory ledger and renders into memory. Its one plan
+// runs gen over the sources.
+func dependentOf(tb assert.TB, sources workspace.Sources, gen plugin.Generator) *workspace.Workspace {
+	tb.Helper()
+
+	l := ledger.NewMem()
+	return built(tb, workspace.New().
+		Brand(fixtureBrand).
+		Frontends(frontendtest.NewScriptedDependent()).
+		Targets("fixture").
+		Plans(workspace.Plan{
+			Name: scopedPlan, Sources: sources, Generators: []plugin.Generator{gen}, Backend: fixturePrinter(),
+			Layout: layout.Config{Dir: planDir},
+		}).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Ledger(func() (ledger.Ledger, error) { return l, nil }))
 }
 
 // scopedPlanOf returns the plan that the scope cases compose, the probe

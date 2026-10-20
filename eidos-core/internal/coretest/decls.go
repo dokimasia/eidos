@@ -185,7 +185,7 @@ func Populated(path, name string) *node.Struct {
 }
 
 // EveryKind returns a package holding one declaration of every kind
-// a rule can match: the twelve kinds the generated constructors
+// a rule can match: the thirteen kinds the generated constructors
 // cover, with the member kinds hanging on their hosts rather than
 // sitting loose in the file, and the function's parameter and
 // return on its signature.
@@ -236,6 +236,7 @@ func MatchableKinds() []symbol.Kind {
 		symbol.KindMethod,
 		symbol.KindInterface,
 		symbol.KindEnum,
+		symbol.KindEnumVariant,
 		symbol.KindSum,
 		symbol.KindAlias,
 		symbol.KindFunction,

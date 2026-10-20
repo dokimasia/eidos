@@ -241,7 +241,9 @@ func AssertRefusesWithReason(tb assert.TB, setup Setup) {
 // AssertDistinctSamples checks that the two halves of every derived pair
 // differ, compared field by field at every depth. Each pair reports on
 // its own. A check that compares against one half of a pair that does not
-// differ passes whenever the subject has that value.
+// differ passes whenever the subject has that value. The check passes a
+// pair of fresh values whatever their trees, because a function and a
+// make are new values wherever a body writes them ([emit.Value.Fresh]).
 func AssertDistinctSamples(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -255,11 +257,15 @@ func AssertDistinctSamples(tb assert.TB, setup Setup) {
 			continue
 		}
 		sample, alternate := b.SamplesOf(field.ID, field.Type, field.Name)
-		if sample.OK() && alternate.OK() {
-			derived++
-			expect.NotEqual(tb, alternate.Value, sample.Value,
-				"the two halves of a derived pair differ: "+field.ID.String(), assert.EquateEmpty())
+		if !sample.OK() || !alternate.OK() {
+			continue
 		}
+		derived++
+		if sample.Value.Fresh() && alternate.Value.Fresh() {
+			continue
+		}
+		expect.NotEqual(tb, alternate.Value, sample.Value,
+			"the two halves of a derived pair differ: "+field.ID.String(), assert.EquateEmpty())
 	}
 	assert.NotEqual(tb, derived, 0, "the fixture derives at least one pair")
 }

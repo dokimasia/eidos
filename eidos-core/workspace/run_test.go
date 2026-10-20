@@ -106,6 +106,7 @@ const (
 	labelKey        meta.KeyName = "setter.label"
 	tagsKey         meta.KeyName = "setter.tags"
 	peerKey         meta.KeyName = "setter.peer"
+	peersKey        meta.KeyName = "setter.peers"
 )
 
 // The spellings that the set cases write: the boolean true, a label, two
@@ -893,6 +894,18 @@ func TestRun(t *testing.T) {
 			})
 			peer, _ := meta.GetAtLeast(report.Facts, s, meta.Named[symbol.Identity](peerKey), meta.AuthorityDirective)
 			assert.Equal(t, peer, s, "the set writes the identity of the struct named Alpha")
+		})
+
+		t.Run("sets a list of references to the declarations that the rules bind", func(t *testing.T) {
+			t.Parallel()
+
+			report, s := setRun(t, peersKey, directive.RawArg{
+				Key:   string(directive.MetaValues),
+				Value: directive.RawValue{List: []directive.RawValue{{Text: alphaName}, {Text: alphaName}}},
+			})
+			peers, _ := meta.GetAtLeast(report.Facts, s, meta.Named[[]symbol.Identity](peersKey),
+				meta.AuthorityDirective)
+			assert.Equal(t, peers, []symbol.Identity{s, s}, "the set writes the identity of each element in its order")
 		})
 
 		t.Run("applies a load stamp at plugin authority", func(t *testing.T) {
@@ -1961,7 +1974,8 @@ func setting() *workspace.Builder {
 			_, labelErr := meta.Register[string](r, meta.KeySpec{Name: labelKey, Doc: "labels a struct"})
 			_, tagsErr := meta.Register[[]string](r, meta.KeySpec{Name: tagsKey, Doc: "tags a struct"})
 			_, peerErr := meta.Register[symbol.Identity](r, meta.KeySpec{Name: peerKey, Doc: "names a peer"})
-			return errors.Join(toggleErr, labelErr, tagsErr, peerErr)
+			_, peersErr := meta.Register[[]symbol.Identity](r, meta.KeySpec{Name: peersKey, Doc: "names the peers"})
+			return errors.Join(toggleErr, labelErr, tagsErr, peerErr, peersErr)
 		}).
 		Handle(eidos.OnStruct(quiet)).Annotator()
 	return valid().Annotators(setter).Rules(native{})

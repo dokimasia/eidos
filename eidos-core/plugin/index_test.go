@@ -282,6 +282,31 @@ func TestIndex(t *testing.T) {
 		})
 	})
 
+	t.Run("Dependency", func(t *testing.T) {
+		t.Parallel()
+
+		g, inStore, inCache := dependentPackages()
+
+		t.Run("reports true for a declaration of a package that a dependency round loaded", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, index(t, g, nil, nil).Dependency(inCache.ID), "a dependency round loaded the cache")
+		})
+
+		t.Run("reports false for a declaration of the partition", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, index(t, g, nil, nil).Dependency(inStore.ID), "the partition loaded the store")
+		})
+
+		t.Run("reports true for a declaration outside the scope", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, index(t, g, nil, storeOnly).Dependency(inCache.ID),
+				"the mark is a fact of the graph, which the scope does not decide")
+		})
+	})
+
 	t.Run("DirectivesOf", func(t *testing.T) {
 		t.Parallel()
 
@@ -488,6 +513,10 @@ func TestIndexAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { directives = validated.DirectivesOf(inStore.ID) }, 0,
 		"ValidatedMap.DirectivesOf allocates nothing")
 	assert.Length(t, directives, 1, "ValidatedMap.DirectivesOf returns the skip")
+	marked, _, inDependency := dependentPackages()
+	dependency := index(t, marked, nil, nil)
+	assert.MaxAllocs(t, func() { held = dependency.Dependency(inDependency.ID) }, 0, "Dependency allocates nothing")
+	assert.True(t, held, "Dependency reports the cache's struct")
 
 	bare, err := plugin.NewIndex(g, facts, nil, nil)
 	assert.NoError(t, err, "the routing surface builds without a scope")
@@ -623,6 +652,19 @@ func BenchmarkIndex(b *testing.B) {
 		assert.True(b, held, "the declaration's package is found")
 	})
 
+	b.Run("Dependency", func(b *testing.B) {
+		workspace := coretest.Workspace(benchPackages, benchFiles, benchDecls)
+		ix, err := plugin.NewIndex(coretest.Dependent(workspace[:1], workspace[1:]...), facts, nil, nil)
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		dependency := false
+		for c.Loop() {
+			dependency = ix.Dependency(hit)
+		}
+		assert.True(b, dependency, "a dependency round loaded the first package")
+	})
+
 	scopes := []struct {
 		name   string
 		scope  store.Scope
@@ -732,6 +774,19 @@ func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	assert.NoError(tb, g.AttachDirectives(inCache.ID, []directive.Raw{{Name: "stub"}}),
 		"the second raw instance attaches before the seal")
 	g.Freeze()
+	return g, inStore, inCache
+}
+
+// dependentPackages returns a sealed graph with one struct per fixture
+// package, in which a dependency round loaded the cache package and the
+// partition loaded the store package.
+func dependentPackages() (*store.Graph, *node.Struct, *node.Struct) {
+	inStore := coretest.Struct(coretest.StorePath, "Store")
+	inCache := coretest.Struct(coretest.CachePath, "Cache")
+	g := coretest.Dependent(
+		[]*node.Package{coretest.Package(coretest.CachePath, inCache)},
+		coretest.Package(coretest.StorePath, inStore),
+	)
 	return g, inStore, inCache
 }
 

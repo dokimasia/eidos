@@ -134,6 +134,23 @@ func TestLint(t *testing.T) {
 			assert.Empty(t, findings, "a file template resolves the header builtin")
 		})
 
+		// value writes the data of the template through the value builtin.
+		value := action(render.BuiltinValue, ".Data")
+
+		t.Run("returns nothing for a tree that writes a value", func(t *testing.T) {
+			t.Parallel()
+
+			findings := linter(t).Lint(tree(refName, value+slots), nil, nil, nil)
+			assert.Empty(t, findings, "a reference template resolves the value builtin")
+		})
+
+		t.Run("returns nothing for a file template that writes a value", func(t *testing.T) {
+			t.Parallel()
+
+			findings := linter(t).Lint(tree(fileTpl, "{{range .Records}}"+value+"{{end}}"), nil, nil, []string{fileTpl})
+			assert.Empty(t, findings, "a file template resolves the value builtin")
+		})
+
 		t.Run("returns a finding for a file template that places a marker", func(t *testing.T) {
 			t.Parallel()
 

@@ -127,6 +127,7 @@ func TestStamp(t *testing.T) {
 		flag := termKey[bool](t, r, "fake.flag")
 		list := termKey[[]string](t, r, "fake.list")
 		named := termKey[symbol.Identity](t, r, "fake.named")
+		listed := termKey[[]symbol.Identity](t, r, "fake.listed")
 		f := meta.NewFacts(r)
 
 		tests := []struct {
@@ -154,6 +155,10 @@ func TestStamp(t *testing.T) {
 			{
 				name: "records an identity", key: named.Name(), value: subjectFile(),
 				read: func() (any, bool) { return meta.Get(f, subjectFile(), named) },
+			},
+			{
+				name: "records an identity list", key: listed.Name(), value: []symbol.Identity{subjectFile(), subject},
+				read: func() (any, bool) { return meta.Get(f, subjectFile(), listed) },
 			},
 		}
 		for _, tt := range tests {

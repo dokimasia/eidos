@@ -684,8 +684,14 @@ func (c *phaseCall) takeEach(fr *flatRule, inv *invocation) bool {
 // predicates for one subject and the value that triggers the rule on it,
 // untracked, because gate evaluation is routing. A directive-gated rule
 // is exempt from both opt-outs: its subject opted in explicitly and
-// withdraws by deleting the directive.
+// withdraws by deleting the directive. A rule of the generate phase runs
+// on no subject of a dependency package, because a generator writes the
+// output of the sources of its plan. An annotator and a rule of the emit
+// phase run on such a subject.
 func (c *phaseCall) admits(fr *flatRule, subject symbol.Identity, value symbol.Symbol) bool {
+	if fr.phase == plugin.PhaseGenerate && c.index.Dependency(subject) {
+		return false
+	}
 	if fr.gate == "" && c.index.Skipped(subject, c.plugin) {
 		return false
 	}

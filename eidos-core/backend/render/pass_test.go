@@ -850,12 +850,12 @@ const (
 	// refusedKindsAllocs is one copy of a refusal map of one entry: the
 	// map and its group.
 	refusedKindsAllocs = 2
-	// renderOneAllocs is one Render of one file of one struct: 26 for
-	// the clone of the parsed templates and the seven builtins that bind
+	// renderOneAllocs is one Render of one file of one struct: 27 for
+	// the clone of the parsed templates and the eight builtins that bind
 	// them to the file's import set, about 22 for the worker, its frame
 	// and its import set, and about 23 for the file: the template's run
 	// through reflection, its buffers and the rendered bytes.
-	renderOneAllocs = 71
+	renderOneAllocs = 72
 	// renderStructsAllocs is one render of 1,000 files of 200 structs:
 	// 613,293 on average with a standard deviation of 6. Each struct's
 	// template run through reflection allocates 3, and each file about
@@ -1133,7 +1133,8 @@ func stubNaming(u plugin.Unit) string {
 
 // language returns the smallest valid language: a struct
 // spelling, a callable spelling that places its body, a scaffold
-// printer for names and returns, and a pass-through formatter.
+// printer for names and returns, a writer of values, and a pass-through
+// formatter.
 func language() render.Language {
 	return render.Language{
 		Kinds: map[symbol.Kind]string{
@@ -1142,6 +1143,7 @@ func language() render.Language {
 		},
 		Naming:   stubNaming,
 		Scaffold: scaffold,
+		Value:    valueOf,
 		Imports:  pathImports,
 		Finalise: func(src []byte) ([]byte, error) { return src, nil },
 	}
@@ -1253,6 +1255,23 @@ func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 		return []byte("\treturn\n"), nil
 	default:
 		return nil, errors.New("the fixture spells names and returns only")
+	}
+}
+
+// valueOf is the fixture's writer of values. It writes a value with a
+// callee as the package and the name of the callee, and records the
+// package as an import. It writes any other value as its text, and
+// refuses a value without text, as a target refuses a form that it has
+// no syntax for.
+func valueOf(v emit.Value, set *render.ImportSet) (string, error) {
+	switch {
+	case !v.Callee.IsZero():
+		set.Add(v.Callee.Package)
+		return v.Callee.Package + "." + v.Callee.Name, nil
+	case v.Text != "":
+		return v.Text, nil
+	default:
+		return "", render.RefuseValue("fixture", "the fixture writes no %s without text", v.Kind)
 	}
 }
 

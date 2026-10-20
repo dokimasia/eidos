@@ -54,6 +54,9 @@ const (
 	trailerSize = 4
 )
 
+// stateFormat is the format of the encoding that the kernel writes.
+const stateFormat = 5
+
 // castagnoli is the CRC-32C table a generation's trailer is computed
 // with.
 var castagnoli = crc32.MakeTable(crc32.Castagnoli)
@@ -125,6 +128,15 @@ func TestGeneration(t *testing.T) {
 			named(t, l, binary.LittleEndian.AppendUint32(body, crc32.Checksum(body, castagnoli)))
 			_, err = state.Open(t.Context(), l)
 			assert.ErrorIs(t, err, state.ErrFormat, "the kernel reads its own format alone")
+		})
+
+		t.Run("reads a generation that starts with format 5", func(t *testing.T) {
+			t.Parallel()
+
+			l := ledger.NewMem()
+			b, err := l.Read(t.Context(), committed(t, l, past, "alpha").Name)
+			assert.NoError(t, err, "the generation reads")
+			assert.Equal(t, b[formatAt], byte(stateFormat), "a generation states the format of its encoding first")
 		})
 
 		t.Run("returns the error of a ledger that fails to read", func(t *testing.T) {

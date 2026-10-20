@@ -36,6 +36,10 @@ const (
 	HelperParams = "params"
 	// HelperResults writes the results of a callable.
 	HelperResults = "results"
+	// HelperWrapDocs wraps a text into the lines of documentation at the
+	// width of the comments of the target, which a template passes to
+	// [HelperDocs] or to the comment helper of a member.
+	HelperWrapDocs = "wrapdocs"
 )
 
 // mergeVocabulary folds the helpers of the plugins over the shared

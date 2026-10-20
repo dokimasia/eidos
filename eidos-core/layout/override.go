@@ -30,6 +30,11 @@ type override struct {
 	pathAt   position.Pos
 	tagFrom  plugin.RouteInput
 	pathFrom plugin.RouteInput
+	// origin is the declaration that states the routing: the origin of the
+	// declaration that the override routes, or the subject that placed the
+	// declaration where that origin states none. The router sets it, and
+	// it derives the key, the directory and the position of a finding.
+	origin symbol.Identity
 }
 
 // overrideOf reads the routing on one origin for one plugin's output.

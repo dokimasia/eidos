@@ -533,6 +533,7 @@ func TestBuilder(t *testing.T) {
 		onFunction := eidos.OnFunction(func(*eidos.FunctionMatch, *eidos.Emitter) error { return nil })
 		onMethod := eidos.OnMethod(func(*eidos.MethodMatch, *eidos.Emitter) error { return nil })
 		onStruct := eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })
+		onEnumVariant := eidos.OnEnumVariant(func(*eidos.EnumVariantMatch, *eidos.Emitter) error { return nil })
 		onEmitMethod := eidos.OnEmit(symbol.KindMethod, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })
 		overriding := stubSchema("shape")
 		overriding.Overrides = true
@@ -554,6 +555,11 @@ func TestBuilder(t *testing.T) {
 				name:  "returns one kind for two rules of one kind under a wrapper",
 				rules: []eidos.Rule{eidos.Directive(stubSchema("mock"), onStruct, onStruct)},
 				want:  []symbol.Kind{symbol.KindStruct},
+			},
+			{
+				name:  "returns the kind of an enum variant for a rule on a variant under a wrapper",
+				rules: []eidos.Rule{eidos.Directive(stubSchema("mock"), onEnumVariant)},
+				want:  []symbol.Kind{symbol.KindEnumVariant},
 			},
 			{
 				name:  "returns no kinds for a wrapper around an OnEmit rule",

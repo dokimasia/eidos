@@ -86,6 +86,9 @@ type Placement struct {
 	// [File.Header] describes, so a rule can read a package that a
 	// generator states for the file.
 	Header symbol.Annotations
+	// External reports that the family of the first unit of the file tests
+	// its package from outside, as [Output.External] states.
+	External bool
 }
 
 // ModuleOf returns the innermost module of a language whose root

@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -50,6 +52,44 @@ func TestGraph(t *testing.T) {
 				func(tb assert.TB) { coretest.Frozen(tb, pkg, pkg) })
 			assert.Equal(t, coretest.Contracts(got), []string{fixtureLoads},
 				"and fails for the reason the helper is about")
+		})
+	})
+
+	t.Run("Dependent", func(t *testing.T) {
+		t.Parallel()
+
+		dep := coretest.Struct(coretest.CachePath, "Cache")
+		own := coretest.Struct(coretest.StorePath, "Store")
+		g := coretest.Dependent(
+			[]*node.Package{coretest.Package(coretest.CachePath, dep)},
+			coretest.Package(coretest.StorePath, own),
+		)
+
+		t.Run("returns a sealed graph", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, g.Frozen(), "the fixture graph arrives sealed")
+		})
+
+		t.Run("contains the packages it was given", func(t *testing.T) {
+			t.Parallel()
+
+			_, depHeld := g.Lookup(dep.Identity())
+			_, ownHeld := g.Lookup(own.Identity())
+			expect.True(t, depHeld, "the graph contains the package of the dependency round")
+			expect.True(t, ownHeld, "the graph contains the package of the partition")
+		})
+
+		t.Run("marks the packages of the dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, g.Dependency(dep.Identity()), "a dependency round loaded the cache package")
+		})
+
+		t.Run("marks no package of the partition", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, g.Dependency(own.Identity()), "the partition loaded the store package")
 		})
 	})
 

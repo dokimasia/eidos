@@ -18,12 +18,13 @@ import (
 func TestEnum(t *testing.T) {
 	t.Parallel()
 
-	t.Run("marks the variant sets a rule can match", func(t *testing.T) {
+	t.Run("marks the kinds a rule can match", func(t *testing.T) {
 		t.Parallel()
 
-		// A variant belongs to its set and is reached by walking it,
-		// rather than matched on its own.
-		assertSubjects(t, "enum.go", "Enum", "Sum")
+		// A directive on an enum variant states something about the
+		// variant alone, so a rule matches the variant. A sum variant
+		// belongs to its sum and is reached by walking it.
+		assertSubjects(t, "enum.go", "Enum", "EnumVariant", "Sum")
 	})
 
 	t.Run("gives a variant the host of its set", func(t *testing.T) {

@@ -22,3 +22,12 @@ var RefusedType = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  69,
 	Meaning: "the plan's target cannot spell a type of another language",
 })
+
+// RefusedFile reports an identity that the package of the subject does
+// not declare, which a handler passes to [Emitter.FileOf]. The finding is
+// at the position of the subject. FileOf reports it as an Error, so the
+// run fails.
+var RefusedFile = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  78,
+	Meaning: "a handler addresses the source file of an identity that the package of its subject does not declare",
+})

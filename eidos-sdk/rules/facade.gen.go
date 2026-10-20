@@ -615,15 +615,18 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 }
 
 // Complete returns a pair from the halves that an author stated and the
-// halves that a language derived. Complete keeps a stated half. A half
-// that no author stated takes the first of these values that applies:
+// halves that a language derived. A half is stated where it has a value
+// or a refusal, and Complete keeps a stated half. The caller then receives
+// the refusal of an authored text instead of a derived value. A half that
+// no author stated takes the first of these values that applies:
 //   - the derived value of its own position, where that value differs
 //     from the stated half
 //   - the other derived value, where that value differs
 //   - a [RefusedNoLiteral] refusal, where neither differs
 //
-// The pair then contains two distinct values. Where no half is stated,
-// Complete returns the derived pair unchanged. It allocates nothing.
+// The completed half then differs from the stated half. Where no half is
+// stated, Complete returns the derived pair unchanged. It allocates
+// nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
 	return core.Complete(sample, alternate, derived, derivedAlternate)
 }
@@ -650,6 +653,9 @@ const (
 	// RefusedDepth means a self-referential type past the budget of the
 	// walk.
 	RefusedDepth = core.RefusedDepth
+	// RefusedAuthored means an authored text that the rules of its
+	// language do not read as a value of a boolean or a scalar type.
+	RefusedAuthored = core.RefusedAuthored
 )
 
 // FirstRefusal returns the first refusal among samples, and

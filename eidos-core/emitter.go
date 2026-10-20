@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -73,6 +74,38 @@ type Emitter struct {
 // later handle.
 func (e *Emitter) File(tags ...Tag) *Out {
 	return e.out(plugin.PerSource, e.m.pos.File, tags)
+}
+
+// FileOf returns the accumulator for the source file of the declaration
+// id and the family. id is a declaration of the package of the subject,
+// such as the first error value of a package match. The key is the file
+// of the position of id. FileOf reads id through the tracked reader, so
+// the invocation records the read, and a move of the declaration to
+// another file runs the handler again.
+//
+// FileOf refuses an identity that the package of the subject does not
+// declare, and an identity of another package is one. It reports an
+// Error under [RefusedFile] at the position of the subject, and returns
+// the accumulator that [Emitter.File] returns. The run then fails.
+//
+// FileOf allocates what File allocates. The lookup allocates only where
+// the read set of the invocation grows, and the first tracked read of a
+// phase call allocates the reader of the lane. A refusal allocates its
+// message.
+func (e *Emitter) FileOf(id symbol.Identity, tags ...Tag) *Out {
+	m := e.m
+	var decl symbol.Symbol
+	held := false
+	if id.Lang == m.subject.Lang && id.Package == m.subject.Package {
+		decl, held = m.Reader().Lookup(id)
+	}
+	if !held {
+		e.rs.reportf(m.seq, RefusedFile, diag.SeverityError, m.pos,
+			"%s is not a declaration of the package of %s: a handler addresses the files of its own package",
+			id, m.subject)
+		return e.File(tags...)
+	}
+	return e.out(plugin.PerSource, decl.Position().File, tags)
 }
 
 // PackageFile returns the accumulator for the package of the subject and
@@ -328,11 +361,14 @@ type Out struct {
 // Append places emit declarations under the subject of the handle. A
 // call without declarations does nothing and records nothing. The
 // placements apply when the rules of the phase call have run. The flush
-// orders the declarations of a unit by origin identity, then by the
-// source order of the gating instance under a repeatable directive, then
-// by canonical match order and the order of the appends. The output
-// order is therefore canonical and never the order of the schedule. The
-// call copies the declarations, so the caller may reuse the slice that it
+// orders the declarations of a unit by the source position of their
+// origin: the file, then the line, then the column. An origin without a
+// position orders after every origin with one. Declarations of one
+// position order by origin identity, then by the source order of the
+// gating instance under a repeatable directive, then by canonical match
+// order and the order of the appends. The output order is therefore the
+// order of the source and never the order of the schedule. The call
+// copies the declarations, so the caller may reuse the slice that it
 // passed. It buffers them in the pooled storage of the phase call and
 // allocates nothing once the state of the call is warm. The flush
 // allocates the lists of declarations and origins of the unit.
@@ -409,9 +445,11 @@ type accumulator struct {
 }
 
 // placed is one appended declaration with its ordering key and the data
-// that an [Out.Record] call attached to it. The data is nil for
-// [Out.Append].
+// that an [Out.Record] call attached to it. pos is the position of the
+// origin in the graph, and zero for an origin without one. The data is
+// nil for [Out.Append].
 type placed struct {
+	pos      position.Pos
 	origin   symbol.Identity
 	instance int
 	seq      int
@@ -419,8 +457,10 @@ type placed struct {
 	data     any
 }
 
-// originsOf returns the distinct nonzero origins of places in canonical
-// order. It counts them first, so the slice has its exact size.
+// originsOf returns the distinct nonzero origins of places, sorted by
+// identity. The flush orders the places of one origin next to each other,
+// so originsOf counts the runs of origins first, and the slice has its
+// exact size. The sort allocates nothing.
 func originsOf(places []placed) []symbol.Identity {
 	distinct := 0
 	prev := symbol.Identity{}
@@ -441,6 +481,7 @@ func originsOf(places []placed) []symbol.Identity {
 			prev = p.origin
 		}
 	}
+	slices.SortFunc(out, symbol.Identity.Compare)
 	return out
 }
 
@@ -478,13 +519,17 @@ func (c *phaseCall) accFor(k accKey, subject symbol.Identity) *accumulator {
 // contributions in canonical order, and adds each unit to the store of
 // the plan. The accumulators flush in key order, so refusals arrive in
 // one order. A call that touched nothing flushes nothing and allocates
-// nothing.
+// nothing. A unit records in [plugin.Unit.Subjects] the subject of each
+// declaration whose origin is another declaration. Where two placements of
+// one origin have two subjects, the first placement in the order of the
+// unit applies.
 //
 // # Allocation contract
 //
 // The keys sort in the buffer of the call. Each unit allocates its
-// declarations and, where they have origins, its origins. The store
-// keeps both.
+// declarations and, where they have origins, its origins. A unit with a
+// declaration whose origin is not its subject also allocates the map of
+// subjects. The store keeps all three.
 func (c *phaseCall) flush(into *plugin.Emit) error {
 	if len(c.accs) == 0 {
 		return nil
@@ -505,6 +550,15 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 	for _, k := range c.accKeys {
 		acc := c.accs[k]
 		slices.SortStableFunc(acc.places, func(a, b placed) int {
+			if unplaced := a.pos.IsZero(); unplaced != b.pos.IsZero() {
+				if unplaced {
+					return 1
+				}
+				return -1
+			}
+			if c := a.pos.Compare(b.pos); c != 0 {
+				return c
+			}
 			if c := a.origin.Compare(b.origin); c != 0 {
 				return c
 			}
@@ -514,13 +568,22 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 			return cmp.Compare(a.seq, b.seq)
 		})
 		decls := make([]symbol.Symbol, 0, len(acc.places))
-		var data map[symbol.Identity]any
+		var (
+			data     map[symbol.Identity]any
+			subjects map[symbol.Identity]symbol.Identity
+		)
 		for _, p := range acc.places {
 			decls = append(decls, p.decl)
+			origin, _ := emit.OriginOf(p.decl)
+			if _, placed := subjects[origin]; !placed && !origin.IsZero() && !p.origin.IsZero() && origin != p.origin {
+				if subjects == nil {
+					subjects = map[symbol.Identity]symbol.Identity{}
+				}
+				subjects[origin] = p.origin
+			}
 			if p.data == nil {
 				continue
 			}
-			origin, _ := emit.OriginOf(p.decl)
 			if _, attached := data[origin]; !attached {
 				if data == nil {
 					data = map[symbol.Identity]any{}
@@ -538,6 +601,7 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 			Pkg:      acc.pkg,
 			Decls:    decls,
 			Origins:  origins,
+			Subjects: subjects,
 			Template: acc.out.Template,
 			Data:     data,
 		})

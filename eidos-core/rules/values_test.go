@@ -178,6 +178,33 @@ func TestValues(t *testing.T) {
 			assert.Equal(t, d.asked, 0, "the language is asked only for a missing half")
 		})
 
+		t.Run("returns RefusedAuthored for a stated text that the rules do not read", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
+			subject := rowField(countField)
+			stamp(t, facts, b.View().Kernel().Sample, subject, authoredName)
+			sample, alternate := b.SamplesOf(subject, builtin(intSpelling), countField)
+			assert.Equal(t, [2]rules.Sample{sample, alternate},
+				[2]rules.Sample{
+					rules.Refused(rules.RefusedAuthored),
+					rules.Of(emit.Literal(emit.LiteralInt, derivedAlternateInt)),
+				},
+				"the refusal of the stated sample replaces the derived sample")
+		})
+
+		t.Run("derives nothing where one of two stated halves is refused", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, facts := viewOver(t, coretest.Frozen(t, hierarchy()))
+			d := &deriving{SourceRules: scripted()}
+			subject := rowField(countField)
+			stamp(t, facts, v.Kernel().Sample, subject, authoredName)
+			stamp(t, facts, v.Kernel().Alternate, subject, authoredOtherCount)
+			rules.NewBound(d, v, nil).SamplesOf(subject, builtin(intSpelling), countField)
+			assert.Equal(t, d.asked, 0, "a refused half is stated, so the language derives no half")
+		})
+
 		t.Run("returns the values authored on the declaration of the type", func(t *testing.T) {
 			t.Parallel()
 
@@ -274,6 +301,7 @@ func TestValues(t *testing.T) {
 		oneAsText := rules.Of(emit.Literal(emit.LiteralString, oneText))
 		composed := rules.Of(emit.Composite(&emit.TypeRef{Spelling: rowName}))
 		refused := rules.Refused(rules.RefusedDepth)
+		authored := rules.Refused(rules.RefusedAuthored)
 		tests := []struct {
 			name                 string
 			giveSample           rules.Sample
@@ -347,6 +375,24 @@ func TestValues(t *testing.T) {
 				giveSample:  composed,
 				giveDerived: two, giveDerivedAlternate: composed,
 				wantSample: composed, wantAlternate: composed,
+			},
+			{
+				name:        "keeps a refused stated sample",
+				giveSample:  authored,
+				giveDerived: one, giveDerivedAlternate: two,
+				wantSample: authored, wantAlternate: two,
+			},
+			{
+				name:          "keeps a refused stated alternate",
+				giveAlternate: authored,
+				giveDerived:   one, giveDerivedAlternate: two,
+				wantSample: one, wantAlternate: authored,
+			},
+			{
+				name:       "keeps two refused stated halves",
+				giveSample: authored, giveAlternate: authored,
+				giveDerived: one, giveDerivedAlternate: two,
+				wantSample: authored, wantAlternate: authored,
 			},
 		}
 		for _, tt := range tests {
@@ -481,6 +527,7 @@ func TestValues(t *testing.T) {
 			{name: "returns no-literal for RefusedNoLiteral", give: rules.RefusedNoLiteral, want: "no-literal"},
 			{name: "returns unresolved for RefusedUnresolved", give: rules.RefusedUnresolved, want: "unresolved"},
 			{name: "returns depth for RefusedDepth", give: rules.RefusedDepth, want: "depth"},
+			{name: "returns authored for RefusedAuthored", give: rules.RefusedAuthored, want: "authored"},
 			{name: "returns the number for an undeclared refusal", give: rules.Refusal(9), want: "9"},
 		}
 		for _, tt := range tests {

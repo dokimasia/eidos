@@ -111,6 +111,9 @@ func TestAssign(t *testing.T) {
 				symbol.KindMethod: assigned(
 					coretest.StructName, coretest.MethodName, symbol.KindMethod,
 				),
+				symbol.KindEnumVariant: assigned(
+					coretest.EnumName, coretest.EnumVariantName, symbol.KindEnumVariant,
+				),
 				symbol.KindParam: assigned(
 					coretest.FunctionName, coretest.ParamName, symbol.KindParam,
 				),

@@ -76,6 +76,12 @@ const (
 	// builtin.
 	kitIndent    = "\t"
 	memberMethod = "func {{.Name}}() {\n{{memberbody .}}}\n"
+	// sampleHelper is a helper that returns a literal value of the text
+	// sevenText. valueStruct is a struct template that writes the value
+	// through the value builtin.
+	sampleHelper = "sample"
+	sevenText    = "7"
+	valueStruct  = "type {{.Name}} = {{value " + sampleHelper + "}}\n"
 )
 
 // The allocation ceilings of the steps of a declaration.
@@ -97,10 +103,11 @@ const (
 	// buildAllocs is the allocation count of a Build of the fixture's
 	// declaration, with or without hooks. text/template allocates most of
 	// them, for the parse trees of the file skeleton and the two kind
-	// templates and for the function maps of the builtins that the render
-	// binds to each template. The composed pass and the backend allocate
-	// the rest.
-	buildAllocs = 167
+	// templates and for the function maps that it keeps for each template.
+	// The eight builtins and the helper of the fixture are nine names, so
+	// each of these maps grows past one group of eight slots. The composed
+	// pass and the backend allocate the rest.
+	buildAllocs = 185
 	// policiesAllocs is the allocation count of a Policies call that adds
 	// one spec to a new declaration. The call allocates the list of specs.
 	policiesAllocs = 1
@@ -494,6 +501,35 @@ func TestBackend(t *testing.T) {
 			assert.Length(t, files, 1, "the unit of the method renders one file")
 			assert.Contains(t, string(files[0].Body), "func "+loadName+"() {\n"+kitIndent+"\treturn\n}\n",
 				"the scaffolded return is one level deeper")
+		})
+	})
+
+	t.Run("Value", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend whose templates write a value through the declared writer", func(t *testing.T) {
+			t.Parallel()
+
+			sample := func(*render.ImportSet) template.FuncMap {
+				return template.FuncMap{
+					sampleHelper: func() emit.Value { return emit.Literal(emit.LiteralInt, sevenText) },
+				}
+			}
+			b := backend.New(kitName, kitTarget, kitSyntax()).
+				FileTemplate(kitFile).
+				KindTemplates(map[symbol.Kind]string{symbol.KindStruct: valueStruct}).
+				KindTemplates(kitCallables()).
+				Funcs(sample).
+				Naming(kitNaming).
+				Scaffold(kitScaffold).
+				Value(kitValue).
+				Imports(kitImports).
+				Finalise(kitFinalise).
+				Build()
+			files := kitRender(t, b)
+			assert.Length(t, files, 1, "the fixture renders one file")
+			assert.Contains(t, string(files[0].Body), "type "+rowName+" = "+sevenText+"\n",
+				"the struct template writes the value through the writer")
 		})
 	})
 
@@ -1050,6 +1086,13 @@ func kitScaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	return []byte("\treturn\n"), nil
 }
 
+// kitValue writes the text of a value. It records an import, as a writer
+// records each package that a qualified name needs.
+func kitValue(v emit.Value, set *render.ImportSet) (string, error) {
+	set.Add(runtimePkg)
+	return v.Text, nil
+}
+
 // kitImports renders the collected set as a one-line block.
 func kitImports(set *render.ImportSet) string {
 	if set.Len() == 0 {
@@ -1205,6 +1248,7 @@ func setters() []setter {
 		{name: "Version", set: func(b *backend.Builder) *backend.Builder { return b.Version(kitVersion) }},
 		{name: "FileTemplate", set: func(b *backend.Builder) *backend.Builder { return b.FileTemplate(kitFile) }},
 		{name: "Scaffold", set: func(b *backend.Builder) *backend.Builder { return b.Scaffold(kitScaffold) }},
+		{name: "Value", set: func(b *backend.Builder) *backend.Builder { return b.Value(kitValue) }},
 		{name: "Naming", set: func(b *backend.Builder) *backend.Builder { return b.Naming(kitNaming) }},
 		{name: "Split", set: func(b *backend.Builder) *backend.Builder { return b.Split(split) }},
 		{name: "Packages", set: func(b *backend.Builder) *backend.Builder { return b.Packages(rule) }},

@@ -3,27 +3,40 @@
 
 package meta
 
-import "slices"
+import (
+	"slices"
 
-// The closed vocabulary's runtime behaviour lives here: four terms
-// are plain comparable values, and []string is the one that has to
-// be copied at the boundary and compared element-wise.
+	"go.dokimi.dev/eidos/core/symbol"
+)
 
-// cloneValue returns a value safe to hold or hand out: a slice is
-// copied, everything else is a value already.
+// This file implements the run-time behaviour of the closed vocabulary.
+// Four terms are plain comparable values. The fact store copies the two
+// lists at its boundary and compares them element by element.
+
+// cloneValue returns a value that the store may keep or hand out. It
+// copies a list and returns every other term as it is.
 func cloneValue(v any) any {
-	if list, isList := v.([]string); isList {
+	switch list := v.(type) {
+	case []string:
 		return slices.Clone(list)
+	case []symbol.Identity:
+		return slices.Clone(list)
+	default:
+		return v
 	}
-	return v
 }
 
-// equalValue compares two held values per vocabulary term; slices
-// compare element-wise.
+// equalValue reports whether two held values are equal. It compares two
+// lists element by element and every other term with ==.
 func equalValue(a, b any) bool {
-	if left, isList := a.([]string); isList {
+	switch left := a.(type) {
+	case []string:
 		right, isRight := b.([]string)
 		return isRight && slices.Equal(left, right)
+	case []symbol.Identity:
+		right, isRight := b.([]symbol.Identity)
+		return isRight && slices.Equal(left, right)
+	default:
+		return a == b
 	}
-	return a == b
 }

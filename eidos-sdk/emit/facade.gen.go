@@ -865,6 +865,15 @@ const (
 	// expression of TypeScript and Java, spells it with the import of the
 	// type. A target without such a form refuses it.
 	ValueConstruction = core.ValueConstruction
+	// ValueFunc is a function of the function type Type that returns Args:
+	// func(context.Context) error { return nil }. Each function literal is
+	// a new function value, so two of them differ. A target without a
+	// function literal refuses it.
+	ValueFunc = core.ValueFunc
+	// ValueMake is the empty value of Type that make returns: make(chan
+	// string). Each make is a new value, so two of them differ. A target
+	// without make refuses it.
+	ValueMake = core.ValueMake
 )
 
 // LiteralKind is the kind of the text of a literal. A target spells each
@@ -989,6 +998,22 @@ func Name(id symbol.Identity) Value {
 // call, one allocation, and nothing without arguments.
 func Construction(t *TypeRef, args ...Value) Value {
 	return core.Construction(t, args...)
+}
+
+// Func returns a function of the function type t that returns the values
+// results, in the order of the results of t. A backend imports each type
+// of the signature, as it does for the type of a composite. Func allocates
+// the list of results of a variadic call, one allocation, and nothing
+// without results.
+func Func(t *TypeRef, results ...Value) Value {
+	return core.Func(t, results...)
+}
+
+// Make returns the empty value of the type t that make returns, such as a
+// channel. A backend imports the type, as it does for the type of a
+// composite. Make allocates nothing.
+func Make(t *TypeRef) Value {
+	return core.Make(t)
 }
 
 // Walk visits s and every declaration it contains, depth first, in

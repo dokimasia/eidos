@@ -456,6 +456,88 @@ func TestMatches(t *testing.T) {
 		})
 	})
 
+	t.Run("OnEnumVariant", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
+			t.Parallel()
+
+			store := coretest.EveryKind(coretest.StorePath)
+			cache := coretest.EveryKind(coretest.CachePath)
+			want := coretest.KindCount(symbol.KindEnumVariant, store, cache)
+			assert.InRange(t, want, 2, math.Inf(1),
+				"the fixture contains more than one EnumVariant, so one rule meets several")
+
+			var subjects []symbol.Identity
+			var handles []*eidos.EnumVariantMatch
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnEnumVariant(func(m *eidos.EnumVariantMatch, e *eidos.Emitter) error {
+					subjects = append(subjects, m.EnumVariant.ID)
+					handles = append(handles, m)
+					return nil
+				})).
+				Generator(), store, cache)
+
+			assert.That(t, subjects).
+				Length(want, "the rule runs once per EnumVariant in the graph").
+				Contains(coretest.EveryKindID(coretest.StorePath, coretest.EnumVariantName, symbol.KindEnumVariant),
+					"and the match contains the declaration, not only its identity")
+			for _, id := range subjects {
+				assert.Equal(t, id.Kind, symbol.KindEnumVariant,
+					"every subject a rule receives is of its own kind")
+			}
+			for _, m := range handles {
+				assert.Equal(t, m, handles[0],
+					"one match serves every invocation of the rule, so an "+
+						"invocation allocates nothing in steady state", assert.ByIdentity())
+			}
+		})
+
+		t.Run("passes over a value that is not its kind's type", func(t *testing.T) {
+			t.Parallel()
+
+			ran := false
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnEnumVariant(func(m *eidos.EnumVariantMatch, e *eidos.Emitter) error {
+					ran = true
+					return nil
+				})).
+				Generator(),
+				coretest.Package(coretest.StorePath, coretest.Foreign(
+					coretest.StorePath, coretest.ForeignName, symbol.KindEnumVariant)))
+			assert.False(t, ran,
+				"the handler never sees a declaration indexed under the kind "+
+					"that is not this model's type for it")
+		})
+
+		t.Run("declares the generate phase for an emitter handler", func(t *testing.T) {
+			t.Parallel()
+
+			emits := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnEnumVariant(func(m *eidos.EnumVariantMatch, e *eidos.Emitter) error {
+					return nil
+				})).
+				Generator()
+			subscribed, held := emits.(plugin.Subscribed)
+			assert.True(t, held, "a built plugin declares its gates")
+			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
+				Kind: symbol.KindEnumVariant, Phase: plugin.PhaseGenerate,
+			}}, "the record states the trigger's kind in the generate phase")
+		})
+
+		t.Run("declares the annotate phase alone for a stamper handler", func(t *testing.T) {
+			t.Parallel()
+
+			stamps := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnEnumVariant(func(m *eidos.EnumVariantMatch, st *eidos.Stamper) error {
+					return nil
+				})).
+				Annotator()
+			_, generates := stamps.(plugin.Generator)
+			assert.False(t, generates, "a stamper handler makes an annotator alone")
+		})
+	})
+
 	t.Run("OnSum", func(t *testing.T) {
 		t.Parallel()
 
@@ -1138,6 +1220,20 @@ func matchCases() []matchCase {
 				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
 				assert.True(tb, held, "OnEnum returns a rule a plugin builds from")
 				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindEnum,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.EnumVariantMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnEnumVariant",
+			call: func() { rule = eidos.OnEnumVariant(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Generator().(plugin.Subscribed)
+				assert.True(tb, held, "OnEnumVariant returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindEnumVariant,
 					"the rule triggers on its kind")
 			},
 		})

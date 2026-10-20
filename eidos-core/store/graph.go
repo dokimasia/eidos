@@ -343,6 +343,17 @@ func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	return g.packageOf(id)
 }
 
+// Dependency reports whether a dependency round loaded the package of an
+// identity, untracked. A dependency round loads the packages of a store
+// and the vendored packages that the selection of a frontend does not
+// claim. A package is a dependency package where [RegionInfo.Dependency]
+// marks every region of it. Dependency reports false for a package that
+// the regions do not list, and for every package of a graph [New]
+// returned. It does not decode a region or allocate.
+func (g *Graph) Dependency(id symbol.Identity) bool {
+	return g.lazy != nil && g.lazy.dependency(owningPackage(id))
+}
+
 // Damaged returns the first failure of a [Source] to decode a region of
 // a graph [Sealed] returned, and nil where every region the graph
 // decoded read whole. A graph [New] returned decodes nothing and

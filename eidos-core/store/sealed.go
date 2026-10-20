@@ -93,7 +93,11 @@ type regionPart struct {
 // contribute to it, in region order, and its view, built once.
 type packageSlot struct {
 	regions []int
-	once    sync.Once
+	// dependency reports that a dependency round loaded every region of
+	// the package. [newSealedIndex] sets it from the summaries, so a read
+	// of it decodes nothing.
+	dependency bool
+	once       sync.Once
 	// pkg is the merged package node, nil where no decoded region
 	// declares the package.
 	pkg *node.Package
@@ -168,11 +172,12 @@ func newSealedIndex(src Source) *sealedIndex {
 			if !met {
 				at = len(s.pkgSlots)
 				s.byPkg[pkg] = at
-				s.pkgSlots = append(s.pkgSlots, packageSlot{})
+				s.pkgSlots = append(s.pkgSlots, packageSlot{dependency: true})
 				s.order = append(s.order, pkg)
 				packageCounts = append(packageCounts, 0)
 			}
 			packageCounts[at]++
+			s.pkgSlots[at].dependency = s.pkgSlots[at].dependency && info.Dependency
 		}
 		for _, k := range info.Kinds {
 			kindCounts[k]++
@@ -244,6 +249,13 @@ func (s *sealedIndex) packageOf(id symbol.Identity) (*node.Package, bool) {
 		return nil, false
 	}
 	return slot.pkg, true
+}
+
+// dependency reports whether a dependency round loaded every region of a
+// package, and false for a package that no summary lists.
+func (s *sealedIndex) dependency(pkg symbol.Identity) bool {
+	at, met := s.byPkg[pkg]
+	return met && s.pkgSlots[at].dependency
 }
 
 // kind returns the declarations of one kind in the graph's order:

@@ -48,6 +48,8 @@ type Enum struct {
 // expression or a Java variant's constructor arguments. Evaluating
 // it is the language's job, not the model's, and a variant whose
 // language assigns values implicitly leaves it empty.
+//
+//eidos:subject
 type EnumVariant struct {
 	ID          symbol.Identity    `eidos:"node"`
 	Origin      symbol.Identity    `eidos:"emit"`

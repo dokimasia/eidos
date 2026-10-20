@@ -204,6 +204,14 @@ func TestSelect(t *testing.T) {
 			assert.Empty(t, *visited, "a subject outside the scope has no match")
 		})
 
+		t.Run("runs no candidate of a dependency package", func(t *testing.T) {
+			t.Parallel()
+
+			g, gamma := dependencyGraph()
+			got := selectedNames(t, g, nil, &plugin.Selection{Candidates: []symbol.Identity{gamma.ID}})
+			assert.Empty(t, got, "a rule of the generate phase runs on no declaration of a dependency package")
+		})
+
 		t.Run("runs no candidate of another kind", func(t *testing.T) {
 			t.Parallel()
 

@@ -420,6 +420,72 @@ func TestGraph(t *testing.T) {
 		})
 	})
 
+	t.Run("Dependency", func(t *testing.T) {
+		t.Parallel()
+
+		cache := coretest.EveryKindID(coretest.CachePath, coretest.StructName, symbol.KindStruct)
+		stored := coretest.Struct(coretest.StorePath, "Store").ID
+		tests := []struct {
+			name       string
+			giveMarked []int
+			give       symbol.Identity
+			want       bool
+		}{
+			{
+				name:       "reports true for a declaration of a package that a dependency round loaded",
+				giveMarked: []int{1},
+				give:       cache,
+				want:       true,
+			},
+			{
+				name:       "reports true for a package that a dependency round loaded",
+				giveMarked: []int{1},
+				give:       coretest.PackageID(coretest.CachePath),
+				want:       true,
+			},
+			{
+				name:       "reports false for a package of the partition",
+				giveMarked: []int{1},
+				give:       stored,
+			},
+			{
+				name:       "reports false for a package that the partition shares with a dependency round",
+				giveMarked: []int{2},
+				give:       stored,
+			},
+			{
+				name:       "reports false for a package that no region lists",
+				giveMarked: []int{0, 1, 2},
+				give:       coretest.Struct("svc/absent", "Absent").ID,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				g, _ := newSplit().dependent(tt.giveMarked...)
+				assert.Equal(t, g.Dependency(tt.give), tt.want,
+					"a package is a dependency package where a dependency round loaded every region of it")
+			})
+		}
+
+		t.Run("decodes no region", func(t *testing.T) {
+			t.Parallel()
+
+			g, src := newSplit().dependent(1)
+			g.Dependency(cache)
+			assert.Equal(t, src.decoded(), []int{0, 0, 0}, "the summaries mark the regions")
+		})
+
+		t.Run("reports false for a graph New returned", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
+			assert.False(t, g.Dependency(coretest.PackageID(coretest.StorePath)),
+				"a graph without regions has no dependency round")
+		})
+	})
+
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
@@ -556,15 +622,17 @@ func TestGraphAllocs(t *testing.T) {
 	var err error
 	assert.MaxAllocs(t, func() { _, err = g.Reader(reads, nil) }, graphReaderAllocs, "Reader allocates the handle")
 	assert.NoError(t, err, "the frozen graph hands out a reader")
-	var contained, frozen, holds bool
+	var contained, frozen, holds, dependency bool
 	assert.MaxAllocs(t, func() {
 		_, contained = g.PackageOf(hit)
 		frozen, holds, err = g.Frozen(), g.Holds(hit), g.Damaged()
-	}, 0, "PackageOf, Frozen, Holds and Damaged allocate nothing")
+		dependency = g.Dependency(hit)
+	}, 0, "PackageOf, Frozen, Holds, Damaged and Dependency allocate nothing")
 	expect.True(t, contained, "PackageOf finds the loaded declaration's package")
 	expect.True(t, frozen, "Frozen reports the sealed graph")
 	expect.True(t, holds, "Holds reports the loaded declaration")
 	expect.NoError(t, err, "a loaded graph decodes nothing, so nothing is damaged")
+	expect.False(t, dependency, "a loaded graph has no dependency round")
 	var held bool
 	assert.MaxAllocs(t, func() { _, held = g.Lookup(hit) }, 0, "Lookup allocates nothing")
 	assert.True(t, held, "Lookup finds the loaded declaration")
@@ -739,6 +807,17 @@ func BenchmarkGraph(b *testing.B) {
 			_, held = g.PackageOf(hit)
 		}
 		assert.True(b, held, "PackageOf returns the declaration's package")
+	})
+
+	b.Run("Dependency", func(b *testing.B) {
+		sealed := store.Sealed(canonicalSource())
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		dependency := true
+		for c.Loop() {
+			dependency = sealed.Dependency(hit)
+		}
+		assert.False(b, dependency, "a package of the partition is no dependency package")
 	})
 
 	b.Run("Damaged", func(b *testing.B) {
