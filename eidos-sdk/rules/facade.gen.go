@@ -278,11 +278,6 @@ const (
 	// GapConflict is two arrivals of one name on an interface with
 	// different signatures.
 	GapConflict = core.GapConflict
-	// GapComputed is a member whose name is an expression of its
-	// language, such as TypeScript's [Symbol.iterator]. No other
-	// language can call such a member by name, so the walk leaves it
-	// out. Host is the type that declares the member.
-	GapComputed = core.GapComputed
 )
 
 // Gap is one contributor that yielded nothing, and why.
