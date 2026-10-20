@@ -39,12 +39,12 @@ options:
     audit: {redact: false}
 $ eidos --config testdata/tree/.eidos.yaml plan
 frontend golang 0.8.0
-frontend typescript 0.3.0; tree-sitter-typescript v0.23.2, go-tree-sitter v0.25.0
-frontend java 0.2.0; tree-sitter-java v0.23.5, go-tree-sitter v0.25.0
-frontend rust 0.5.0; tree-sitter-rust v0.24.2, go-tree-sitter v0.25.0
+frontend typescript 0.4.0; tree-sitter-typescript v0.23.2, go-tree-sitter v0.25.0
+frontend java 0.3.0; tree-sitter-java v0.23.5, go-tree-sitter v0.25.0
+frontend rust 0.6.0; tree-sitter-rust v0.24.2, go-tree-sitter v0.25.0
 frontend protobuf 0.5.0
 frontend graphql 0.1.0
-frontend python 0.1.0; tree-sitter-python v0.0.0-20261020093147-bab31bd04b20, go-tree-sitter v0.25.0
+frontend python 0.2.0; tree-sitter-python v0.0.0-20261020093147-bab31bd04b20, go-tree-sitter v0.25.0
 annotator 1 golang-lowering
 annotator 2 graphql-lowering
 annotator 3 java-lowering
@@ -61,7 +61,7 @@ plan typescript: target typescript, backend typescript, commit order 2
   sources: language golang, packages ./ops
   generator 1 audit 0.3.0+e0e53984172bbc0b3a25eb7e6194d7a80f04cdf0c6c5890773ae8b0d0ff06ca6
   layout: policy inherit
-  policies: typescript.absent undefined, typescript.bytes Uint8Array, typescript.duration string, typescript.int64 bigint, typescript.timestamp Date
+  policies: typescript.absent undefined, typescript.bytes Uint8Array, typescript.duration string, typescript.grpc none, typescript.int64 bigint, typescript.timestamp Date
 plan java: target java, backend java, commit order 3
   sources: language java, packages ./...
   layout: policy inherit
