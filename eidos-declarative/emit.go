@@ -181,12 +181,14 @@ func (l *lowered) implementation(m *eidos.InterfaceMatch, e *eidos.Emitter) erro
 	for _, tp := range i.TypeParams {
 		self.Args = append(self.Args, &node.TypeRef{Spelling: tp.Name, Target: tp.ID})
 	}
+	implements, spelled := e.Supertype(i.ID, self)
+	t.refused = !spelled
 	out := &emit.Struct{
 		Origin:     i.ID,
 		Name:       name,
 		Visibility: i.Visibility,
 		TypeParams: t.typeParams(i.ID, i.TypeParams),
-		Implements: []*emit.TypeRef{t.ref(i.ID, self)},
+		Implements: []*emit.TypeRef{implements},
 	}
 	out.Fields.Append(&emit.Field{Name: nextField, Visibility: symbol.VisibilityPackage, Type: t.ref(i.ID, self)})
 	letter := receiverFallback
@@ -365,10 +367,10 @@ func receiverName(letter string, m *emit.Method, tps []*emit.TypeParam) string {
 }
 
 // translation translates the types of one declaration that a rule emits
-// into references of the plan's target. [eidos.Emitter.Type] reports each
-// type that the target cannot spell under [eidos.RefusedType], and the
-// translation records that one did not translate, so the rule does not emit
-// the declaration.
+// into references of the plan's target. The Emitter reports each type that
+// the target cannot spell under [eidos.RefusedType], and the translation
+// records that one did not translate, so the rule does not emit the
+// declaration.
 type translation struct {
 	e *eidos.Emitter
 	// refused reports that a type did not translate.
@@ -396,25 +398,12 @@ func (t *translation) refs(owner symbol.Identity, refs []*node.TypeRef) []*emit.
 	return out
 }
 
-// typeParams returns the type parameters tps of owner with their bounds,
-// their defaults and the types of their values translated, and nil for no
-// type parameter.
+// typeParams returns the type parameters tps of owner as
+// [eidos.Emitter.TypeParams] translates them, and nil for no type
+// parameter.
 func (t *translation) typeParams(owner symbol.Identity, tps []*node.TypeParam) []*emit.TypeParam {
-	if len(tps) == 0 {
-		return nil
-	}
-	out := make([]*emit.TypeParam, 0, len(tps))
-	for _, tp := range tps {
-		out = append(out, &emit.TypeParam{
-			Name:         tp.Name,
-			Variance:     tp.Variance,
-			Const:        tp.Const,
-			Bounds:       t.refs(owner, tp.Bounds),
-			Default:      t.ref(owner, tp.Default),
-			Type:         t.ref(owner, tp.Type),
-			DefaultValue: tp.DefaultValue,
-		})
-	}
+	out, spelled := t.e.TypeParams(owner, tps)
+	t.refused = t.refused || !spelled
 	return out
 }
 

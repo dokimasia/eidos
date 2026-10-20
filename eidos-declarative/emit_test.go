@@ -54,8 +54,9 @@ const (
 // The declarations that a case adds to the package svc: the interface
 // Account with the property Owner, the generic interface Store, the
 // interface Sorter with the generic method Sort, the function Reset
-// without parameters, and the struct Orphan, which embeds a type that the
-// graph does not contain.
+// without parameters, the function Raise, which announces the failure type
+// Fault, and the struct Orphan, which embeds a type that the graph does not
+// contain.
 const (
 	accountName = "Account"
 	ownerName   = "Owner"
@@ -65,6 +66,8 @@ const (
 	sorterName  = "Sorter"
 	sortName    = "Sort"
 	resetName   = "Reset"
+	raiseName   = "Raise"
+	faultType   = "Fault"
 	orphanName  = "Orphan"
 	brokenName  = "Broken"
 	missingName = "Missing"
@@ -193,6 +196,32 @@ rules:
       output: test
       emit: mirror
 `
+
+// otherTarget is the target of a plan in another language than the graph.
+const otherTarget plugin.Target = "other"
+
+// superPrefix opens the supertype spelling of otherSpoke.
+const superPrefix = "super:"
+
+// otherSpoke is the spoke of the target other. It spells a shape as its
+// source spelling, and a supertype as superPrefix followed by the source
+// spelling.
+type otherSpoke struct{}
+
+var (
+	_ plugin.TypeSpeller      = otherSpoke{}
+	_ plugin.SupertypeSpeller = otherSpoke{}
+)
+
+// SpellType returns the source spelling of s.
+func (otherSpoke) SpellType(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
+	return &emit.TypeRef{Spelling: s.Spelling}, nil
+}
+
+// SpellSupertype returns superPrefix followed by the source spelling of s.
+func (otherSpoke) SpellSupertype(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
+	return &emit.TypeRef{Spelling: superPrefix + s.Spelling}, nil
+}
 
 // The generate phase emits one declaration for each rule and subject,
 // routes it to the rule's family, and claims each body for the rule's
@@ -441,6 +470,20 @@ func TestEmit(t *testing.T) {
 			assert.Empty(t, mirror.Params.Items(), "the mirror has no parameter")
 		})
 
+		t.Run("emits the mirror of a function with its announced failure types", func(t *testing.T) {
+			t.Parallel()
+
+			var mirror *emit.Function
+			for _, fn := range declarations[*emit.Function](generated(t, auditPlugin(t), ledgerFixture(t, raise())), contractTag) {
+				if fn.Name == raiseName+"Contract" {
+					mirror = fn
+				}
+			}
+			assert.NotNil(t, mirror, "the bare rule mirrors every function")
+			assert.Equal(t, mirror.Throws, []*emit.TypeRef{{Spelling: faultType}},
+				"the mirror announces the failure type of the subject")
+		})
+
 		t.Run("emits the implementation of a generic interface with its type parameters", func(t *testing.T) {
 			t.Parallel()
 
@@ -456,6 +499,30 @@ func TestEmit(t *testing.T) {
 					Args:     []*emit.TypeRef{{Spelling: letterParam, Target: storeParamID}},
 				},
 			}, "the struct implements the interface over the type parameter of the interface")
+		})
+
+		t.Run("implements an interface in the supertype spelling of another language", func(t *testing.T) {
+			t.Parallel()
+
+			f := ledgerFixture(t)
+			f.Target, f.Types = otherTarget, otherSpoke{}
+			impl := only[*emit.Struct](t, generated(t, auditPlugin(t), f), "")
+			expect.Equal(t, impl.Implements, []*emit.TypeRef{{Spelling: superPrefix + ledgerName}},
+				"the struct implements the interface in the spelling of a supertype")
+			expect.Equal(t, impl.Fields.Items()[0].Type, &emit.TypeRef{Spelling: ledgerName},
+				"the field next has the interface in the spelling of a value")
+		})
+
+		t.Run("translates the bound of a type parameter as a supertype of another language", func(t *testing.T) {
+			t.Parallel()
+
+			f := gated(t, storeID, store())
+			f.Target, f.Types = otherTarget, otherSpoke{}
+			impl := structNamed(generated(t, auditPlugin(t), f), "", storeName+"Audit")
+			assert.NotNil(t, impl, "the rule implements the interface")
+			assert.Equal(t, impl.TypeParams, []*emit.TypeParam{{
+				Name: letterParam, Bounds: []*emit.TypeRef{{Spelling: superPrefix + boundType}},
+			}}, "the bound has the spelling of a supertype")
 		})
 
 		t.Run("names the receiver apart from a type parameter of the struct with its letter", func(t *testing.T) {
@@ -613,7 +680,7 @@ func TestEmit(t *testing.T) {
 			t.Parallel()
 
 			f := ledgerFixture(t)
-			f.Target = "other"
+			f.Target = otherTarget
 			found := false
 			for d := range generated(t, auditPlugin(t), f).Sink.All() {
 				found = found || d.Code == eidos.RefusedType
@@ -625,7 +692,7 @@ func TestEmit(t *testing.T) {
 			t.Parallel()
 
 			f := ledgerFixture(t)
-			f.Target = "other"
+			f.Target = otherTarget
 			var units []plugin.Unit
 			for u := range generated(t, auditPlugin(t), f).Emit.Units() {
 				units = append(units, u)
@@ -863,6 +930,16 @@ func reset() *node.Function {
 		Pos:        position.Pos{File: ledgerFile, Line: 40, Col: 1},
 		Name:       resetName,
 		Visibility: symbol.VisibilityPublic,
+	}
+}
+
+// raise returns the function Raise, which announces the failure type Fault.
+func raise() *node.Function {
+	return &node.Function{
+		Pos:        position.Pos{File: ledgerFile, Line: 42, Col: 1},
+		Name:       raiseName,
+		Visibility: symbol.VisibilityPublic,
+		Throws:     []*node.TypeRef{nodetest.Named(faultType)},
 	}
 }
 
