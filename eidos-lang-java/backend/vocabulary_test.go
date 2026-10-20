@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"strings"
 	"testing"
 	"text/template"
 
@@ -11,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/java/backend"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -55,9 +57,12 @@ const (
 	paramsAllocs = 2 + 1
 	// clauseAllocs is one clause behind its keyword.
 	clauseAllocs = 1
-	// funcsAllocs is the vocabulary of a file: the map of twenty
+	// funcsAllocs is the vocabulary of a file: the map of twenty-one
 	// helpers, four allocations, and the speller's seven bound helpers.
 	funcsAllocs = 4 + 7
+	// wrapDocsAllocs is the wrap of a single-spaced text: the list of its
+	// lines, each of which is a part of the text.
+	wrapDocsAllocs = 1
 	// typeArgsAllocs is a list of two type parameters: the written list.
 	typeArgsAllocs = 1
 	// textAllocs is a docblock, an annotation or a package statement,
@@ -69,6 +74,10 @@ const (
 	// keyword, one join each.
 	twoJoinedKeywordAllocs = 2
 )
+
+// filledLine is a word as wide as the documentation, so the wrap starts a
+// line with the word after it.
+var filledLine = strings.Repeat("a", textfmt.DocsWidth)
 
 // The vocabulary is what the kind templates spell through, so each
 // helper's output is pinned byte for byte, and every import a
@@ -117,6 +126,24 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, backend.Docs([]string{"One."}), "/**\n * One.\n */\n", "one gutter line per line")
+		})
+	})
+
+	t.Run("WrapDocs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps a block tag on the line before it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" @see next"), []string{filledLine + " @see", "next"},
+				"a Javadoc block tag appears at the beginning of a line")
+		})
+
+		t.Run("starts a line with a dash", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.WrapDocs(filledLine+" - next"), []string{filledLine, "- next"},
+				"a Javadoc comment reads a dash as text")
 		})
 	})
 
@@ -1108,11 +1135,13 @@ func vocabularyCalls() []allocCall {
 		Name: getName, Visibility: symbol.VisibilityPrivate, Level: symbol.LevelType, HasDefault: true,
 	}
 	annotations := symbol.Annotations{{Name: overrideAnnotation}}
+	wrapped := filledLine + " next"
 	var (
 		spellerOut backend.Speller
 		out        string
 		err        error
 		funcs      template.FuncMap
+		lines      []string
 	)
 	spells := func(want string) func(tb assert.TB) {
 		return func(tb assert.TB) {
@@ -1156,11 +1185,18 @@ func vocabularyCalls() []allocCall {
 		{
 			name: "Funcs", allocs: funcsAllocs,
 			call:  func() { funcs = backend.Funcs(set) },
-			check: func(tb assert.TB) { assert.Length(tb, funcs, 20, "Funcs returns the twenty helpers") },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 21, "Funcs returns the twenty-one helpers") },
 		},
 		{
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/**\n * " + rowDoc + "\n */\n"),
+		},
+		{
+			name: "WrapDocs", allocs: wrapDocsAllocs,
+			call: func() { lines = backend.WrapDocs(wrapped) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, lines, []string{filledLine, "next"}, "WrapDocs wraps the text")
+			},
 		},
 		{
 			name: "MemberDocs", allocs: textAllocs,

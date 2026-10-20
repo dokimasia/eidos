@@ -5,11 +5,12 @@
 // names a file after the lone public type its unit declares, and a
 // unit without a type after the file-key stem, family word and tag
 // joined as one Pascal name. [Package] names the package a file at a
-// routed path declares, and [Name] spells a declared name in Java's
-// convention. [Type] spells the canonical shape of a type of another
-// language in Java, as the spoke of the cross-language hub. The kernel
-// consumes them through the backend kit's naming, package, respelling
-// and type steps.
+// routed path declares, [Name] spells a declared name in Java's
+// convention, and [Member] spells the name of a member, which keeps the
+// screaming snake case of a static final field. [Type] spells the
+// canonical shape of a type of another language in Java, as the spoke of
+// the cross-language hub. The kernel consumes them through the backend
+// kit's naming, package, respelling and type steps.
 //
 // # Dependency position
 //

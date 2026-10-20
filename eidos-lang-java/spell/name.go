@@ -5,8 +5,11 @@ package spell
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
 
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -68,6 +71,22 @@ func Name(host, kind symbol.Kind, _ symbol.Visibility, name string) (string, err
 		)
 	}
 	return out, nil
+}
+
+// Member spells the name of a member in Java's convention, as [Name] spells
+// it. A static final field, a field at the level of the type that is
+// immutable, keeps a spelling without a lower-case letter, because Java
+// writes a constant of a class in screaming snake case, as MAX_ROWS. Every
+// other static final field takes camel case, because a final reference to
+// a mutable object, such as a logger, is no constant. Its errors and its
+// allocations are those of Name, and a kept spelling allocates nothing.
+func Member(m plugin.Member, name string) (string, error) {
+	constant := m.Kind == symbol.KindField && m.Level == symbol.LevelType &&
+		m.Mutability == symbol.MutabilityImmutable
+	if constant && naming.IsIdentifier(name) && !reserved[name] && !strings.ContainsFunc(name, unicode.IsLower) {
+		return name, nil
+	}
+	return Name(m.Host, m.Kind, m.Visibility, name)
 }
 
 // reserved holds Java's reserved words and literals, which no

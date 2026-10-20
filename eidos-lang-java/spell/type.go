@@ -286,7 +286,7 @@ func wildcard(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, 
 // duration as the classes of java.time, the well-known error as the
 // Exception of java.lang, and every other referent as a translated
 // reference under its flat name, with its translated arguments. It
-// refuses the well-known empty value.
+// refuses the well-known empty value and the well-known context.
 func reference(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef, error)) (*emit.TypeRef, error) {
 	switch s.Ref {
 	case rules.WellKnownTimestamp:
@@ -297,6 +297,9 @@ func reference(s rules.TypeShape, argument func(rules.TypeShape) (*emit.TypeRef,
 		return &emit.TypeRef{Spelling: exceptionType}, nil
 	case rules.WellKnownEmpty:
 		return nil, errors.New("the well-known empty value has no Java spelling")
+	case rules.WellKnownContext:
+		return nil, errors.New("the well-known context has no Java spelling, because Java has no standard type of " +
+			"the context of a call")
 	}
 	args, err := spoke.Children(s.Args, argument)
 	if err != nil {

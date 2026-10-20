@@ -460,6 +460,12 @@ func TestType(t *testing.T) {
 				want: "java: the well-known empty value has no Java spelling",
 			},
 			{
+				name: "returns an error for the well-known context",
+				give: rules.Reference("context", rules.WellKnownContext),
+				want: "java: the well-known context has no Java spelling, because Java has no standard type of the " +
+					"context of a call",
+			},
+			{
 				name: "returns an error for an integer of 128 bits",
 				give: rules.Scalar("i128", rules.ScalarInt, 128), want: "java: no Java int type has 128 bits",
 			},

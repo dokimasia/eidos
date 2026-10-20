@@ -248,6 +248,15 @@ func TestLower(t *testing.T) {
 			_, err := backend.Lower(positional)
 			assert.HasError(t, err, "a field has a name")
 		})
+
+		t.Run("returns an error for a struct with the deleter of a property", func(t *testing.T) {
+			t.Parallel()
+
+			host := &emit.Struct{Name: "row"}
+			host.Methods.Append(&emit.Method{Name: "size", Accessor: symbol.AccessorDelete})
+			_, err := backend.Lower(host)
+			assert.HasError(t, err, "Java has no properties")
+		})
 	})
 }
 

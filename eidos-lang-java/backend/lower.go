@@ -34,7 +34,9 @@ const variantSep = "_"
 // second settle changes nothing. A sum stating methods refuses,
 // because a variant class would owe bodies the model does not
 // state. A payload entry without a name refuses, because a field has
-// one. Everything else passes through unchanged.
+// one. A declaration with the deleter of a property refuses through
+// [lowering.DeleteAccessor], because Java has no properties. Everything
+// else passes through unchanged.
 //
 // # Allocation contract
 //
@@ -46,6 +48,9 @@ const variantSep = "_"
 // allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if err := fileLevel(s); err != nil {
+		return nil, err
+	}
+	if err := lowering.DeleteAccessor(java.Lang, s); err != nil {
 		return nil, err
 	}
 	sum, is := s.(*emit.Sum)

@@ -42,8 +42,9 @@ const (
 // corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the three kind templates.
-	newAllocs = 1_487
+	// template and the three kind templates, and the function maps that
+	// text/template keeps for each template.
+	newAllocs = 1_503
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 22,812,619, and the budget is a round number about
@@ -126,6 +127,19 @@ func TestNew(t *testing.T) {
 					"a lowered variant implements the respelled principal").
 				Contains("public sealed interface Shape permits ShapeCircle, ShapeEmpty",
 					"the sealed principal permits the respelled classes")
+		})
+
+		t.Run("returns a backend that keeps the name of a static final field", func(t *testing.T) {
+			t.Parallel()
+
+			holder := declared(holderName)
+			holder.Fields.Append(&emit.Field{
+				Name: "MAX_ROWS", Type: &emit.TypeRef{Spelling: "int"}, Value: "100",
+				Level: symbol.LevelType, Mutability: symbol.MutabilityImmutable,
+			})
+			body, findings := rendered(t, holder)
+			assert.Empty(t, findings, "the file renders clean")
+			assert.Contains(t, body, " static final int MAX_ROWS = 100;\n", "the constant of the class")
 		})
 
 		t.Run("returns a backend that imports the class a field's type names", func(t *testing.T) {

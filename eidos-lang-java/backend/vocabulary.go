@@ -25,6 +25,8 @@ const (
 	FuncDocs = render.HelperDocs
 	// FuncMemberDocs is the template name of [MemberDocs].
 	FuncMemberDocs = "memberdocs"
+	// FuncWrapDocs is the template name of [WrapDocs].
+	FuncWrapDocs = render.HelperWrapDocs
 	// FuncSpell is the template name of [Speller.Spell].
 	FuncSpell = render.HelperSpell
 	// FuncSpellValue is the template name of [Speller.Spell] in a value
@@ -394,15 +396,16 @@ func (s Speller) joined(ts []*emit.TypeRef, sep string) (string, error) {
 // the import set of one file. Every helper takes a
 // fixed list of arguments, because text/template allocates the list of a
 // variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty helpers in four allocations, and the
-// seven bound helpers of the speller. The spell helper and the spellvalue
-// helper share one bound helper.
+// Funcs allocates the map of twenty-one helpers in four allocations, and
+// the seven bound helpers of the speller. The spell helper and the
+// spellvalue helper share one bound helper.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	spell := s.Spell
 	return template.FuncMap{
 		FuncDocs:           Docs,
 		FuncMemberDocs:     MemberDocs,
+		FuncWrapDocs:       WrapDocs,
 		FuncSpell:          spell,
 		FuncSpellValue:     spell,
 		FuncTypeParams:     s.TypeParams,
@@ -436,6 +439,15 @@ func Docs(lines []string) string {
 // body. It allocates what Docs allocates.
 func MemberDocs(lines []string) string {
 	return textfmt.BlockDocs(lines, "/**", " * ", " */", memberIndent)
+}
+
+// WrapDocs wraps text at [textfmt.DocsWidth] into the lines that [Docs]
+// and [MemberDocs] write. A Javadoc block tag appears at the beginning of a
+// line, so the wrap starts no line with a tag. The rest of the comment is
+// HTML, which reads no word at the start of a line as markup. It allocates
+// what [textfmt.Wrap] allocates.
+func WrapDocs(text string) []string {
+	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupTags)
 }
 
 // PackageClause writes the package statement of the package path of id,
