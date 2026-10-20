@@ -291,6 +291,13 @@ func TestDecl(t *testing.T) {
 			e := enumOf(t, "@Deprecated\npublic enum Color {\n    RED\n}\n")
 			assert.Equal(t, e.Annotations, symbol.Annotations{{Name: "Deprecated"}}, "the annotation")
 		})
+
+		t.Run("lowers an enum's interfaces as what it implements", func(t *testing.T) {
+			t.Parallel()
+
+			e := enumOf(t, "public enum Op implements IntBinaryOperator, Named {\n    PLUS\n}\n")
+			assert.Equal(t, spellingsOf(e.Implements), []string{"IntBinaryOperator", "Named"}, "both interfaces")
+		})
 	})
 
 	t.Run("variant", func(t *testing.T) {

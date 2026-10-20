@@ -86,6 +86,8 @@ var (
 // target in the cross-language hub. Java does not declare a lowering
 // policy, so Type does not read p. It spells each form this way:
 //
+//   - a type parameter as its name, through [spoke.Param], at every depth
+//     of a shape;
 //   - a scalar as the primitive of its width, long for the platform's
 //     width, and an unsigned integer as the signed type of its width;
 //   - Bool, Text and Bytes as boolean, String and byte[], and the top type
@@ -109,7 +111,8 @@ var (
 // List<Integer>.
 //
 // Type refuses a tuple, a union, an intersection, a stream, an inline
-// type and an opaque type, because Java has no spelling of them. It
+// type and an opaque type of another reference than a type parameter,
+// because Java has no spelling of them. It
 // refuses the well-known empty value, because Java does not have a type
 // of a value without data outside a declaration. It refuses an immutable
 // list, array and map, because a Java collection type does not state that
@@ -136,6 +139,9 @@ func Type(s rules.TypeShape, _ plugin.Policy) (*emit.TypeRef, error) {
 // its boxed class where boxed is set. It returns a refusal without the
 // language's prefix.
 func javaType(s rules.TypeShape, boxed bool) (*emit.TypeRef, error) {
+	if t, param := spoke.Param(s); param {
+		return t, nil
+	}
 	argument := func(c rules.TypeShape) (*emit.TypeRef, error) { return javaType(c, true) }
 	switch s.Form {
 	case symbol.FormScalar:

@@ -287,6 +287,15 @@ func TestTemplates(t *testing.T) {
 				"the members behind the semicolon")
 		})
 
+		t.Run("writes the contracts of an enum after its name", func(t *testing.T) {
+			t.Parallel()
+
+			e := &emit.Enum{Name: "Op", Implements: refs("IntBinaryOperator")}
+			e.Variants.Append(&emit.EnumVariant{Name: "PLUS"})
+			assert.Equal(t, execute(t, kind(symbol.KindEnum), e),
+				"public enum Op implements IntBinaryOperator {\n    PLUS,\n}\n", "the implements clause")
+		})
+
 		t.Run("returns an error for an enum constant with a value", func(t *testing.T) {
 			t.Parallel()
 

@@ -71,12 +71,13 @@ const (
 )
 
 // EnumTemplate renders an enum class. The annotation lines precede the
-// declaration. The enum contains one constant per variant, each with its
-// own doc block and annotations. The instance fields and methods that a
-// Java enum can declare follow the closing semicolon, and the template
-// renders them as the class template renders its members.
+// declaration, and the contracts of the enum follow its name. The enum
+// contains one constant per variant, each with its own doc block and
+// annotations. The instance fields and methods that a Java enum can
+// declare follow the closing semicolon, and the template renders them as
+// the class template renders its members.
 const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
-	"{{typemods .}}enum {{.Name}} {\n" +
+	"{{typemods .}}enum {{.Name}}{{heritage .}} {\n" +
 	"{{- range .Variants.Items}}\n{{memberdocs .Doc}}{{memberannotate .Annotations}}" +
 	"    {{enumvariant .}},{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}" +

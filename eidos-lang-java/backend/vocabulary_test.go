@@ -881,12 +881,36 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, got, " permits Circle", "no other clause")
 		})
 
+		t.Run("writes an enum's contracts behind implements", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := heritage(t, &emit.Enum{Name: "Op", Implements: refs("IntBinaryOperator", "Named")})
+			assert.NoError(t, err, "the heritage spells")
+			assert.Equal(t, got, " implements IntBinaryOperator, Named", "comma-joined contracts")
+		})
+
+		t.Run("writes no clause for an enum without contracts", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := heritage(t, &emit.Enum{Name: "Phase"})
+			assert.NoError(t, err, "the heritage spells")
+			assert.Equal(t, got, "", "an enum has no other clause")
+		})
+
 		t.Run("returns an error for a superclass that does not spell", func(t *testing.T) {
 			t.Parallel()
 
 			s, _ := speller()
 			_, err := s.Heritage(&emit.Struct{Name: "Cache", Extends: []*emit.TypeRef{unspellable(t, s)}})
 			assert.HasError(t, err, "the superclass's refusal is the clause's")
+		})
+
+		t.Run("returns an error for an enum's contract that does not spell", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			_, err := s.Heritage(&emit.Enum{Name: "Op", Implements: []*emit.TypeRef{unspellable(t, s)}})
+			assert.HasError(t, err, "the contract's refusal is the clause's")
 		})
 
 		t.Run("returns an error for a contract that does not spell", func(t *testing.T) {
@@ -963,7 +987,7 @@ func TestVocabulary(t *testing.T) {
 				name: "returns an error for permits on a type that is not sealed",
 				give: &emit.Interface{Name: "Shape", Permits: refs("Circle")},
 			},
-			{name: "returns an error for an enum", give: &emit.Enum{Name: "Phase"}},
+			{name: "returns an error for a sum", give: &emit.Sum{Name: "Shape"}},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

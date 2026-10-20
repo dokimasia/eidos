@@ -150,14 +150,14 @@ func (l *lowering) iface(n treesitter.Node, h header) *node.Interface {
 }
 
 // enum lowers an enum as an Enum. Each constant is a variant whose value
-// is its constructor arguments verbatim, and the enum has the fields, the
-// methods and the constructors that its body declares. A type that an
-// enum declares has no place in the model, and the lowering reports it
-// under [UnmodeledItem].
+// is its constructor arguments verbatim, and the enum has its interfaces
+// and the fields, the methods and the constructors that its body
+// declares. A type that an enum declares has no place in the model, and
+// the lowering reports it under [UnmodeledItem].
 func (l *lowering) enum(n treesitter.Node, h header) *node.Enum {
 	e := &node.Enum{
 		Name: h.name.Text(), Pos: h.name.Pos(), Doc: h.doc, Comment: h.comment, Visibility: h.vis,
-		Annotations: h.mods.annotations,
+		Implements: l.typesOf(n.Child(l.v.fieldInterfaces)), Annotations: h.mods.annotations,
 	}
 	for child := range n.Child(l.v.fieldBody).NamedChildren() {
 		switch child.Kind() {

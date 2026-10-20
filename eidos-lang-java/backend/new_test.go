@@ -44,7 +44,7 @@ const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the three kind templates, and the function maps that
 	// text/template keeps for each template.
-	newAllocs = 1_503
+	newAllocs = 1_511
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 22,812,619, and the budget is a round number about

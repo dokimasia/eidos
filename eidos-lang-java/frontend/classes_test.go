@@ -433,6 +433,13 @@ func TestClasses(t *testing.T) {
 				symbol.Annotations{{Name: markerName, Args: []string{`value = "color"`}}}, "Color's Marker")
 		})
 
+		t.Run("lowers an enum's interfaces as what it implements", func(t *testing.T) {
+			t.Parallel()
+
+			color := named[*node.Enum](t, libDecls(t), colorClass)
+			assert.Equal(t, spellingsOf(color.Implements), []string{"com.acme.lib.Holder"}, "Holder<String>")
+		})
+
 		t.Run("leaves an enum's constants out of its fields", func(t *testing.T) {
 			t.Parallel()
 

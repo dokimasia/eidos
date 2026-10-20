@@ -280,11 +280,13 @@ func (d *classDecl) iface(h classHeader) *node.Interface {
 
 // enum lowers an enum as an Enum. Each enum constant is a variant without
 // its constructor arguments, which a class file does not contain. The Enum
-// has the other fields and the methods of the enum. An enum has no list of
-// nested types, so its member classes are left out.
+// has the interfaces, the other fields and the methods of the enum. An
+// enum has no list of nested types, so its member classes are left out.
 func (d *classDecl) enum(h classHeader) *node.Enum {
 	c := d.cf.class
 	e := &node.Enum{Name: h.name, Pos: d.pos, Visibility: h.vis, Annotations: annotationsOf(c.Annotations)}
+	_, _, interfaces := d.supertypes()
+	e.Implements = d.refs(interfaces)
 	for _, f := range c.Fields {
 		if f.Access.Has(classfile.AccEnum) {
 			e.Variants = append(e.Variants, &node.EnumVariant{

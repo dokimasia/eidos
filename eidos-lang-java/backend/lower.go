@@ -28,7 +28,11 @@ const variantSep = "_"
 // resolved to the sum's origin, so every name follows the settle
 // the way the rest of the store does. The principal permits each
 // class the same resolved way, because the split files every type
-// apart and Java then demands the enumeration spelled.
+// apart and Java then demands the enumeration spelled. The principal
+// extends the contracts of the sum, so every variant class implements
+// them. A contract with abstract methods makes each variant class owe
+// their bodies, which the model does not state, and javac rejects the
+// class.
 //
 // Every output has the sum's origin and none restates the sum, so a
 // second settle changes nothing. A sum stating methods refuses,
@@ -84,6 +88,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		Visibility:  sum.Visibility,
 		Sealed:      true,
 		TypeParams:  sum.TypeParams,
+		Extends:     sum.Implements,
 		Permits:     permits,
 		Annotations: sum.Annotations,
 	})

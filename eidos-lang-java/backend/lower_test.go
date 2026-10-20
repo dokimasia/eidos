@@ -132,6 +132,15 @@ func TestLower(t *testing.T) {
 				[]string{circleClass, "shape_empty"}, "in the neutral form, so the respell decides the case")
 		})
 
+		t.Run("returns a principal that extends the sum's contracts", func(t *testing.T) {
+			t.Parallel()
+
+			sum := sumOf()
+			sum.Implements = refs("Serializable")
+			principal, _ := lowered(t, sum)
+			assert.Equal(t, principal.Extends, sum.Implements, "every variant class implements them")
+		})
+
 		t.Run("returns permits resolved to the sum's origin", func(t *testing.T) {
 			t.Parallel()
 

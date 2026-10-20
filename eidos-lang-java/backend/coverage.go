@@ -31,7 +31,8 @@ import (
 //   - A Java enum has no underlying type, so the underlying type refuses,
 //     and so does the mutability of an index signature. A computed member
 //     has no name in Java, so the declaration does not render with the
-//     fact or without it.
+//     fact or without it. Neither does an overload signature, because a
+//     Java method has a body unless it is abstract.
 //   - A field that another type receives refuses, because Java has no
 //     extension field. The annotations of a file refuse, because the
 //     skeleton does not write the header that a generator states.
@@ -64,6 +65,7 @@ func Coverage() render.Coverage {
 			symbol.FactSealed:           render.Renders,
 			symbol.FactPermits:          render.Renders,
 			symbol.FactOverride:         render.Renders,
+			symbol.FactOverload:         render.Rejects,
 			symbol.FactDefaultBody:      render.Renders,
 			symbol.FactLabel:            render.Refuses,
 			symbol.FactParamDefault:     render.Refuses,

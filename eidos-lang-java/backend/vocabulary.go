@@ -269,7 +269,8 @@ func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
 // superclass after extends and its contracts after implements. An
 // interface has the interfaces that it extends after extends. Either
 // kind ends with its permitted subtypes after permits, as Java orders the
-// clauses. Heritage returns an error for a second superclass, because a
+// clauses. An enum has its contracts after implements and no other
+// clause. Heritage returns an error for a second superclass, because a
 // Java class extends one class. Java does not promote members, so the
 // coverage refuses an embed, and Heritage writes none. The permits clause
 // requires the sealed keyword, and the sealed keyword requires the
@@ -319,6 +320,15 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 			return "", err
 		}
 		return part + permits, nil
+	case *emit.Enum:
+		if len(t.Implements) == 0 {
+			return "", nil
+		}
+		contracts, err := s.joined(t.Implements, listSep)
+		if err != nil {
+			return "", err
+		}
+		return " implements " + contracts, nil
 	default:
 		return "", refuse("no heritage clause spells a %s", d.Kind())
 	}
