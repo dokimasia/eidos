@@ -136,6 +136,14 @@ not declare named priority values. A priority places a plugin against
 every plugin of its role, and `Requires` or `After` orders two plugins
 against each other.
 
+**A generator's capability orders the generator half.** Every annotator
+runs before every generator. So a capability that a dual-role plugin
+requires or runs after, and that a generator provides, orders its
+generator half alone. Its annotator half runs after each annotator whose
+capability it requires or runs after. Build refuses a plugin with the
+annotator role alone that requires or runs after a capability of a
+generator.
+
 ## The concurrency contract
 
 What a plugin may assume is stated here rather than discovered:
