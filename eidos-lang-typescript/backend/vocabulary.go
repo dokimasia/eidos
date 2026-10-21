@@ -154,9 +154,12 @@ const refusalPrefix = string(typescript.Lang) + ": "
 //     or ../api/user. Where the source has a bare specifier, such as react
 //     for an ambient module, the reference imports that specifier as
 //     written.
-//   - A translated reference imports the module path that the layout
-//     recorded, relative to the path of the file.
-//   - A reference without a target imports the specifier of its source.
+//   - A translated or an emitted reference imports the module path that
+//     the layout recorded, relative to the path of the file. An emitted
+//     reference has [emit.TypeRef.Emitted] set. The layout sets it on a
+//     reference without a target that it qualifies into another module.
+//   - Any other reference without a target imports the specifier of its
+//     source.
 //
 // A reference to a declaration of the module of the file imports nothing.
 // A reference to a declaration of a library of TypeScript imports nothing
@@ -541,10 +544,11 @@ func (s Speller) qualify(typeOnly bool) spellref.Qualify {
 
 // specifier returns the import specifier of the module of the named
 // reference t, by the rules of [Speller]. module is the module path of
-// t, or the specifier of its source where t has no target.
+// t, or the specifier of its source where t has no target and is not
+// emitted.
 func (s Speller) specifier(t *emit.TypeRef, module string) string {
-	if t.Target.IsZero() ||
-		t.Target.Lang == typescript.Lang && t.Package != "" && kindOf(t.Package) == packageSpecifier {
+	if !t.Emitted && (t.Target.IsZero() ||
+		t.Target.Lang == typescript.Lang && t.Package != "" && kindOf(t.Package) == packageSpecifier) {
 
 		return t.Package
 	}

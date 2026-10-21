@@ -270,6 +270,33 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, set.Paths(), []string{"./store"}, "the specifier is relative to the file")
 		})
 
+		emitted := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "imports a bare reference that the layout qualifies from a module path relative to the file",
+				give: &emit.TypeRef{Spelling: rowName, Package: storePath, Emitted: true},
+			},
+			{
+				name: "imports an emitted reference to a target of the language from the module path of its referent",
+				give: &emit.TypeRef{
+					Spelling: rowName, Package: storePath, Emitted: true,
+					Target: symbol.Identity{Lang: typescript.Lang, Package: "model", Name: rowName},
+				},
+			},
+		}
+		for _, tt := range emitted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, set := speller()
+				set.SetHome("svc/client")
+				assert.Equal(t, spelled(t, s, tt.give), rowName, "the emitted name")
+				assert.Equal(t, set.Paths(), []string{"./store"}, "the specifier is relative to the file")
+			})
+		}
+
 		t.Run("imports nothing for a target of the file's own module", func(t *testing.T) {
 			t.Parallel()
 
