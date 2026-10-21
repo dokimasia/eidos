@@ -58,6 +58,34 @@ var (
 	longCompact = "int " + strings.Repeat("a,", 20) + "a;"
 )
 
+// The deep field nests deepParens parentheses around a literal, deeper
+// than the stack of the token walk. parenthesesKind is the kind of each
+// parenthesis.
+const (
+	deepParens      = 1100
+	parenthesesKind = "parenthesized_expression"
+)
+
+// deepJava is the source of the deep field.
+var deepJava = "class A {\n  int x = " + strings.Repeat("(", deepParens) + "1" +
+	strings.Repeat(")", deepParens) + ";\n}\n"
+
+// The kinds of the parents of the tokens of the clean field.
+const (
+	integralKind = "integral_type"
+	declaratorOf = "variable_declarator"
+)
+
+// The tokens of the clean field and of the spaced generic type.
+var (
+	cleanTokens   = []string{"int", firstName, ",", secondName, ";"}
+	genericTokens = []string{"Map", "<", "String", ",", "List", "<", "T", ">", ">"}
+)
+
+// tokensRoom is the capacity of a buffer of tokens that the allocation
+// cases pass, which every token of the long field fits in.
+const tokensRoom = 64
+
 // The positions of the clean source's field: line 2 from its third
 // byte, and the byte after its semicolon.
 var (
@@ -66,11 +94,17 @@ var (
 )
 
 // The allocations of an accessor that returns source text: the string,
-// and the token spans of a node of more than 32 tokens.
+// and the token spans of a node of more than 32 tokens. Tokens allocates
+// the spans of such a node alone.
 const (
 	textAllocs        = 1
 	longCompactAllocs = textAllocs + 1
+	longTokensAllocs  = 1
 )
+
+// longTokens is the number of tokens of the long field: the type, 21
+// names, 20 commas and the semicolon.
+const longTokens = 43
 
 // Every accessor of a Node works on the absent node too. Each accessor
 // is pinned on a parsed tree and on the zero Node.
@@ -325,6 +359,99 @@ func TestNode(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, absent.Compact(), "an absent node has no token")
+		})
+	})
+
+	t.Run("Tokens", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("appends the tokens of the node in source order", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind))
+			assert.Equal(t, tokenTexts(field.Tokens(nil)), cleanTokens,
+				"the type, both names, the comma and the semicolon")
+		})
+
+		t.Run("reports the kind of the parent of each token", func(t *testing.T) {
+			t.Parallel()
+
+			toks := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind)).Tokens(nil)
+			parents := make([]string, 0, len(toks))
+			for _, tok := range toks {
+				parents = append(parents, g.KindName(tok.Parent))
+			}
+			assert.Equal(t, parents, []string{integralKind, declaratorOf, fieldDeclKind, declaratorOf, fieldDeclKind},
+				"a name is a child of its declarator, and the comma and the semicolon of the field")
+		})
+
+		t.Run("reports a token of a named kind", func(t *testing.T) {
+			t.Parallel()
+
+			toks := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind)).Tokens(nil)
+			named := make([]bool, 0, len(toks))
+			for _, tok := range toks {
+				named = append(named, tok.Named)
+			}
+			assert.Equal(t, named, []bool{false, true, false, true, false},
+				"the two identifiers are named, and the keyword and the punctuation are not")
+		})
+
+		t.Run("reports a token that is the first child of its parent", func(t *testing.T) {
+			t.Parallel()
+
+			toks := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind)).Tokens(nil)
+			leads := make([]bool, 0, len(toks))
+			for _, tok := range toks {
+				leads = append(leads, tok.Lead)
+			}
+			assert.Equal(t, leads, []bool{true, true, false, true, false},
+				"the keyword and each name open their parents, and the comma and the semicolon follow a declarator")
+		})
+
+		t.Run("leaves out the extras of the subtree", func(t *testing.T) {
+			t.Parallel()
+
+			generic := first(parse(t, spacedJava).Root(), g.Kind(genericKind))
+			assert.Equal(t, tokenTexts(generic.Tokens(nil)), genericTokens, "the comment between the arguments is gone")
+		})
+
+		t.Run("reports the zero Kind as the parent of a node that is a token itself", func(t *testing.T) {
+			t.Parallel()
+
+			name := first(parse(t, cleanJava).Root(), g.Kind(identifierKind))
+			toks := name.Tokens(nil)
+			assert.Length(t, toks, 1, "the identifier is one token")
+			assert.Equal(t, toks[0].Parent, 0, "the walk starts at the identifier and sees no parent")
+		})
+
+		t.Run("reports the parent of a token nested 1,100 levels deep", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, deepJava).Root(), g.Kind(fieldDeclKind))
+			parenthesized := 0
+			for _, tok := range field.Tokens(nil) {
+				if tok.Parent == g.Kind(parenthesesKind) {
+					parenthesized++
+				}
+			}
+			assert.Equal(t, parenthesized, 2*deepParens+1, "every parenthesis and the literal inside them")
+		})
+
+		t.Run("keeps the tokens that dst has", func(t *testing.T) {
+			t.Parallel()
+
+			field := first(parse(t, cleanJava).Root(), g.Kind(fieldDeclKind))
+			dst := []treesitter.Token{{Text: []byte(secondName)}}
+			assert.Equal(t, tokenTexts(field.Tokens(dst)), append([]string{secondName}, cleanTokens...),
+				"the tokens follow the one that dst has")
+		})
+
+		t.Run("returns dst for the zero Node", func(t *testing.T) {
+			t.Parallel()
+
+			dst := []treesitter.Token{{Text: []byte(secondName)}}
+			assert.Equal(t, tokenTexts(absent.Tokens(dst)), []string{secondName}, "an absent node has no token")
 		})
 	})
 
@@ -700,6 +827,7 @@ func nodeCalls(tb testing.TB) []allocCall {
 	decl := g.Field(declaratorField)
 	methodKind := g.Kind(methodDeclKind)
 	declarators := slices.Collect(field.Children(decl))
+	toks := make([]treesitter.Token, 0, tokensRoom)
 	var (
 		reported bool
 		kind     treesitter.Kind
@@ -768,6 +896,17 @@ func nodeCalls(tb testing.TB) []allocCall {
 			allocs: longCompactAllocs,
 			call:   func() { text = long.Compact() },
 			check:  func(tb assert.TB) { assert.Equal(tb, text, longCompact, "Compact returns every token") },
+		},
+		{
+			name: "Tokens", caseName: "a node of a few tokens",
+			call:  func() { toks = field.Tokens(toks[:0]) },
+			check: func(tb assert.TB) { assert.Length(tb, toks, len(cleanTokens), "Tokens appends every token") },
+		},
+		{
+			name: "Tokens", caseName: "a node of more than 32 tokens",
+			allocs: longTokensAllocs,
+			call:   func() { toks = long.Tokens(toks[:0]) },
+			check:  func(tb assert.TB) { assert.Length(tb, toks, longTokens, "Tokens appends every token") },
 		},
 		{
 			name:  "Pos",
@@ -872,6 +1011,15 @@ func kindsOf(g *treesitter.Grammar, nodes []treesitter.Node) []string {
 	out := make([]string, len(nodes))
 	for i, n := range nodes {
 		out[i] = g.KindName(n.Kind())
+	}
+	return out
+}
+
+// tokenTexts returns the source of each token, in order.
+func tokenTexts(toks []treesitter.Token) []string {
+	out := make([]string, len(toks))
+	for i, tok := range toks {
+		out[i] = string(tok.Text)
 	}
 	return out
 }

@@ -13,9 +13,30 @@ import (
 	"go.dokimi.dev/eidos/sdk/position"
 )
 
-// compactTokens is the number of tokens for which [Node.Compact] allocates
-// no spans. A type of a signature has fewer tokens.
+// compactTokens is the number of tokens up to which [Node.Compact] and
+// [Node.Tokens] do not allocate their spans. A type of a signature has
+// fewer tokens.
 const compactTokens = 32
+
+// Token is one token of the subtree of a node, as [Node.Tokens] writes it.
+// A token is a node without children that spans source. A language that
+// spells a node in a layout of its own reads the parent of each token to
+// tell its uses apart, such as the colon of a conditional type from the
+// colon of an annotation.
+type Token struct {
+	// Text is the source of the token. It shares the bytes of the source
+	// that the parse was given, as [Node.Bytes] does.
+	Text []byte
+	// Parent is the kind of the parent of the token in the subtree, and the
+	// zero Kind for a node that is a token itself.
+	Parent Kind
+	// Named reports that the token is of a named kind, as an identifier is,
+	// and not a keyword or punctuation of the grammar.
+	Named bool
+	// Lead reports that the token is the first child of its parent. An
+	// extra before it does not count.
+	Lead bool
+}
 
 // Node is a value handle on one syntax node of an open [Tree]. The zero
 // Node is the absent node, and so is every node of a closed tree. An absent
@@ -130,6 +151,35 @@ func (n Node) Compact() string {
 		end = to
 	}
 	return b.String()
+}
+
+// Tokens appends the tokens of the node to dst in source order, without the
+// extras of its subtree, and returns the extended slice. Each token has
+// its source, the kind of its parent, and whether it is named and the
+// first child of its parent. The zero Node appends nothing.
+//
+// The runtime walks the subtree in one call. Tokens allocates nothing for
+// a node of at most 32 tokens where dst has room for them, and allocates
+// the spans of a larger node. An append past the capacity of dst
+// allocates as append does.
+func (n Node) Tokens(dst []Token) []Token {
+	if n.IsZero() {
+		return dst
+	}
+	var small [compactTokens]span
+	spans := small[:]
+	count := tokens(n.node, spans)
+	if count > len(spans) {
+		spans = make([]span, count)
+		tokens(n.node, spans)
+	}
+	src := n.tree.src
+	for _, s := range spans[:count] {
+		dst = append(dst, Token{
+			Text: src[s.from:s.to:s.to], Parent: Kind(s.parent), Named: s.named != 0, Lead: s.lead != 0,
+		})
+	}
+	return dst
 }
 
 // identifierByte reports whether the rune at one end of src can be part of

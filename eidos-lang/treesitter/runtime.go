@@ -70,11 +70,21 @@ typedef struct TSPoint {
 	uint32_t column;
 } TSPoint;
 
-// EidosSpan is one token's first byte and the byte after its last.
+// EidosSpan is one token's first byte and the byte after its last, the
+// kind of its parent, whether the token is of a named kind, and whether it
+// is the first child of its parent.
 typedef struct EidosSpan {
 	uint32_t from;
 	uint32_t to;
+	uint16_t parent;
+	uint8_t named;
+	uint8_t lead;
 } EidosSpan;
+
+// EIDOS_DEPTH is the number of ancestors whose kinds eidos_tokens keeps on
+// its stack. A token below them reads the kind of its parent from the
+// runtime.
+#define EIDOS_DEPTH 1024
 
 // The runtime's functions the layer calls itself, as tree_sitter/api.h
 // declares them, which the runtime binding compiles into every binary
@@ -147,9 +157,15 @@ static TSNode eidos_field_step(TSTreeCursor *c, bool first, uint16_t field) {
 // spans source, in source order and without the subtree's extras, into
 // out, at most cap of them, and returns how many the subtree has. A
 // token is a node without children. The cursor's root is the node, so
-// the walk ends where it would leave the subtree.
+// the walk ends where it would leave the subtree. The parent of the node
+// itself is outside the subtree, so a node that is a token itself has the
+// parent zero. A token is the first child of its parent where no other
+// child but an extra comes before it.
 static uint32_t eidos_tokens(TSNode root, EidosSpan *out, uint32_t cap) {
 	TSTreeCursor c = ts_tree_cursor_new(root);
+	uint16_t kinds[EIDOS_DEPTH];
+	uint32_t depth = 0;
+	bool lead = false;
 	uint32_t n = 0;
 	for (;;) {
 		TSNode node = ts_tree_cursor_current_node(&c);
@@ -161,17 +177,34 @@ static uint32_t eidos_tokens(TSNode root, EidosSpan *out, uint32_t cap) {
 				if (n < cap) {
 					out[n].from = from;
 					out[n].to = to;
+					out[n].parent = 0;
+					if (depth > EIDOS_DEPTH) {
+						out[n].parent = ts_node_symbol(ts_node_parent(node));
+					} else if (depth > 0) {
+						out[n].parent = kinds[depth - 1];
+					}
+					out[n].named = ts_node_is_named(node);
+					out[n].lead = lead;
 				}
 				n++;
 			}
 		} else if (!extra && ts_tree_cursor_goto_first_child(&c)) {
+			if (depth < EIDOS_DEPTH) {
+				kinds[depth] = ts_node_symbol(node);
+			}
+			depth++;
+			lead = true;
 			continue;
+		}
+		if (!extra) {
+			lead = false;
 		}
 		while (!ts_tree_cursor_goto_next_sibling(&c)) {
 			if (!ts_tree_cursor_goto_parent(&c)) {
 				ts_tree_cursor_delete(&c);
 				return n;
 			}
+			depth--;
 		}
 	}
 }
