@@ -153,11 +153,15 @@ func join(dir, name string) string {
 // The site-packages directories are the venv store and the .venv
 // directories beside the project files of the workspace, in that order. A
 // dependency unit is one module, and the round reports each need that no
-// step places, with its reason.
+// step places, with its reason. The round does not report a need of the
+// module of an output of the round, or of a package above that module,
+// because the brand writes the module. An output has the module that the
+// partition and the parse give a file of the workspace.
 //
 // Error modes: dependencies returns an error for options whose version is
 // not a version of Python 3, an error that names a file of a store that
-// does not read, and the error of a VERSIONS file that does not parse.
+// does not read, the error of a VERSIONS file that does not parse, and the
+// error of [outputModules].
 func (f *pyFrontend) dependencies(
 	_ context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
@@ -189,6 +193,7 @@ func (f *pyFrontend) dependencies(
 			out = append(out, []plugin.SourceRef{{Path: member}})
 		}
 	}
+	var missing []string
 	for _, n := range round.Needs {
 		if placed[n.Path] {
 			continue
@@ -201,8 +206,58 @@ func (f *pyFrontend) dependencies(
 			placed[n.Path] = true
 			out = append(out, []plugin.SourceRef{{Path: member}})
 		default:
-			round.Unplace(n.Path, reason)
+			missing = append(missing, n.Path)
+		}
+	}
+	if len(missing) == 0 {
+		return out, nil
+	}
+	generated, failed := outputModules(r, round.Outputs)
+	if failed != nil {
+		return nil, failed
+	}
+	for _, need := range missing {
+		if !generated[need] {
+			round.Unplace(need, reason)
 		}
 	}
 	return out, nil
+}
+
+// outputModules returns the module of each output of a round and every
+// package above the module. [project.Place] places an output as it places
+// a file of the workspace. The root of an output is a root that its project
+// states, or the directory above the run of package directories that
+// contain the output. A directory is a package directory where the door
+// reads its __init__.py or its __init__.pyi.
+//
+// Error modes: outputModules returns the error of a read of the module of a
+// package directory that fails for another cause than its absence.
+func outputModules(r plugin.StoreReader, outputs []string) (map[string]bool, error) {
+	modules := make(map[string]bool, len(outputs))
+	files := projectFiles{r: r}
+	var failed error
+	isPackage := func(dir string) bool {
+		for _, name := range [...]string{project.InitSource, project.InitStub} {
+			switch _, err := r.Read(path.Join(dir, name)); {
+			case err == nil:
+				return true
+			case !plugin.Absent(err):
+				failed = err
+				return false
+			}
+		}
+		return false
+	}
+	for _, o := range outputs {
+		_, proj := files.nearest(path.Dir(o))
+		root, _ := project.Place(o, proj, isPackage)
+		if failed != nil {
+			return nil, fmt.Errorf("frontend: %w", failed)
+		}
+		for m := project.Package(o, root); m != ""; m = parentModule(m) {
+			modules[m] = true
+		}
+	}
+	return modules, nil
 }

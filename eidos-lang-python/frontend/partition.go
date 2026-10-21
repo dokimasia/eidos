@@ -37,23 +37,13 @@ func partition(_ context.Context, files []plugin.SourceRef, r plugin.FileReader)
 		}
 	}
 	isPackage := func(dir string) bool { return packages[dir] }
-	seen := map[string]string{}
-	projects := map[string]*project.Project{}
+	nearby := projectFiles{r: r}
 	modules := map[string]int{}
 	var out [][]plugin.SourceRef
 	for _, ref := range slices.SortedFunc(slices.Values(files), func(a, b plugin.SourceRef) int {
 		return strings.Compare(a.Path, b.Path)
 	}) {
-		governing := frontend.Nearest(r, path.Dir(ref.Path), project.File, seen)
-		proj, read := projects[governing]
-		if !read && governing != "" {
-			if data, err := r.Read(governing); err == nil {
-				if p, err := project.Read(governing, data); err == nil {
-					proj = &p
-				}
-			}
-			projects[governing] = proj
-		}
+		governing, proj := nearby.nearest(path.Dir(ref.Path))
 		_, probes := project.Place(ref.Path, proj, isPackage)
 		var shared []string
 		if governing != "" {
@@ -69,4 +59,35 @@ func partition(_ context.Context, files []plugin.SourceRef, r plugin.FileReader)
 		out = append(out, []plugin.SourceRef{member})
 	}
 	return out, nil
+}
+
+// projectFiles reads the project file nearest above each directory through
+// the door r, and decodes each path once. A project file that does not
+// read or decode has a nil project. A projectFiles with r set and no maps
+// is ready for use.
+type projectFiles struct {
+	r        plugin.FileReader
+	seen     map[string]string
+	projects map[string]*project.Project
+}
+
+// nearest returns the path of the project file nearest above a directory,
+// and its project. The path is empty for a directory below no project file.
+// The project is nil for an empty path and for a project file that does
+// not read or decode.
+func (f *projectFiles) nearest(dir string) (string, *project.Project) {
+	if f.seen == nil {
+		f.seen, f.projects = map[string]string{}, map[string]*project.Project{}
+	}
+	governing := frontend.Nearest(f.r, dir, project.File, f.seen)
+	proj, read := f.projects[governing]
+	if !read && governing != "" {
+		if data, err := f.r.Read(governing); err == nil {
+			if p, err := project.Read(governing, data); err == nil {
+				proj = &p
+			}
+		}
+		f.projects[governing] = proj
+	}
+	return governing, proj
 }

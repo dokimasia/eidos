@@ -53,6 +53,25 @@ const (
 	windowsSite   = ".venv/Lib/site-packages/"
 )
 
+// The outputs of the brand in the workspace that the placement reports
+// read: a module and the module of a package directory below the root of
+// the project, the module of a package directory outside every project, a
+// module in that directory, a module in a directory that is not a package
+// directory, and the needs that the cases name.
+const (
+	stubsOutput    = "shop/stubs.py"
+	fakesOutput    = "shop/fakes/__init__.py"
+	testsInit      = "tests/__init__.py"
+	testsOutput    = "tests/fakes.py"
+	scriptsOutput  = "scripts/gen.py"
+	shopNeed       = "shop"
+	shopStubsNeed  = "shop/stubs"
+	shopFakesNeed  = "shop/fakes"
+	shopOtherNeed  = "shop/other"
+	testsFakesNeed = "tests/fakes"
+	genNeed        = "gen"
+)
+
 // The reasons with which a round reports a need that it places nowhere,
 // with a site-packages directory and without one, for the version of the
 // empty options.
@@ -250,6 +269,69 @@ func TestDepend(t *testing.T) {
 			})
 		}
 
+		inProject := storeTree{
+			fstest.MapFS{projectFile: {Data: []byte(rootProject)}},
+			map[string]fs.FS{frontend.TypeshedStore: typeshedStore()},
+		}
+		outside := storeTree{fstest.MapFS{testsInit: {}}, map[string]fs.FS{frontend.TypeshedStore: typeshedStore()}}
+		generated := []struct {
+			name        string
+			giveTree    fs.FS
+			giveOutputs []string
+			giveNeed    string
+			want        []plugin.Unplaced
+		}{
+			{
+				name:     "reports nothing for a need of the module of an output",
+				giveTree: inProject, giveOutputs: []string{stubsOutput}, giveNeed: shopStubsNeed,
+			},
+			{
+				name:     "reports nothing for a need of the package above the module of an output",
+				giveTree: inProject, giveOutputs: []string{stubsOutput}, giveNeed: shopNeed,
+			},
+			{
+				name:     "reports nothing for a need of the module of an output in a package directory",
+				giveTree: inProject, giveOutputs: []string{fakesOutput}, giveNeed: shopFakesNeed,
+			},
+			{
+				name:     "reports nothing for a need of an output in a package directory outside every project",
+				giveTree: outside, giveOutputs: []string{testsOutput}, giveNeed: testsFakesNeed,
+			},
+			{
+				name:     "reports nothing for a need of an output in a directory that is not a package directory",
+				giveTree: outside, giveOutputs: []string{scriptsOutput}, giveNeed: genNeed,
+			},
+			{
+				name:     "reports a need of a module that no output has",
+				giveTree: inProject, giveOutputs: []string{stubsOutput}, giveNeed: shopOtherNeed,
+				want: []plugin.Unplaced{{Path: shopOtherNeed, Reason: noVenvReason}},
+			},
+		}
+		for _, tt := range generated {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				round := &plugin.DependencyRound{
+					Number: 2, Needs: []plugin.Need{{Path: tt.giveNeed}}, Outputs: tt.giveOutputs,
+				}
+				_, err := depend(t, nil, tt.giveTree, round)
+				assert.NoError(t, err, "the round places what it can")
+				assert.Equal(t, round.Unplaced(), tt.want, "the brand writes the modules of the outputs",
+					assert.EquateEmpty())
+			})
+		}
+
+		t.Run("returns the error of the workspace for the module of a package directory of an output",
+			func(t *testing.T) {
+				t.Parallel()
+
+				round := &plugin.DependencyRound{
+					Number: 2, Needs: []plugin.Need{{Path: testsFakesNeed}}, Outputs: []string{testsOutput},
+				}
+				_, err := depend(t, nil, failingFS{fstest.MapFS{testsInit: {}}, testsInit}, round)
+				assert.ErrorIs(t, err, errBroken, "the round returns the failure of the read")
+			})
+
 		refused := []struct {
 			name     string
 			giveOpts *frontend.Options
@@ -372,10 +454,20 @@ func runRound(
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})
 	}
+	units, err := depend(tb, opts, tree, round)
+	return units, round, err
+}
+
+// depend runs a round through a Python frontend with options, over a
+// workspace and its stores, under the context of the test.
+func depend(
+	tb testing.TB, opts *frontend.Options, tree fs.FS, round *plugin.DependencyRound,
+) ([][]plugin.SourceRef, error) {
+	tb.Helper()
+
 	dependent, depends := frontend.New(opts).(plugin.Dependent)
 	assert.True(tb, depends, "the Python frontend is a dependent")
-	units, err := dependent.Dependencies(tb.Context(), round, roundReader{tree})
-	return units, round, err
+	return dependent.Dependencies(tb.Context(), round, roundReader{tree})
 }
 
 // placed runs a round that succeeds in the case and returns the member
