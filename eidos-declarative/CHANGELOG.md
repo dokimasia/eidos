@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/declarative
 
+## 0.1.2
+
+### Patch Changes
+
+- ba70166: Fix the mirrors to translate the bounds of type parameters and the interface of an implementation as supertypes.
+- Updated dependencies [eed0fb8, d5e68cb, 2a85f93, 09edb8b, 78909e0, 6741030, 097c95f, 19f2a4e]
+  - go.dokimi.dev/eidos/core@0.3.0
+
 ## 0.1.1
 
 ### Patch Changes

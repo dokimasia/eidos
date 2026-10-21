@@ -1,5 +1,63 @@
 # go.dokimi.dev/eidos/lang/typescript
 
+## 0.2.0
+
+### Minor Changes
+
+- 1e22241: Add `spell.Handler` and `spell.Home`, the binder of Connect-ES.
+- 1e22241: Add the policy `typescript.grpc`, under whose choice `connect-es` a reference to a protobuf declaration spells as protobuf-es names it.
+- f9800cb: Add `TypeIterable` and `TypeErrorOptions` to the global types of TypeScript.
+- 763fb69: Add `TypeReadonlySet` to the global types of TypeScript.
+- 763fb69: Add `Speller.SpellValue`, `Speller.TypeArgs` and the template helpers `spellvalue` and `typeargs`.
+- e4916b2: Add `typescript.LibraryStore`, `typescript.Library` and `typescript.Global` for the packages of the library of TypeScript.
+- f9800cb: Add `typescript.Grouped` to report whether a child type needs parentheses inside a composite.
+- e4916b2: Add `frontend.UnknownLibrary` for a library, a target or a lib directive that TypeScript 7.0.2 does not know.
+- 763fb69: Attach the carriers of the header of a module to the package of the module.
+- f9800cb: Return the constructor of a global error class from `Rules.Constructors` of the TypeScript rules.
+- f9800cb: Derive the samples of `unknown`, `any` and the global error classes in `Rules.DeriveSamples` of the TypeScript rules.
+- 763fb69: Derive the samples and the zero values of `Set`, `ReadonlySet`, `Map` and `ReadonlyMap` as constructions.
+- 1e22241: Extend the contracts of a sum in each variant interface.
+- 1e22241: Leave the implementation of an overloaded constructor out of the constructors of a class.
+- 1e22241: Load the implementation of an overloaded function and of an overloaded class method.
+- e4916b2: Load the library that the tsconfig of each project selects from the embedded declaration files of TypeScript 7.0.2.
+- 1e22241: Mark the overload signatures of a function and of a class method with `Overload`.
+- 1e22241: Write a class after the class that it extends and after the decorators that its file declares.
+- e4916b2: Read a declaration of the library of TypeScript as a global in the rules.
+- 1e22241: Refuse a class whose overloaded method name has no implementation or two.
+- 1e22241: Refuse the contracts of an enum.
+- e4916b2: Spell a reference to a declaration of the library of TypeScript without an import.
+- 1e22241: Spell a type parameter by its name at every depth of a type.
+- 763fb69: Spell a construction value as `new C<A>(args)` with a value import of the class.
+- f9800cb: Spell the well-known context as `AbortSignal`.
+- 763fb69: **Breaking:** Spell names without the initialisms of Go, so `getById` keeps its spelling and `httpRow` becomes `HttpRow`.
+- 76c473b: Refuse the fact `Receives` and the annotations of a file, and render the methods of a class under the fact `Methods`.
+- f9800cb: Add the verdicts of the facts `Wire` and `Passing` to the coverage table of the TypeScript backend.
+- f9800cb: Add the template helper `wrapdocs` and `backend.WrapDocs` to the TypeScript backend.
+- 1e22241: Write an overload signature without a body right before the implementation of its name.
+- f9800cb: Write a function value as an arrow function in the TypeScript backend.
+- f9800cb: Add `backend.Value` to write a value of the value tree for the builtin `value`.
+
+### Patch Changes
+
+- e4916b2: Fix `Rules.EnumOf` to derive a text outside a string enum that has a member with the empty text.
+- f9800cb: Fix `Rules.DeriveSamples` of the TypeScript rules to construct an `Error` for the type `Error`.
+- f9800cb: Fix `Speller.Params` to put the element of a rest parameter in parentheses where TypeScript needs them.
+- df52360: Fix the frontend to load a readonly array or tuple before `|` or `&` as an immutable list or tuple.
+- 1e22241: Fix `backend.Lower` to leave out the variance of the type parameters of functions, methods and aliases of types that are not object types.
+- 763fb69: Fix the comments above `export default class {}` to document and annotate the class alone.
+- f9800cb: Fix `backend.Imports` of TypeScript to mark each type-only specifier of a value import with `type`.
+- e4916b2: Fix the merge of an interface to skip an equal method and a property of a name that the interface has.
+- e4916b2: Fix `Rules.LiteralFor` to read the name of a constant or a variable and a call of a function in the scope of the declaration.
+- e4916b2: Fix the backend to refuse a reference to a declaration of the library that a declaration of the file hides.
+- f9800cb: Refuse a make value in the TypeScript backend.
+- f9800cb: Refuse the deleter of a property in the TypeScript lowering.
+- c55b40a: Require the fork `github.com/dokimasia/tree-sitter-typescript` at its commit 839d520b in place of `github.com/tree-sitter/tree-sitter-typescript` v0.23.2.
+- e4916b2: Fix `spell.Name` to spell a field, a method and an enum variant whose name is a reserved word.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, 09edb8b, 78909e0, c55b40a, 4ee3b36, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

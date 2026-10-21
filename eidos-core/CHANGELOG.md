@@ -1,5 +1,105 @@
 # go.dokimi.dev/eidos/core
 
+## 0.3.0
+
+### Minor Changes
+
+- eed0fb8: Add `store.Graph.AddDependencyPackage` to add a package of a dependency round to a graph that `store.New` returns.
+- d5e68cb: Add `rules.ContextRules` and `rules.WellKnownContext`, and put the context of a callable first among the parameters of its view.
+- d5e68cb: Add `Emitter.FileOf` to key a per-source file on a declaration of the package of the subject.
+- 2a85f93: Add `Emitter.Handler`, which reports an rpc that the target cannot serve under `RefusedHandler`.
+- d5e68cb: Add `Emitter.Supertype`, `plugin.SupertypeSpeller` and `backend.Builder.Supertypes` to spell a supertype of another language apart from a value.
+- 2a85f93: Add `Emitter.TypeParams` to translate the type parameters of a declaration with each bound as a supertype.
+- d5e68cb: Add `render.ImportSet.Body` for the callable and the host of the body under render.
+- d5e68cb: Add `render.ImportSet.Enter` and `ImportSet.Pending` to tell a reference to a declaration that the file writes later.
+- d5e68cb: Add `render.ImportSet.Has` to report an entry that the set records.
+- d5e68cb: Add `render.ImportSet.SetPolicy` and `ImportSet.Policy` for the policy of the plan under render.
+- 2a85f93: Add `rules.IsImplementation` to tell the implementation of a method from its overload signatures.
+- d5e68cb: Add `load.Changes.Dependency` for the packages that move between the partition and a dependency round.
+- d5e68cb: **Breaking:** Add `plugin.Names.InFileScope` for the kept names of one routed scope.
+- d5e68cb: Add `rules.ParamView.Passing` for the way a call passes the argument of a parameter.
+- d5e68cb: Add `plugin.Index.Dependency` to report a subject of a dependency package.
+- d5e68cb: Add `plugin.MemberRespeller` and `backend.Builder.RespellMember` to respell a member by its level and its mutability.
+- d5e68cb: Add `plugin.NameScoper` and `backend.Builder.NameScopes` to check the file-level names of a file in the namespace of its target.
+- d5e68cb: Add `plugin.Output.External` for a family whose files test their package from outside.
+- d5e68cb: Add `plugin.Overloader` and `backend.Builder.Overloads` to let the overloads of a function share its name in a target that overloads.
+- d5e68cb: Add `plugin.Placement.External` to pass the external mark of the family of a file to its target.
+- d5e68cb: Add `plugin.Unit.Subjects` to map the origin of a declaration that a match placed for another subject to that subject.
+- d5e68cb: Add `rules.ResultRules`, which `Bound.CallableOf` asks to split a return of a result type into the views of its value and its failure.
+- 09edb8b: Add `rules.Mentioned` to return the type parameters that references mention.
+- d5e68cb: Add `rules.RefusedAuthored` for an authored text that the rules of its language do not read as a boolean or a number.
+- d5e68cb: Add `rulestest.LoadedWith` to load a fixture through a frontend with the trees of its stores.
+- 78909e0: Add the optional capability `rules.ShapeRules`, which the fold asks after `WellKnownRules`.
+- d5e68cb: Add `store.Graph.Dependency` to report a package that a dependency round loaded.
+- d5e68cb: Add `store.RegionInfo.Dependency` to mark the region of a unit of a dependency round.
+- 09edb8b: Add `TemplatesOf` to declare the template tree of a target from the templates that a plugin embeds.
+- d5e68cb: Add `rules.TextRules`, which `View.Authored` asks for the value of an authored text of a text type.
+- 2a85f93: Add the role `plugin.Binder` with `plugin.RPC`, `plugin.Translate` and `plugin.CanonicalHandler`.
+- 2a85f93: Add `emit.TypeRef.Bound` to mark a reference to code that a gRPC binding generates.
+- d5e68cb: Add the template builtin `value`, `render.Language.Value` and `backend.Builder.Value` to write a value of the value tree.
+- 09edb8b: Add `emit.Construction` and the value kind `emit.ValueConstruction`, which constructs a type from argument values.
+- 2a85f93: Add `Implements` to `Enum` and `Sum` on both sides of the model, under the fact `Implements`.
+- d5e68cb: Add `symbol.AccessorDelete` for the deleter of a property.
+- 78909e0: Add `Param.Doc` for the documentation of a parameter.
+- 78909e0: **Breaking:** Add `Field.Receives` with the fact `Receives`, and state the fact `Methods` on a struct, so a backend states a verdict for both.
+- d5e68cb: Add the function and make values `emit.Func` and `emit.Make`, with `emit.Value.Fresh`.
+- 2a85f93: Add `plugintest.Fixture.Layout`, the input of the layout of a plan over a fixture.
+- d5e68cb: Add `[]symbol.Identity` to the fact vocabulary and to the `values` of the `meta` directive.
+- 2a85f93: **Breaking:** Add `Function.Overload` and `Method.Overload` with the fact `Overload`, so a backend states a verdict for it.
+- 09edb8b: Add the shared helper names `render.HelperSpellValue` and `render.HelperTypeArgs`.
+- 09edb8b: Add `rules.ParamView.Optional`, which reports whether a call can leave the parameter out.
+- d5e68cb: Add `symbol.Passing`, `Param.Passing` and the fact `Passing` for the way a caller passes an argument.
+- d5e68cb: Add `PolicySpec.Plan`, `RenderContext.Policy` and `Policy.Lookup` for a policy that applies to every file of a plan.
+- 78909e0: Add `plugin.File.Referents` and the methods `SetPackage`, `Package`, `SetReferents` and `Referent` of `render.ImportSet`.
+- 09edb8b: Add `OnPackage` and `PackageMatch` to handle each package and each directive on a package.
+- 09edb8b: Add `Reporter` and `SubjectMatch`, which every match with a subject satisfies.
+- d5e68cb: Add `OnEnumVariant` to run a rule on each variant of an enumeration.
+- d5e68cb: Add `emit.Field.Wire` and the fact `Wire` to keep the name of a key of a wire format as its generator wrote it.
+- d5e68cb: Add the shared helper name `render.HelperWrapDocs`.
+- d5e68cb: Admit an interface as the subject of the keys `gen.sample` and `gen.alternate`.
+- d5e68cb: **Breaking:** Check the collisions of file-level names in `layout.Route`, and return the names in `layout.Routes`.
+- 2a85f93: Add `backend.Builder.Binder` to declare the binder of a backend.
+- 2a85f93: Add `Builder.Evaluated` and `Builder.Implemented` to the backend kit.
+- d5e68cb: Take the first type argument of a stream as the type of its values in the fold.
+- d5e68cb: Fold a reference whose target is an identity of the well-known registry to its well-known reference.
+- 2a85f93: Keep the identity of a type parameter in the `Ref` of its opaque shape.
+- d5e68cb: Order the members of a type under `rules.ShadowLinearise` by its C3 linearization.
+- 6741030: **Breaking:** Remove `rules.GapComputed` and list a field or a method with a computed name in the member walk.
+- 2a85f93: List the contracts of an enum and a sum in the surface of a package.
+- eed0fb8: Add `plugintest.Fixture.LoadDependencies` to add the packages of a store to a fixture.
+- 2a85f93: Add `Out.Internal` and `plugin.Unit.Inside` to mark the declarations of an external family that test their package from inside.
+- d5e68cb: Order the declarations of a unit by the source positions of their origins.
+- 2a85f93: Add `render.Evaluated`, `Language.Evaluated` and `Language.Implemented` to order the declarations of a file.
+- 2a85f93: **Breaking:** Pass a reference to a type parameter to the spoke of the target at every depth in `Emitter.Type` and `Emitter.Supertype`.
+- d5e68cb: Pass a pair of fresh values in `rulestest.AssertDistinctSamples`.
+- d5e68cb: **Breaking:** Pass the reference beside the declaration to `rules.ShapeRules.ShapeOf`.
+- 2a85f93: Place a file with a declaration that tests from inside as a file that does not test from outside.
+- 2a85f93: Qualify a bound reference by the package that `plugin.Binder.Home` returns.
+- 2a85f93: Add the code `UnimplementedOverload` for overload signatures without an implementation and for a second implementation.
+- 2a85f93: **Breaking:** Return the error of the layout from `backendtest.Fixture.Context`.
+- 2a85f93: Add `backendtest.Fixture.Layout` to route the store of a fixture through the layout of a plan.
+- 78909e0: Scope the name of a field with `Receives` to the type that receives it in the settle and the name table.
+- d5e68cb: Spell the passing of each parameter, the type of a receiver, `_` for a parameter without a type and `del` for a deleter in the discriminator of an overload.
+- 2a85f93: Start the discriminator of the implementation of an overloaded name with `=`.
+- 78909e0: Make an `emit.File` in a unit the header of its routed file, with `plugin.File.Header`, `plugin.HeaderOf`, `plugin.Placement.Header` and the builtin `header`.
+- 2a85f93: Follow the `Implements` of an enum and a sum in `rules.MembersOf` under `ContributesImplements`.
+- d5e68cb: Write the passing of each parameter and the modifier `delete` in `toolchain.Surface`.
+
+### Patch Changes
+
+- d5e68cb: Fix `workspace.Sources` to admit the dependency packages of its language whatever its patterns and its module.
+- d5e68cb: Fix `rules.Complete` to keep a refused stated half.
+- 6741030: Fix the load to keep two overloads whose parameters spell alike and whose type parameters differ.
+- eed0fb8: Fix `plugintest.Loaded` to add each dependency package of the load beside the packages that `Source.Packages` lists.
+- d5e68cb: Fix `rules.View.Authored` to lift an authored text of every type through the `LiteralFor` of its language first.
+- 097c95f: Fix `plugin.Emit.Add` to refuse a nil pointer of a declaration kind.
+- d5e68cb: Fix a warm load to report each declaration of a unit that moves between the partition and a dependency round as changed.
+- 19f2a4e: Reword the docblocks of `store.Graph.AddDependencyPackage`, `plugintest.Fixture.LoadDependencies` and `plugintest.Loaded`.
+- d5e68cb: Fix `layout.Route` to route a declaration whose origin has no overrides with the overrides of the subject that placed it.
+- d5e68cb: Fix `backendtest.Files` to route a file the way a plan's layout routes it, with the package that the backend's packager derives.
+- d5e68cb: Fix the dispatch to skip each declaration of a dependency package in the generate phase.
+- d5e68cb: Fix `output.Contract.Stamp` to write a Go file that gofmt leaves unchanged.
+
 ## 0.2.0
 
 ### Minor Changes

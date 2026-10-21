@@ -1,5 +1,34 @@
 # go.dokimi.dev/eidos/lang/java
 
+## 0.2.0
+
+### Minor Changes
+
+- b4c580b: Add `spell.Member` to keep the screaming snake case of a constant of a class.
+- b2027eb: Add `Speller.TypeArgs` and the template helpers `spellvalue` and `typeargs`.
+- ddf666f: Extend the contracts of a sum in the sealed interface that the sum lowers to.
+- ddf666f: Read the interfaces of an enum in source and in a class file.
+- b4c580b: Refuse the well-known context, for which Java has no standard type.
+- ddf666f: Reject the fact `Overload`.
+- b2027eb: Spell a construction value as a class instance creation, such as `new HashSet<Long>(List.of(1L))`.
+- ddf666f: Spell a type parameter by its name at every depth of a type.
+- b2027eb: **Breaking:** Spell names and file names without the initialisms of Go, so `getById` keeps its spelling and `httpRow` becomes `HttpRow`.
+- 1352d04: Refuse the fact `Receives` and the annotations of a file.
+- b4c580b: Add the verdicts of the facts `Wire` and `Passing` to the coverage table of the Java backend.
+- b4c580b: Add the template helper `wrapdocs` and `backend.WrapDocs` to the Java backend.
+- b4c580b: Write a function value as a lambda in the Java backend.
+- b4c580b: Add `backend.Value` to write a value of the value tree for the builtin `value`.
+- ddf666f: Write the contracts of an enum after `implements`.
+
+### Patch Changes
+
+- b4c580b: Refuse a make value in the Java backend.
+- b4c580b: Refuse the deleter of a property in the Java lowering.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, 09edb8b, 78909e0, c55b40a, 4ee3b36, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

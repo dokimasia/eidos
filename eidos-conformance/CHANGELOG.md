@@ -1,5 +1,50 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.0
+
+### Minor Changes
+
+- f82a6b9: Add the GraphQL corpus, the fixture catalog and the GraphQL column of the support matrix.
+- f82a6b9: Add the schema plans of the protobuf backend over a fixture of each protobuf version.
+- f56e13a: Add the Python corpus, its entry of the support matrix and the fixture `shop`.
+- 6796461: Copy the mark `Overload` of a function and of a method into the Python mirror.
+- f56e13a: Grade the Rust corpus at the projection levels of the Rust rules.
+- f56e13a: Add the rows of `ResultRules`, `TextRules` and `ContextRules` and the hub row of the well-known context to the support matrix.
+- f56e13a: Mark each property of the GraphQL client of the fixture `catalog` as a wire field.
+- f56e13a: Probe a reference to an interface in the hub of the support matrix.
+- 6796461: Add the rows of a type parameter and of a list of a type parameter to the hub.
+- 6796461: Probe the policy `typescript.grpc` with a reference to a protobuf message in the hub of the support matrix.
+- f56e13a: Probe the policy `golang.grpc` with a reference to a protobuf message in the hub of the support matrix.
+- f56e13a: Read the context and the failure of an rpc from the projection in the generators of the service fixture.
+- f56e13a: Translate the supertypes of the GraphQL fixture `catalog` through `Emitter.Supertype`.
+- 6796461: Write a Python alias with type parameters as a generic alias in the TypeScript client of the shop.
+- 6796461: Write the handlers of the service fixture through `Emitter.Handler` under grpc-go, connect-go and connect-es.
+
+### Patch Changes
+
+- 6796461: Check the internal test file of an external family and the files that the test kits route through the layout.
+- 696ce3b: Fix the TypeScript client of the GraphQL catalog to convert names as the TypeScript backend does, without the initialisms of Go.
+- f56e13a: Expect a blank line before the provenance trailer of each golden file.
+- 66c5fe9: Expect the interface `Node` for the optional node of the Go model of the GraphQL catalog.
+- 00b8f57: Expect the declarations of each golden file in the order of the positions of their origins.
+- d2e5053: Require the fork `github.com/dokimasia/gqlparser/v2` at its commit 349414ad in place of the zero version.
+- f82a6b9: Render the verdict `Rejects` in the support matrix.
+- c55b40a: Require the fork `github.com/dokimasia/tree-sitter-typescript` at its commit 839d520b in place of `github.com/tree-sitter/tree-sitter-typescript` v0.23.2.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, 3b46e8f, b4c580b, cac3c9b, e0adacb, c0ecc95, 09edb8b, 85f0e91, 78909e0, 8933dff, bca12c4, 1e22241, 3699aa0, 21875ef, f9800cb, b2027eb, e2fbfcb, 763fb69, 4340d2b, e4916b2, c55b40a, e176e64, 4ee3b36, 62d7b18, ddf666f, c392627, 0d4b785, 6741030, df52360, 2e4fc0b, d2e5053, c051021, 3561c92, 4520c2f, 097c95f, a5978d5, 3940196, 32afe4b, 049553a, 840a721, 19f2a4e, 66c5fe9, 745cbd0, f4f4620, afb1411, 1352d04, a301097, 76c473b, ba70166, d395e80]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+  - go.dokimi.dev/eidos/lang/graphql@0.1.0
+  - go.dokimi.dev/eidos/lang/java@0.2.0
+  - go.dokimi.dev/eidos/lang/protobuf@0.2.0
+  - go.dokimi.dev/eidos/lang/go@0.2.0
+  - go.dokimi.dev/eidos/lang/rust@0.2.0
+  - go.dokimi.dev/eidos/lang/typescript@0.2.0
+  - go.dokimi.dev/eidos/lang/python@0.1.0
+  - go.dokimi.dev/eidos/plugin/shape@0.0.3
+  - go.dokimi.dev/eidos/declarative@0.1.2
+  - go.dokimi.dev/eidos/cli@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

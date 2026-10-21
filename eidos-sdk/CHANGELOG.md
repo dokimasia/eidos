@@ -1,5 +1,42 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.2.0
+
+### Minor Changes
+
+- d5e68cb: Add `Emitter.FileOf` to key a per-source file on a declaration of the package of the subject.
+- 09edb8b: Add `rules.Mentioned` to return the type parameters that references mention.
+- d5e68cb: Add `rules.RefusedAuthored` for an authored text that the rules of its language do not read as a boolean or a number.
+- 09edb8b: Add `TemplatesOf` to declare the template tree of a target from the templates that a plugin embeds.
+- d5e68cb: Add the template builtin `value`, `render.Language.Value` and `backend.Builder.Value` to write a value of the value tree.
+- 09edb8b: Add `emit.Construction` and the value kind `emit.ValueConstruction`, which constructs a type from argument values.
+- d5e68cb: Add the function and make values `emit.Func` and `emit.Make`, with `emit.Value.Fresh`.
+- d5e68cb: Add `[]symbol.Identity` to the fact vocabulary and to the `values` of the `meta` directive.
+- 09edb8b: Add the shared helper names `render.HelperSpellValue` and `render.HelperTypeArgs`.
+- 09edb8b: Add `rules.ParamView.Optional`, which reports whether a call can leave the parameter out.
+- 09edb8b: Add `OnPackage` and `PackageMatch` to handle each package and each directive on a package.
+- 09edb8b: Add `Reporter` and `SubjectMatch`, which every match with a subject satisfies.
+- d5e68cb: Add `OnEnumVariant` to run a rule on each variant of an enumeration.
+- d5e68cb: Add the shared helper name `render.HelperWrapDocs`.
+- d5e68cb: Admit an interface as the subject of the keys `gen.sample` and `gen.alternate`.
+- d5e68cb: Pass a pair of fresh values in `rulestest.AssertDistinctSamples`.
+- c051021: Re-export `plugin.Binder`, `plugin.RPC`, `plugin.Translate`, `plugin.CanonicalHandler` and `RefusedHandler`.
+- c051021: Re-export the documentation of `Implements` on `Enum` and `Sum`.
+- 3561c92: Re-export `plugin.HeaderOf`, `emit.ReceivesOf`, `rules.ShapeRules`, `render.BuiltinHeader` and `symbol.FactReceives`.
+- c051021: Re-export `FactOverload`, `IsImplementation`, `Evaluated` and `UnimplementedOverload`.
+- 4520c2f: Re-export `rules.ResultRules`, `rules.TextRules`, `rules.ContextRules` and `rules.WellKnownContext`.
+- 4520c2f: Re-export `NameScoper`, `SupertypeSpeller`, `Overloader`, `MemberRespeller`, `Passing`, `AccessorDelete`, the facts `Wire` and `Passing`, and `rulestest.LoadedWith`.
+- 32afe4b: **Breaking:** Remove `rules.GapComputed` from the facade.
+
+### Patch Changes
+
+- 62d7b18: Document the dependency packages of `store.Graph` and of `plugintest.Loaded` in the facade.
+- d5e68cb: Fix `rules.Complete` to keep a refused stated half.
+- 840a721: Reword the docblock of `plugintest.Loaded` in the facade.
+- d5e68cb: Fix `backendtest.Files` to route a file the way a plan's layout routes it, with the package that the backend's packager derives.
+- Updated dependencies [eed0fb8, d5e68cb, 2a85f93, 09edb8b, 78909e0, 6741030, 097c95f, 19f2a4e]
+  - go.dokimi.dev/eidos/core@0.3.0
+
 ## 0.1.1
 
 ### Patch Changes

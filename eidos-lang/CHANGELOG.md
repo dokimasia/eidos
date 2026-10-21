@@ -1,5 +1,37 @@
 # go.dokimi.dev/eidos/lang
 
+## 0.2.0
+
+### Minor Changes
+
+- c53b949: **Breaking:** Add `scaffold.Target.Func` and `scaffold.Target.Make` to spell a function value and a make.
+- c53b949: Add `lowering.DeleteAccessor`, which refuses the deleter of a property in a target without properties.
+- cac3c9b: Add `naming.Params` to name each parameter of a method that has no name.
+- cac3c9b: Add `spellref.TypeArgs` to write type parameters or type references as the type arguments of a reference.
+- c53b949: Add `textfmt.Wrap`, `textfmt.Markup` and `textfmt.DocsWidth` to wrap documentation without a block opener at the start of a line.
+- cac3c9b: **Breaking:** Add `scaffold.Target.Construction`, which spells a construction of a type from the spellings of its arguments.
+- c53b949: Add the package `treesitter/python` with the grammar of the fork `dokimasia/tree-sitter-python`.
+- 4ee3b36: Name the shape of a type parameter "a type parameter" in `spoke.Describe`.
+- 4ee3b36: Add `lowering.GroupOverloads` to put the overload signatures of a method name before its implementation.
+- 4ee3b36: Add `spoke.Param` to spell the shape of a type parameter by its name.
+
+### Patch Changes
+
+- 4ce5b02: Fix `treesitter/typescript` to accept `abstract` and `unique` as names and keywords as tuple labels.
+- c55b40a: Fix `treesitter/typescript` to apply `readonly` to the type before a union or an intersection.
+- cac3c9b: Fix `treesitter.Comments.Leading` to end a run at a comment that another subject took.
+- 4ce5b02: Fix `treesitter/typescript` to insert a semicolon before `<` at a line break after a type.
+- c53b949: Fix `naming.Params` to name a parameter called `_` by its position.
+- 4ce5b02: Fix `treesitter/typescript` to parse a bare `&` in JSX text and in a JSX string.
+- c55b40a: Fix `treesitter/typescript` to parse a readonly type and an infer type after `keyof`.
+- 4ce5b02: Fix `treesitter/typescript` to parse an import type wherever a primary type can appear.
+- 4ce5b02: Fix `treesitter/typescript` to parse `typeof import()` in the type arguments of a call.
+- cac3c9b: Fix `scaffold.Value` to pass a structural type without a spelling to the target, which restates it.
+- c55b40a: Require the fork `github.com/dokimasia/tree-sitter-typescript` at its commit 839d520b in place of `github.com/tree-sitter/tree-sitter-typescript` v0.23.2.
+- Updated dependencies [eed0fb8, d5e68cb, 2a85f93, 09edb8b, 78909e0, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

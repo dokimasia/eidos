@@ -1,5 +1,34 @@
 # go.dokimi.dev/eidos/lang/protobuf
 
+## 0.2.0
+
+### Minor Changes
+
+- e0adacb: Add `spell.NameScope` to check the file-level names of a protobuf file in its protobuf package.
+- 8933dff: Add `Stated` and `Header`, which restate the stamps of a protobuf source for a generator.
+- 8933dff: Add the backend, which writes every construct of proto2, proto3 and the editions 2023, 2024 and 2026.
+- 8933dff: Add the toolchain adapter `testing`, which parses and compiles generated schemas in process.
+- 8933dff: **Breaking:** Load an extend block as fields with `Receives`, and remove `RefusedExtension`.
+- 8933dff: Move the table of versions and features to the root package as `EditionNamed`, `Edition` and `Features`.
+- e0adacb: **Breaking:** Project every rpc with the context of its call before its request and with the error model `raised`.
+- a5978d5: Refuse a type parameter at every depth of a type.
+- e0adacb: Refuse the well-known context, which a schema does not state.
+- a5978d5: Reject the fact `Overload`.
+- e0adacb: Add the verdicts of the facts `Wire` and `Passing` to the coverage table of the protobuf backend.
+- e0adacb: Add the template helper `wrapdocs` and `backend.WrapDocs` to the protobuf backend.
+
+### Patch Changes
+
+- 2e4fc0b: List the indirect requirements of `bufbuild/protocompile` that `go mod tidy` adds.
+- e0adacb: Refuse a wire name that is not an identifier in the protobuf lowering.
+- e0adacb: Refuse the deleter of a property in the protobuf lowering.
+- 049553a: Fix the protobuf frontend to report the errors of the parser at the syntax statement of a file.
+- f4f4620: Fix the protobuf backend to spell names without the initialisms of Go, so `get_dns_request` becomes `GetDnsRequest` and `HttpRule` keeps its spelling.
+- Updated dependencies [4ce5b02, eed0fb8, d5e68cb, 2a85f93, c53b949, cac3c9b, 09edb8b, 78909e0, c55b40a, 4ee3b36, 62d7b18, 6741030, c051021, 3561c92, 4520c2f, 097c95f, 32afe4b, 840a721, 19f2a4e]
+  - go.dokimi.dev/eidos/lang@0.2.0
+  - go.dokimi.dev/eidos/core@0.3.0
+  - go.dokimi.dev/eidos/sdk@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes
