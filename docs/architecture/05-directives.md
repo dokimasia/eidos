@@ -42,6 +42,16 @@ carriers, and Kubernetes markers such as
 product. Each frontend recognizes its own carriers and hands the
 workspace one canonical parsed form.
 
+A carrier line contains one or more directives. Each later directive
+opens with a mark of the brand after a blank, as in
+`//+acme:shape writer reads=Get +acme:mixin atomic read=Get`. The
+kernel cuts the line before each later mark at the top level of the
+grammar. A mark inside a quoted value or a list is text. An author
+quotes a positional value that begins with a mark. Each directive has
+its own arguments and its own polarity. The first
+directive has the position of the carrier. A later directive has the
+line and the column of its mark.
+
 A directive on a package has a place of its own in each language that
 addresses a package. The Go frontend attaches the carriers of the doc of a
 package clause to the package. The TypeScript frontend attaches the

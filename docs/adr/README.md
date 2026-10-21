@@ -112,3 +112,4 @@ way.
 | [0091](0091-the-typescript-library-loads-the-names-that-a-load-uses.md) | The TypeScript library loads one unit for each global name that a load uses | Accepted |
 | [0092](0092-a-handler-reads-the-instances-of-its-directives.md) | A handler reads the instances of the directives of its plugin on its subject | Accepted |
 | [0093](0093-a-handler-enumerates-the-subjects-of-a-key.md) | A handler enumerates the subjects of a key under a membership edge | Accepted |
+| [0094](0094-a-carrier-line-contains-one-directive-for-each-mark.md) | A carrier line contains one directive for each mark | Accepted |
