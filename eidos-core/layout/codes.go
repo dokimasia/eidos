@@ -74,3 +74,11 @@ var UntranslatedReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  70,
 	Meaning: "a translated reference refers to a declaration that the plan does not emit",
 })
+
+// UnemittedReference reports an emitted reference to a declaration that
+// the plan does not emit, at the origin of the referencing declaration.
+// The referencing declaration is refused.
+var UnemittedReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  81,
+	Meaning: "an emitted reference refers to a declaration that the plan does not emit",
+})

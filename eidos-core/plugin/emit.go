@@ -210,9 +210,9 @@ type Emit struct {
 	// lowering seams of the backend ran, and the declarations that the
 	// readers see are the declarations that render.
 	settled bool
-	// translates reports that the settle found a type reference whose
-	// target is a declaration of another language than the target of the
-	// backend.
+	// translates reports that the settle found an emitted reference, or a
+	// type reference whose target is a declaration of another language
+	// than the target of the backend.
 	translates bool
 	// emitted maps each declaration whose name the settle changed to the
 	// name it was emitted under, which [NewExport] keys an export on. The
@@ -240,11 +240,13 @@ func NewEmit() *Emit {
 func (e *Emit) Settled() bool { return e.settled }
 
 // Translates reports whether a declaration of the settled store has a
-// translated reference: a type reference whose target is a declaration of
-// another language than the target of the backend that settled the store.
-// The layout qualifies such a reference by the file that declares its
-// referent. An unsettled store, and a store that a settle without a
-// backend settled, report false. It allocates nothing.
+// translated reference or an emitted reference. A translated reference is
+// a type reference whose target is a declaration of another language than
+// the target of the backend that settled the store. An emitted reference
+// is a type reference whose Emitted field is set. The layout qualifies
+// either reference by the file that declares its referent. An unsettled
+// store, and a store that a settle without a backend settled, report
+// false. It allocates nothing.
 func (e *Emit) Translates() bool { return e.translates }
 
 // Add records one unit, indexes its tree and seals every slot of its

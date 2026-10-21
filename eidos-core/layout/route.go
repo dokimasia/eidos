@@ -114,14 +114,14 @@ type Routes struct {
 // Input.Others is set, it compares the names of the routed files with the
 // kept names of each scope too. Functions of one emitted name are the
 // overloads of one function, and no collision, where the target's package
-// half is a [plugin.Overloader] that overloads. It sets the package of every bare reference and every
-// translated reference that crosses into a file of another package, in
-// place. It sets the package of a bound reference to the package that
-// Input.Binder returns for its target. It returns an error only for a
-// defect in its inputs: a nil store,
-// an unsettled store, a missing speller, index or sink, a speller whose
-// parts do not contain the declarations of the unit it split, and a
-// filename that is not one path element.
+// half is a [plugin.Overloader] that overloads. It sets the package of
+// every bare, translated and emitted reference that crosses into a file of
+// another package, in place. It sets the package of a bound reference to
+// the package that Input.Binder returns for its target. It returns an
+// error only for a defect in its inputs: a nil store, an unsettled store,
+// a missing speller, index or sink, a speller whose parts do not contain
+// the declarations of the unit it split, and a filename that is not one
+// path element.
 //
 // # Cost
 //

@@ -1185,6 +1185,14 @@ func (x *Alias) Identity() symbol.Identity { return x.ID }
 // the backend returns for Target. Only the emit model has it, because a
 // spoke of a binding sets it.
 //
+// Emitted marks a reference to a declaration that the plan emits. A
+// generator sets it with the origin of the referent in Target and the
+// emitted name of the referent in Spelling. The layout sets it on each
+// bare reference that it qualifies into another package. The layout
+// qualifies an emitted reference in every language by the package of the
+// file of its referent. Only the emit model has it, because a generator
+// and the layout set it.
+//
 // This is the node spelling of the kind.
 type TypeRef struct {
 	Pos        position.Pos      `json:"pos,omitzero"`

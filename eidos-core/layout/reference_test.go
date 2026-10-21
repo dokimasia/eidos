@@ -326,6 +326,116 @@ func TestReference(t *testing.T) {
 			})
 		}
 
+		emitted := []struct {
+			name string
+			give *emit.TypeRef
+			out  string
+			want string
+		}{
+			{
+				name: "qualifies an emitted reference into a file of another package",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID, Emitted: true}, out: "fakes/",
+				want: fakesDir,
+			},
+			{
+				name: "leaves an emitted reference within one package without a package",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID, Emitted: true}, want: "",
+			},
+			{
+				name: "clears the package that the source of an emitted reference recorded",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID, Emitted: true, Package: "example.com/row"},
+				want: "",
+			},
+			{
+				name: "qualifies an emitted reference without a target as it qualifies a bare reference",
+				give: &emit.TypeRef{Spelling: rowStubName, Emitted: true}, out: "fakes/",
+				want: fakesDir,
+			},
+		}
+		for _, tt := range emitted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(tt.give), rowStub())
+				if tt.out != "" {
+					f.on(rowID, written(stubDirective, 1, keyOut, tt.out))
+				}
+				f.packager = directories{}
+				f.target = plugin.Target(coretest.Lang)
+				_, sink := f.route(t)
+				assert.Equal(t, tt.give.Package, tt.want, "the reference's package")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		unemitted := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "reports UnemittedReference for an emitted reference to an origin without an emitted declaration",
+				give: &emit.TypeRef{Spelling: "CacheStub", Target: cacheID, Emitted: true},
+			},
+			{
+				name: "reports UnemittedReference for an emitted reference to a name that the plan does not emit",
+				give: &emit.TypeRef{Spelling: rowName, Target: rowID, Emitted: true},
+			},
+		}
+		for _, tt := range unemitted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(tt.give), rowStub())
+				f.target = plugin.Target(coretest.Lang)
+				files, sink := f.route(t)
+				assert.Equal(t, layoutOf(files), []string{"svc/store/row_stub.go: RowStub"},
+					"the referencing declaration is refused")
+				coretest.AssertCodes(t, sink, layout.UnemittedReference)
+				for d := range sink.All() {
+					assert.Equal(t, d.Pos, at(storeFile), "the finding is at the referencing declaration's origin")
+				}
+			})
+		}
+
+		marks := []struct {
+			name   string
+			give   *emit.TypeRef
+			out    string
+			target plugin.Target
+			want   bool
+		}{
+			{
+				name: "marks a bare reference that it qualifies into another package as emitted",
+				give: &emit.TypeRef{Spelling: rowStubName}, out: "fakes/", want: true,
+			},
+			{
+				name: "leaves a bare reference within one package unmarked",
+				give: &emit.TypeRef{Spelling: rowStubName}, want: false,
+			},
+			{
+				name: "leaves a translated reference that it qualifies into another package unmarked",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID}, out: "fakes/", target: tsxTarget,
+				want: false,
+			},
+		}
+		for _, tt := range marks {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(tt.give), rowStub())
+				if tt.out != "" {
+					f.on(rowID, written(stubDirective, 1, keyOut, tt.out))
+				}
+				f.packager = directories{}
+				f.target = tt.target
+				// An empty table of kept files makes the pass run in every case.
+				f.others = keptFiles{}
+				_, sink := f.route(t)
+				assert.Equal(t, tt.give.Emitted, tt.want, "the mark of the reference")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
 		t.Run("reports UntranslatedReference for a referent that is a method", func(t *testing.T) {
 			t.Parallel()
 

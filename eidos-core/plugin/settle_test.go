@@ -411,6 +411,16 @@ func TestSettle(t *testing.T) {
 				name: "records no translated reference for a bare reference", backend: &hookless{},
 				give: &emit.TypeRef{Spelling: "row"}, want: false,
 			},
+			{
+				name:    "records an emitted reference to a target of the backend's language",
+				backend: keeping(),
+				give: &emit.TypeRef{
+					Spelling: "row",
+					Target:   symbol.Identity{Lang: symbol.Lang(settleTarget)},
+					Emitted:  true,
+				},
+				want: true,
+			},
 		}
 		for _, tt := range translations {
 			t.Run(tt.name, func(t *testing.T) {

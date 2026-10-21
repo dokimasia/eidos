@@ -100,6 +100,14 @@ import (
 // referent. The layout qualifies it by the package that the binder of
 // the backend returns for Target. Only the emit model has it, because a
 // spoke of a binding sets it.
+//
+// Emitted marks a reference to a declaration that the plan emits. A
+// generator sets it with the origin of the referent in Target and the
+// emitted name of the referent in Spelling. The layout sets it on each
+// bare reference that it qualifies into another package. The layout
+// qualifies an emitted reference in every language by the package of the
+// file of its referent. Only the emit model has it, because a generator
+// and the layout set it.
 type TypeRef struct {
 	Pos        position.Pos      `eidos:"node"`
 	Spelling   string            `eidos:"both"`      // source text, verbatim
@@ -109,6 +117,7 @@ type TypeRef struct {
 	Variance   symbol.Variance   `eidos:"both"`      // FormWildcard: In for a lower bound, Out for an upper one
 	Async      bool              `eidos:"both"`      // FormStream: the elements arrive asynchronously
 	Bound      bool              `eidos:"emit"`      // the referent is code that the binding of the plan's target generates
+	Emitted    bool              `eidos:"emit"`      // the referent is a declaration that the plan emits
 	Mutability symbol.Mutability `eidos:"both"`      // List, Array, Tuple, Map and Borrow: whether a holder can write through it
 	Elems      []*TypeRef        `eidos:"both,walk"` // the form's children, in the form's fixed order
 	Split      int               `eidos:"both"`      // FormFunc: the index in Elems where the returns begin

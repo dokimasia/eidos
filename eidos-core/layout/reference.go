@@ -23,8 +23,9 @@ type declared struct {
 	name string
 }
 
-// derived is the key of a declaration that a translated reference refers
-// to. The key has the declaration's origin and its settled name.
+// derived is the key by which a translated or an emitted reference finds
+// its referent. The key has the origin of the declaration and its settled
+// name.
 type derived struct {
 	origin symbol.Identity
 	name   string
@@ -34,11 +35,12 @@ type derived struct {
 // plan that is written in a file of another package, so the target
 // qualifies the reference and records its import. The file of the
 // reference lists the package of the file of the referent among its
-// [plugin.File.Referents]. It qualifies two kinds of reference:
+// [plugin.File.Referents]. It qualifies three kinds of reference:
 //
 //   - A bare reference is a type reference without a target or a
 //     package. The settle resolved it by the package of its unit and the
-//     referent's settled name.
+//     referent's settled name. The pass sets Emitted on a bare reference
+//     that it qualifies into another package.
 //   - A translated reference is a type reference whose target is a
 //     declaration of another language than the plan's target. Its
 //     referent is the declaration of the plan whose origin is the
@@ -46,18 +48,24 @@ type derived struct {
 //     spelling. The pass sets its package whatever its source recorded,
 //     and clears the package where the referent is in the reference's
 //     own package.
+//   - An emitted reference is a type reference with a target and with
+//     Emitted set. Its target can be in any language. The pass finds its
+//     referent and sets its package as it does for a translated
+//     reference.
 //
 // The referent is in a file that the pass routes, or else in a kept file
 // that the input's Others name. Where the referent's file derives no
 // package, the referencing declaration is refused under
 // [UnderivedPackage]. Where no file declares the referent of a translated
 // reference, the referencing declaration is refused under
-// [UntranslatedReference].
+// [UntranslatedReference]. Where no file declares the referent of an
+// emitted reference, it is refused under [UnemittedReference].
 //
 // A reference to a refused declaration is left as written, and so is a
-// name in a body. A pass without Others, whose store the settle found no
-// translated reference in, and where every file declares the package of
-// its units, has no reference to qualify. It returns at once.
+// name in a body. The pass returns at once where the input has no Others,
+// the settle did not find a translated or an emitted reference in the
+// store, and every file declares the package of its units. Such a pass
+// has no reference to qualify.
 func (r *router) qualify() {
 	if r.in.Others == nil && !r.relocated() && !r.in.Emit.Translates() {
 		return
@@ -112,11 +120,11 @@ var errKeptUnderived = errors.New("layout: the file is kept from an earlier run 
 // whose backend has no binder.
 var errNoBinder = errors.New("layout: the backend of the plan has no binder")
 
-// qualifyDecl qualifies the bare and the translated references of one
-// declaration written in the file at index fi. It refuses the
-// declaration at its first translated reference whose referent no file
-// declares, and at its first reference into a file whose package derives
-// none.
+// qualifyDecl qualifies the bare, the translated and the emitted
+// references of one declaration written in the file at index fi. It
+// refuses the declaration at its first translated or emitted reference
+// whose referent no file declares. It also refuses the declaration at its
+// first reference into a file whose package derives none.
 func (r *router) qualifyDecl(
 	d symbol.Symbol, u *plugin.Unit, fi int, homes map[declared]int, origins map[derived]int,
 ) {
@@ -137,6 +145,16 @@ func (r *router) qualifyDecl(
 				return
 			}
 			continue
+		case t.Emitted && !t.Target.IsZero():
+			home, found = r.referent(origins, t)
+			if !found {
+				origin, _ := emit.OriginOf(d)
+				r.errorf(UnemittedReference, r.positionOf(origin, u), nil,
+					"%s is refused because the plan does not emit %s of %s", Describe(d), t.Spelling, t.Target)
+				r.refused[d] = struct{}{}
+				return
+			}
+			t.Package = ""
 		case lang != "" && !t.Target.IsZero() && t.Target.Lang != lang:
 			home, found = r.referent(origins, t)
 			if !found {
@@ -164,6 +182,9 @@ func (r *router) qualifyDecl(
 			return
 		case home.file.Pkg.Package != f.file.Pkg.Package:
 			t.Package = home.file.Pkg.Package
+			if t.Target.IsZero() {
+				t.Emitted = true
+			}
 			f.refer(home.file.Pkg)
 		}
 	}
@@ -256,9 +277,9 @@ func (r *router) home(homes map[declared]int, pkg, name string) (building, bool)
 	return r.kept(pkg, name, symbol.Identity{})
 }
 
-// referent returns the file that declares the referent of a translated
-// reference: a file of the pass, and else a kept file of the input's
-// Others. A kept referent is a name of the target's package, or a name
+// referent returns the file that declares the referent of a translated or
+// an emitted reference: a file of the pass, and else a kept file of the
+// input's Others. A kept referent is a name of the target's package, or a name
 // of a unit without a package, such as a per-plan unit. It reports false
 // where no file declares the referent.
 func (r *router) referent(origins map[derived]int, t *emit.TypeRef) (building, bool) {

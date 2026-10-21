@@ -55,7 +55,11 @@
 // unit's package by the declaration's settled name. A translated
 // reference has a target of another language than the plan's
 // [Input.Target]. It refers to the declaration of the plan whose origin
-// is its target and whose settled name is its spelling.
+// is its target and whose settled name is its spelling. An emitted
+// reference has a target and has [emit.TypeRef.Emitted] set. It refers to
+// a declaration of the plan as a translated reference does, and its
+// target can be in any language. Route marks a bare reference that it
+// qualifies into another package as emitted.
 //
 // # Findings
 //
@@ -63,7 +67,8 @@
 // [diag.PhaseLayout], and leaves the refused declarations out of the
 // files it returns: [UndeclaredFamily], [UnknownTag],
 // [AmbiguousOverride], [NoDestination], [EscapingPath],
-// [PathCollision], [UnderivedPackage] and [UntranslatedReference]. A
+// [PathCollision], [UnderivedPackage], [UntranslatedReference] and
+// [UnemittedReference]. A
 // contradiction in the configuration is a fault [Config.Check] returns
 // at Build, and never a finding. [Describe] names a declaration in these
 // findings, and the workspace names a file's first declaration with it.

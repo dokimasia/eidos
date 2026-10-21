@@ -1061,6 +1061,14 @@ func (x *Alias) Docs() []string { return x.Doc }
 // the backend returns for Target. Only the emit model has it, because a
 // spoke of a binding sets it.
 //
+// Emitted marks a reference to a declaration that the plan emits. A
+// generator sets it with the origin of the referent in Target and the
+// emitted name of the referent in Spelling. The layout sets it on each
+// bare reference that it qualifies into another package. The layout
+// qualifies an emitted reference in every language by the package of the
+// file of its referent. Only the emit model has it, because a generator
+// and the layout set it.
+//
 // This is the emit spelling of the kind.
 type TypeRef struct {
 	Spelling   string            `json:"spelling,omitzero"`   // source text, verbatim
@@ -1070,6 +1078,7 @@ type TypeRef struct {
 	Variance   symbol.Variance   `json:"variance,omitzero"`   // FormWildcard: In for a lower bound, Out for an upper one
 	Async      bool              `json:"async,omitzero"`      // FormStream: the elements arrive asynchronously
 	Bound      bool              `json:"bound,omitzero"`      // the referent is code that the binding of the plan's target generates
+	Emitted    bool              `json:"emitted,omitzero"`    // the referent is a declaration that the plan emits
 	Mutability symbol.Mutability `json:"mutability,omitzero"` // List, Array, Tuple, Map and Borrow: whether a holder can write through it
 	Elems      []*TypeRef        `json:"elems,omitzero"`      // the form's children, in the form's fixed order
 	Split      int               `json:"split,omitzero"`      // FormFunc: the index in Elems where the returns begin

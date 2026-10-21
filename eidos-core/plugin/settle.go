@@ -158,9 +158,9 @@ type MemberRespeller interface {
 // so the settle checks no record for a collision, and no reference
 // follows a record.
 //
-// The settle records whether a declaration that renders has a type
-// reference to a declaration of another language than the target of the
-// backend. [Emit.Translates] reports the result.
+// The settle records whether a declaration that renders has an emitted
+// reference, or a type reference to a declaration of another language
+// than the target of the backend. [Emit.Translates] reports the result.
 //
 // The settle reports its findings to the sink under the name of the
 // backend. A refused construct or name withholds its declaration.
@@ -364,7 +364,7 @@ type planned struct {
 // their units last, because every earlier pass addresses a plan by the
 // index of its declaration. reads records the override reads and the
 // lookups of each unit. The reference pass records whether a reference
-// has a target of another language than the target t.
+// is emitted or has a target of another language than the target t.
 func respellAll(
 	e *Emit, r Respeller, t Target, over overrides, others Names, by diag.Origin, sink *diag.Sink, reads *readLog,
 ) {
@@ -811,8 +811,8 @@ type resolver struct {
 // the locals first, then the package. The pass leaves a composite
 // spelling without elements, a verbatim body and the text of a template
 // as written. It marks the store where a reference of a declaration that
-// renders has a target of another language than the language of the
-// resolver.
+// renders is an emitted reference, or has a target of another language
+// than the language of the resolver.
 func (r *resolver) rewriteRefs(e *Emit, plans *plan) {
 	for i := range e.units {
 		u := &e.units[i]
@@ -826,7 +826,7 @@ func (r *resolver) rewriteRefs(e *Emit, plans *plan) {
 			for s := range emit.All(d) {
 				switch t := s.(type) {
 				case *emit.TypeRef:
-					if !t.Target.IsZero() && t.Target.Lang != r.lang {
+					if t.Emitted || (!t.Target.IsZero() && t.Target.Lang != r.lang) {
 						e.translates = true
 					}
 					r.rewriteRef(t)
