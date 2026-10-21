@@ -55,7 +55,7 @@ const (
 )
 
 // stateFormat is the format of the encoding that the kernel writes.
-const stateFormat = 5
+const stateFormat = 6
 
 // castagnoli is the CRC-32C table a generation's trailer is computed
 // with.

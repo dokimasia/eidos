@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // dependencies runs the dependency rounds of every [plugin.Dependent]
@@ -77,9 +78,9 @@ type rounds struct {
 }
 
 // run runs the rounds and returns the units they returned. A round
-// after the first runs only when it has a need no earlier round
-// passed. A round that returns no unit the load has not loaded adds no
-// import, so the rounds end after it.
+// after the first runs only when it has a need or a use that no earlier
+// round passed. A round that returns no unit the load has not loaded
+// does not add an import or a use, so the rounds end after it.
 func (r *rounds) run() ([]*unit, error) {
 	f := r.frontend
 	config, version, err := r.identity()
@@ -88,17 +89,22 @@ func (r *rounds) run() ([]*unit, error) {
 	}
 	shared := r.shared()
 	passed := map[string]bool{}
+	used := map[symbol.Identity]bool{}
 	var out []*unit
 	for number := 1; ; number++ {
 		needs, at := r.needs(passed)
-		if number > 1 && len(needs) == 0 {
+		uses := r.uses(used)
+		if number > 1 && len(needs) == 0 && len(uses) == 0 {
 			return out, nil
 		}
 		for _, n := range needs {
 			passed[n.Path] = true
 		}
+		for _, id := range uses {
+			used[id] = true
+		}
 		reader := &recordingReader{fsys: r.l.tree, gate: r.l.gate}
-		asked := &plugin.DependencyRound{Number: number, Needs: needs, Shared: shared}
+		asked := &plugin.DependencyRound{Number: number, Needs: needs, Uses: uses, Shared: shared}
 		parts, err := r.dependent.Dependencies(r.l.ctx, asked, reader)
 		if err != nil {
 			return nil, fmt.Errorf("load: dependencies %s: %w", f.Name(), err)
@@ -111,7 +117,9 @@ func (r *rounds) run() ([]*unit, error) {
 		if err != nil {
 			return nil, err
 		}
-		record := DoorRecord{Round: number, Reads: reader.reads, Needs: needs, Units: fresh, Findings: found}
+		record := DoorRecord{
+			Round: number, Reads: reader.reads, Needs: needs, Uses: uses, Units: fresh, Findings: found,
+		}
 		r.records = append(r.records, record)
 		round := r.unitsOf(record, config, version)
 		r.load(round)
@@ -128,10 +136,11 @@ func (r *rounds) run() ([]*unit, error) {
 
 // reuse returns the units of the frontend's rounds the history recorded,
 // and reports true, where the rounds would return them again: the first
-// round's needs and shared inputs are the recorded ones, everything
-// every round read reads the same, no recorded member is now claimed or
-// loaded, and every unit keeps its recorded key, so no later round's
-// needs move either. It reports each round's recorded findings again.
+// round's needs, uses and shared inputs are the recorded ones,
+// everything every round read reads the same, no recorded member is now
+// claimed or loaded, and every unit keeps its recorded key, so no later
+// round's needs or uses move either. It reports each round's recorded
+// findings again.
 //
 // Error modes: the error of a record that does not read whole, and of a
 // file a round read that fails to read for a cause other than its
@@ -151,7 +160,10 @@ func (r *rounds) reuse() ([]*unit, bool, error) {
 		return nil, false, nil
 	}
 	needs, _ := r.needs(map[string]bool{})
-	if !slices.EqualFunc(needs, recorded[0].Needs, sameNeed) || !slices.Equal(r.shared(), r.recordedShared()) {
+	if !slices.EqualFunc(needs, recorded[0].Needs, sameNeed) ||
+		!slices.Equal(r.uses(map[symbol.Identity]bool{}), recorded[0].Uses) ||
+		!slices.Equal(r.shared(), r.recordedShared()) {
+
 		return nil, false, nil
 	}
 	config, version, err := r.identity()
@@ -268,12 +280,13 @@ func (r *rounds) recordedShared() []string {
 
 // needs returns the import paths the frontend's loaded files name
 // that no loaded package of its language declares and no earlier
-// round passed, sorted, each with the files that import it, sorted.
-// What an import path means is the language's own, so the load
-// compares it with package paths and nothing else. It returns beside
-// them where each need's first file imports it: the position of the
-// file's first import of the path. A kept unit states its packages and
-// its imports through its record.
+// round passed, sorted, each with the files that import it, sorted,
+// and nil for none. The language decides what an import path means,
+// so the load compares it with package paths and nothing else. It
+// returns beside them where each need's first file imports it: the
+// position of the file's first import of the path, and nil for no
+// need. A kept unit states its packages and its imports through its
+// record.
 func (r *rounds) needs(passed map[string]bool) ([]plugin.Need, map[string]position.Pos) {
 	lang := r.frontend.Lang()
 	declared := map[string]bool{}
@@ -302,6 +315,9 @@ func (r *rounds) needs(passed map[string]bool) ([]plugin.Need, map[string]positi
 			}
 		}
 	}
+	if len(from) == 0 {
+		return nil, nil
+	}
 	needs := make([]plugin.Need, 0, len(from))
 	for _, path := range slices.Sorted(maps.Keys(from)) {
 		files := from[path]
@@ -309,6 +325,26 @@ func (r *rounds) needs(passed map[string]bool) ([]plugin.Need, map[string]positi
 		needs = append(needs, plugin.Need{Path: path, From: slices.Compact(files)})
 	}
 	return needs, at
+}
+
+// uses returns the uses of the loaded units of the frontend that no
+// earlier round passed, in identity order and without repeats, and nil
+// for none. A kept unit states its uses through its record. It allocates
+// nothing for a frontend whose units use nothing that no round passed.
+func (r *rounds) uses(passed map[symbol.Identity]bool) []symbol.Identity {
+	var out []symbol.Identity
+	for _, u := range r.units {
+		if u.frontend.Name() != r.frontend.Name() {
+			continue
+		}
+		for _, id := range u.useList() {
+			if !passed[id] {
+				out = append(out, id)
+			}
+		}
+	}
+	slices.SortFunc(out, symbol.Identity.Compare)
+	return slices.Compact(out)
 }
 
 // warnUnplaced reports each need the frontend reported placed nowhere,
@@ -387,6 +423,20 @@ func (r *rounds) admit(parts [][]plugin.SourceRef) ([][]plugin.SourceRef, error)
 		}
 	}
 	return fresh, nil
+}
+
+// useList returns the uses of a unit: a parsed unit's, which the load
+// read from its source unit after the parse, a restored unit's from its
+// region, and a kept unit's from its record.
+func (u *unit) useList() []symbol.Identity {
+	switch {
+	case u.parsed():
+		return u.uses
+	case u.from == FromMemo:
+		return u.region.Uses
+	default:
+		return u.record.Uses
+	}
 }
 
 // importList returns the imports a unit's files name: computed from a

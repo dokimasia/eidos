@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
+	"io/fs"
 	"iter"
 	"testing"
 	"testing/fstest"
@@ -55,6 +56,18 @@ const damagedPlace = 9
 // undecodable is a row that every load table rejects: a varint cut short.
 var undecodable = []byte{0x80}
 
+// The use of the use cases: a declaration of a package of the store of the
+// scripted dependent, the file of the store that declares it, and an API
+// file that uses it.
+const (
+	usedMember = "ext/lib/Used.zz"
+	usedSource = "package ext/lib\ntype Used string\n"
+	usingAPI   = "package svc/api\nuse ext/lib Used\ntype User string\n"
+)
+
+// usedID is the bare identity of the declaration of the use cases.
+var usedID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "ext/lib", Name: "Used"}
+
 // The ceilings of the reads and the record of a load over the scripted
 // tree of two units.
 const (
@@ -92,8 +105,9 @@ const (
 	followedAllocs = 0
 	// recordLoadAllocs is one record of a cold load of the two units into
 	// a new commit: each region's encoding and the segment, each file's
-	// and unit's row, the door's row, and the probes.
-	recordLoadAllocs = 84
+	// and unit's row with the growths of its buffer, the door's row, and
+	// the probes.
+	recordLoadAllocs = 85
 	// recordOutputAllocs is one record of a created file into a commit
 	// that records the file already: the key, the row, and the commit's
 	// key of the change.
@@ -172,6 +186,15 @@ func TestLoadState(t *testing.T) {
 			}}, "the store package imports the API on its second line")
 		})
 
+		t.Run("returns the uses of a unit's region", func(t *testing.T) {
+			t.Parallel()
+
+			tree := scriptedTree()
+			tree[apiFile] = &fstest.MapFile{Data: []byte(usingAPI)}
+			units := unitsOf(t, recordedLoad(t, ledger.NewMem(), loaded(t, tree, nil)).Load(t.Context()))
+			assert.Equal(t, units[0].Uses, []symbol.Identity{usedID}, "the API package uses the declaration")
+		})
+
 		t.Run("returns ErrDamaged for a row that does not decode", func(t *testing.T) {
 			t.Parallel()
 
@@ -214,6 +237,25 @@ func TestLoadState(t *testing.T) {
 			doors, err := recordedLoad(t, ledger.NewMem(), report).Load(t.Context()).Doors(frontendtest.ScriptedID)
 			assert.NoError(t, err, "the doors read")
 			assert.Equal(t, doors, report.Doors[frontendtest.ScriptedID], "the partition's record returns whole")
+		})
+
+		t.Run("returns the uses of a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, err := load.Load(t.Context(), load.Config{
+				FS: fstest.MapFS{apiFile: {Data: []byte(usingAPI)}},
+				Stores: map[string]fs.FS{
+					frontendtest.ScriptedStore: fstest.MapFS{usedMember: {Data: []byte(usedSource)}},
+				},
+				Frontends: []plugin.Frontend{frontendtest.NewScriptedDependent()},
+				Sink:      diag.NewSink(),
+				Brand:     loadBrand,
+			})
+			assert.NoError(t, err, "the tree loads")
+			doors, err := recordedLoad(t, ledger.NewMem(), report).Load(t.Context()).Doors(frontendtest.ScriptedID)
+			assert.NoError(t, err, "the doors read")
+			assert.Length(t, doors, 2, "the partition and the round of the use")
+			assert.Equal(t, doors[1].Uses, []symbol.Identity{usedID}, "the first round passed the use")
 		})
 
 		t.Run("returns nothing for a frontend the record lacks", func(t *testing.T) {

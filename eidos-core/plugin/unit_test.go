@@ -62,6 +62,13 @@ const (
 // carrierAt is the position of the carriers of the attachment cases.
 var carrierAt = position.Pos{File: "svc/store/row.go", Line: carrierLine}
 
+// The uses of the use cases: two declarations of a package of a
+// dependency, which a reference of the unit can resolve to.
+var (
+	usedRow = symbol.Identity{Lang: "golang", Package: "example.test/lib", Name: "Row"}
+	usedCol = symbol.Identity{Lang: "golang", Package: "example.test/lib", Name: "Col"}
+)
+
 // The subject of the refusal cases, which the model cannot address, and
 // the separator of the path of a marker in their findings.
 const (
@@ -177,6 +184,9 @@ const (
 	// attachment or a stamp in a unit. The record allocates the list of
 	// records.
 	firstRecordAllocs = 1
+	// firstUseAllocs is the count for the first use of a unit. Use
+	// allocates the set of uses and its first group.
+	firstUseAllocs = 2
 )
 
 // The fixtures that the allocation checks and the benchmarks read and
@@ -340,6 +350,41 @@ func TestSourceUnit(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, unitOf(t, unitTree()).Brand(), unitBrand, "the brand is the constructed one")
+		})
+	})
+
+	t.Run("Use", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps the language, the package and the name of a use", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			u.Use(symbol.Identity{
+				Lang: usedRow.Lang, Package: usedRow.Package, Owner: "Table", Name: usedRow.Name,
+				Kind: symbol.KindStruct, Disc: "(int)",
+			})
+			assert.Equal(t, u.Uses(), []symbol.Identity{usedRow}, "a use is a bare identity")
+		})
+	})
+
+	t.Run("Uses", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the uses sorted without repeats", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			u.Use(usedRow)
+			u.Use(usedCol)
+			u.Use(usedRow)
+			assert.Equal(t, u.Uses(), []symbol.Identity{usedCol, usedRow}, "each use once, in identity order")
+		})
+
+		t.Run("returns no use for a unit that records none", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, unitOf(t, unitTree()).Uses(), "the unit records no use")
 		})
 	})
 
@@ -1489,6 +1534,15 @@ func TestSourceUnitAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { held = u.AttachSugar(recordSubject, foreign, unitCode) }, 0,
 		"AttachSugar allocates nothing for a marker outside the brand")
 	assert.False(t, held, "AttachSugar reports a marker outside the brand as metadata")
+
+	assert.MaxAllocsWithSetup(t, fresh, func(fu *plugin.SourceUnit) { fu.Use(usedRow) }, firstUseAllocs,
+		"Use allocates the set of uses at the first use of the unit")
+	again := fresh()
+	again.Use(usedRow)
+	assert.MaxAllocs(t, func() { again.Use(usedRow) }, 0, "Use allocates nothing for a use that it recorded before")
+	var uses []symbol.Identity
+	assert.MaxAllocs(t, func() { uses = u.Uses() }, 0, "Uses allocates nothing for a unit without uses")
+	assert.Nil(t, uses, "Uses returns no use for a unit that records none")
 
 	assert.MaxAllocs(t, func() { u.RefuseCarriers(unitCode, nil, unaddressed) }, 0,
 		"RefuseCarriers allocates nothing for no carriers")

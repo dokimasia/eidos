@@ -614,6 +614,7 @@ func unitRowOf(u load.UnitReport, ref RegionRef) unitRow {
 			Key:      u.Key,
 			Summary:  u.Region.Info(),
 			Imports:  u.Imports,
+			Uses:     u.Region.Uses,
 			Findings: findings,
 		},
 		region: ref,
@@ -672,6 +673,7 @@ func encodeUnit(u unitRow) []byte {
 	e.uvarint(uint64(u.region.Length))
 	e.summary(rec.Summary)
 	e.imports(rec.Imports)
+	e.identities(rec.Uses)
 	e.findings(rec.Findings)
 	return e.buf
 }
@@ -690,6 +692,7 @@ func decodeUnit(row []byte, interned map[string]string) (unitRow, error) {
 	u.region = RegionRef{Segment: d.text(), Offset: d.Int64(), Length: d.Int64()}
 	u.record.Summary = d.summary()
 	u.record.Imports = d.imports()
+	u.record.Uses = d.identities()
 	u.record.Findings = d.findings()
 	if err := d.Err(); err != nil {
 		return unitRow{}, fmt.Errorf("%w: a unit's row does not decode: %w", ErrDamaged, err)
@@ -714,6 +717,7 @@ func encodeDoor(door load.DoorRecord) []byte {
 		e.text(n.Path)
 		e.texts(n.From)
 	}
+	e.identities(door.Uses)
 	e.uvarint(uint64(len(door.Units)))
 	for _, u := range door.Units {
 		e.refs(u)
@@ -740,6 +744,7 @@ func decodeDoor(row []byte, interned map[string]string) (load.DoorRecord, error)
 			door.Needs[i] = plugin.Need{Path: d.text(), From: d.texts()}
 		}
 	}
+	door.Uses = d.identities()
 	if n := d.Count(); n > 0 {
 		door.Units = make([][]plugin.SourceRef, n)
 		for i := range door.Units {

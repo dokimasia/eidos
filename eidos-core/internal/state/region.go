@@ -20,7 +20,8 @@ import (
 // AppendRegion appends a region's blob to dst: the region's string
 // table, then its body, then a CRC-32C over both. The body is the
 // packages, each through [node.AppendBinary]; the directives and the
-// stamps, each subject in identity order; the links; and the findings.
+// stamps, each subject in identity order; the links; the uses; and the
+// findings.
 // Every string is a number in the region's own table, so a region
 // decodes without any other blob, in a generation or in the memo, and
 // one region encodes to the same bytes on every run.
@@ -140,6 +141,7 @@ func (e *encoder) region(r *store.Region, subjects *[]symbol.Identity) error {
 		e.identities(l.Reached)
 		e.findings(l.Findings)
 	}
+	e.identities(r.Uses)
 	e.findings(r.Findings)
 	return nil
 }
@@ -191,6 +193,7 @@ func (d *decoder) region() *store.Region {
 			r.Links[i] = l
 		}
 	}
+	r.Uses = d.identities()
 	r.Findings = d.findings()
 	return r
 }

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
+	"maps"
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -47,6 +49,9 @@ type SourceUnit struct {
 	sink   *diag.Sink
 	origin diag.Origin
 	graph  *GraphBuilder
+	// uses are the bare identities that [SourceUnit.Use] recorded, nil
+	// until the first use.
+	uses map[symbol.Identity]struct{}
 }
 
 // NewSourceUnit builds a unit for the load driver and the conformance
@@ -116,6 +121,35 @@ func (u *SourceUnit) Brand() string { return u.brand }
 
 // Graph returns the write handle of the unit into the node model.
 func (u *SourceUnit) Graph() *GraphBuilder { return u.graph }
+
+// Use records that a reference of the unit can resolve to a declaration
+// outside the workspace under the bare identity id, which has the
+// language, the package and the name of the declaration and no kind. Use
+// keeps those three parts of id. The load passes each use of a unit once
+// to a dependency round of the frontend that parsed the unit, and the
+// round places a unit that declares it.
+//
+// # Allocation contract
+//
+// Use allocates the set of uses and its first group at the first use of
+// the unit, and the growth of the set for an identity that it records the
+// first time. Use does not allocate for a use that it recorded before.
+func (u *SourceUnit) Use(id symbol.Identity) {
+	if u.uses == nil {
+		u.uses = map[symbol.Identity]struct{}{}
+	}
+	u.uses[symbol.Identity{Lang: id.Lang, Package: id.Package, Name: id.Name}] = struct{}{}
+}
+
+// Uses returns the uses of the unit in identity order, without repeats,
+// and nil for a unit that records none. It allocates the list that it
+// returns, and nothing for a unit without uses.
+func (u *SourceUnit) Uses() []symbol.Identity {
+	if len(u.uses) == 0 {
+		return nil
+	}
+	return slices.SortedFunc(maps.Keys(u.uses), symbol.Identity.Compare)
+}
 
 // Carrier is one directive payload without its marker, with its position
 // and its mark. The kernel grammar parses the payload.

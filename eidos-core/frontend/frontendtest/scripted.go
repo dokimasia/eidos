@@ -67,6 +67,8 @@ type ScriptedOptions struct {
 //	package PATH          the file's package path
 //	import ALIAS PATH...  bind an alias to one or more packages, one
 //	                      import record per path
+//	use PATH NAME         a use of the declaration NAME of the package
+//	                      PATH, which a dependency round places
 //	type NAME REF...      a struct, fields f0..fn typed by the refs
 //	typeparam NAME        a type parameter on the last type
 //	method NAME REF...    a method on the last type, params by ref
@@ -284,6 +286,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string, types
 			for _, imported := range fields[2:] {
 				file.Imports = append(file.Imports, &node.Import{Path: imported, Alias: fields[1], Pos: at})
 			}
+		case fields[0] == "use" && len(fields) == 3:
+			u.Use(symbol.Identity{Lang: ScriptedLang, Package: fields[1], Name: fields[2]})
 		case fields[0] == "type" && len(fields) >= 2:
 			last = &node.Struct{
 				Name: fields[1], Pos: at,
@@ -383,6 +387,12 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string, types
 // A need the store has no scripted file for yields no unit, and the
 // round reports it placed nowhere, so a load without the store loads
 // no dependency and reports every need.
+//
+// A use resolves to the scripted file of its name in the directory of
+// its package, as ext/lib/Used.zz for the use of Used in ext/lib, one
+// unit per use. A use whose file the store lacks yields no unit and no
+// report. A case does not combine a need and a use of one package,
+// because the unit of the need has the file of the use too.
 type ScriptedDependent struct {
 	*Scripted
 }
@@ -396,7 +406,12 @@ func NewScriptedDependent() *ScriptedDependent {
 // Dependencies returns one unit per need whose directory the store
 // lists, its members the directory's scripted files in name order, and
 // reports every other need placed nowhere: the store absent, the
-// directory absent, or a directory without a scripted file.
+// directory absent, or a directory without a scripted file. It then
+// returns one unit per use whose file the store has, with that file as
+// its member.
+//
+// Error modes: the error of a listing or a read of the store for a
+// cause other than an absent store or an absent file.
 func (*ScriptedDependent) Dependencies(
 	_ context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
@@ -425,6 +440,17 @@ func (*ScriptedDependent) Dependencies(
 			continue
 		}
 		out = append(out, members)
+	}
+	for _, use := range round.Uses {
+		member := plugin.StorePath(ScriptedStore, path.Join(use.Package, use.Name+scriptedExt))
+		_, err := r.Read(member)
+		switch {
+		case errors.Is(err, plugin.ErrStoreAbsent), errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			return nil, err
+		}
+		out = append(out, []plugin.SourceRef{{Path: member}})
 	}
 	return out, nil
 }

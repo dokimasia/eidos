@@ -196,7 +196,7 @@ func BenchmarkRegion(b *testing.B) {
 // fullRegion returns a region with a value in every part: two packages,
 // a directive with a nested argument on two subjects, a stamp of every
 // value type of the fact vocabulary, a link with tiers, a follow and a
-// finding, and a finding of the region's own.
+// finding, a use, and a finding of the region's own.
 func fullRegion() *store.Region {
 	s := coretest.Struct(coretest.StorePath, "Store")
 	at := position.Pos{File: "svc/store/unit.go", Line: 3, Col: 1}
@@ -231,6 +231,7 @@ func fullRegion() *store.Region {
 			Followed: []symbol.Identity{s.ID},
 			Findings: []diag.Diag{finding},
 		}},
+		Uses:     []symbol.Identity{{Lang: s.ID.Lang, Package: coretest.CachePath, Name: "Entry"}},
 		Findings: []diag.Diag{finding},
 	}
 }

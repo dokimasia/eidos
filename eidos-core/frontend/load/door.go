@@ -13,6 +13,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // listingMark ends the path of a listing in a door's record. No file's
@@ -30,14 +31,17 @@ type Digested struct {
 
 // DoorRecord is what a partition or a dependency round read and
 // returned: each path it read or listed with the digest of the bytes or
-// the listing, a round's needs, the units it returned, and the findings
-// it reported.
+// the listing, a round's needs and uses, the units it returned, and the
+// findings it reported.
 type DoorRecord struct {
 	// Round is zero for the partition, and the round's number for a
 	// dependency round.
 	Round int
 	Reads []Digested
 	Needs []plugin.Need
+	// Uses are the uses that the round passed, in identity order. A
+	// partition passes none.
+	Uses  []symbol.Identity
 	Units [][]plugin.SourceRef
 	// Findings are the needs a round reported it placed nowhere, each a
 	// warning under [UnplacedNeed]. A partition reports none.

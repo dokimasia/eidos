@@ -71,6 +71,30 @@ const (
 	extSelection     = "ext/**/*.zz"
 )
 
+// The use tree: a workspace file that uses a declaration of a package of
+// the store, whose file uses a second declaration of that package.
+const (
+	usedPackage = "ext/used"
+	usedName    = "Used"
+	usedFile    = "ext/used/Used.zz"
+	deeperName  = "Deeper"
+	deeperFile  = "ext/used/Deeper.zz"
+)
+
+// The file of a second unit of the workspace, in a directory of its own,
+// and its package.
+const (
+	webFile = "svc/web/main.zz"
+	webPath = "svc/web"
+)
+
+// The uses of the use tree: the declaration that the workspace uses, and
+// the declaration that it uses in turn.
+var (
+	usedID   = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: usedPackage, Name: usedName}
+	deeperID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: usedPackage, Name: deeperName}
+)
+
 // The names a case composes a second frontend under, another
 // language's name, and the shared input only that frontend declares.
 const (
@@ -174,6 +198,36 @@ func TestDependency(t *testing.T) {
 			warm := loadOf(t, depTree(), with(rec), stores(grown), func(cfg *load.Config) { cfg.Prior = prior })
 			assert.NotEmpty(t, rec.rounds, "the listing of the library's directory moved")
 			assertSameLoad(t, warm, loadOf(t, depTree(), with(recorded()), stores(grown)))
+		})
+
+		t.Run("keeps the recorded rounds of an unchanged tree whose units use declarations", func(t *testing.T) {
+			t.Parallel()
+
+			prior := committed(t, loadOf(t, useTree(usedName), with(recorded()), stores(useStore())).report)
+			rec := recorded()
+			warm := loadOf(t, useTree(usedName), with(rec), stores(useStore()),
+				func(cfg *load.Config) { cfg.Prior = prior })
+			assert.Empty(t, rec.rounds, "every round would return its recorded units")
+			assertSameLoad(t, warm, loadOf(t, useTree(usedName), with(recorded()), stores(useStore())))
+		})
+
+		t.Run("runs the rounds again where a unit's uses change", func(t *testing.T) {
+			t.Parallel()
+
+			warm, cold := warmCold(t, useTree(deeperName), useTree(usedName), with(recorded()), stores(useStore()))
+			assertSameLoad(t, warm, cold)
+		})
+
+		t.Run("runs the rounds again where the shared inputs of the workspace change", func(t *testing.T) {
+			t.Parallel()
+
+			prior := committed(t, loadOf(t, depTree(), with(recorded()), stores(depStore())).report)
+			grown := depTree()
+			grown[modFile] = &fstest.MapFile{Data: []byte("mod v1\n")}
+			rec := recorded()
+			warm := loadOf(t, grown, with(rec), stores(depStore()), func(cfg *load.Config) { cfg.Prior = prior })
+			assert.NotEmpty(t, rec.rounds, "the partition declared a shared input that the record lacks")
+			assertSameLoad(t, warm, loadOf(t, grown, with(recorded()), stores(depStore())))
 		})
 	})
 
@@ -389,6 +443,97 @@ func TestDependency(t *testing.T) {
 		})
 	})
 
+	t.Run("uses", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("hands the first round the uses of the workspace's units", func(t *testing.T) {
+			t.Parallel()
+
+			rec := recorded()
+			loadTree(t, useTree(usedName), with(rec), stores(useStore()))
+			assert.Equal(t, rec.rounds[0].Uses, []symbol.Identity{usedID}, "the workspace uses Used")
+		})
+
+		t.Run("hands the first round the uses of every unit in identity order", func(t *testing.T) {
+			t.Parallel()
+
+			tree := useTree(usedName)
+			tree[webFile] = &fstest.MapFile{
+				Data: []byte("package " + webPath + "\nuse " + usedPackage + " " + deeperName + "\n"),
+			}
+			rec := recorded()
+			loadTree(t, tree, with(rec), stores(useStore()))
+			assert.Equal(t, rec.rounds[0].Uses, []symbol.Identity{deeperID, usedID},
+				"the first unit uses Used and the second Deeper")
+		})
+
+		t.Run("hands the first round the uses of a unit that the memo restores", func(t *testing.T) {
+			t.Parallel()
+
+			memo := newRemembered()
+			remember := func(cfg *load.Config) { cfg.Memo = memo }
+			loadOf(t, useTree(usedName), with(recorded()), stores(useStore()), remember)
+			rec := recorded()
+			restored := loadOf(t, useTree(usedName), with(rec), stores(useStore()), remember)
+			assert.Equal(t, unitOf(t, restored.report, appFile).From, load.FromMemo, "the workspace's unit restores")
+			assert.Equal(t, rec.rounds[0].Uses, []symbol.Identity{usedID}, "the region of the unit has its use")
+		})
+
+		t.Run("runs a round for the uses a dependency unit records", func(t *testing.T) {
+			t.Parallel()
+
+			rec := recorded()
+			loadTree(t, useTree(usedName), with(rec), stores(useStore()))
+			assert.Length(t, rec.rounds, 2, "the declaration of the use uses another declaration")
+			assert.Equal(t, rec.rounds[1].Uses, []symbol.Identity{deeperID}, "Used uses Deeper")
+		})
+
+		t.Run("loads the declaration of each use", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, useTree(usedName), with(recorded()), stores(useStore()))
+			coretest.AssertCodes(t, sink)
+			_, held := g.Lookup(declIn(usedPackage, deeperName))
+			assert.True(t, held, "the second round loads the declaration that Used uses")
+		})
+
+		t.Run("passes a use to one round alone", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{appFile: {Data: []byte("package " + appPath + "\nuse " + usedPackage + " " + usedName +
+				"\nuse " + usedPackage + " " + deeperName + "\n")}}
+			rec := recorded()
+			loadTree(t, tree, with(rec), stores(useStore()))
+			assert.Length(t, rec.rounds, 1, "the first round passed the use of Used's unit already")
+			assert.Equal(t, rec.rounds[0].Uses, []symbol.Identity{deeperID, usedID}, "both uses, in identity order")
+		})
+
+		t.Run("records the uses that a round passed", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, useTree(usedName), with(recorded()), stores(useStore()))
+			doors := report.Doors[frontendtest.ScriptedID]
+			assert.Length(t, doors, 3, "the partition and the two rounds")
+			assert.Equal(t, doors[2].Uses, []symbol.Identity{deeperID}, "the second round's record has its uses")
+		})
+
+		t.Run("names no use another frontend's files record", func(t *testing.T) {
+			t.Parallel()
+
+			tree := useTree(usedName)
+			tree[otherFile] = &fstest.MapFile{
+				Data: []byte("package other\nuse " + usedPackage + " " + deeperName + "\n"),
+			}
+			rec := recorded()
+			rec.Sel = []string{serviceSelection}
+			plain := frontendtest.NewScripted()
+			plain.ID = plainID
+			plain.Sel = []string{otherSelection}
+			loadTree(t, tree, with(rec, plain), stores(useStore()))
+			assert.Equal(t, rec.rounds[0].Uses, []symbol.Identity{usedID}, "the round passes its own units' uses")
+		})
+	})
+
 	t.Run("warnUnplaced", func(t *testing.T) {
 		t.Parallel()
 
@@ -552,6 +697,25 @@ func depStore() fstest.MapFS {
 			"\ntype " + libName + " deep." + deepName + "\nconst " + hiddenName + "\n")},
 		deepFile:   {Data: []byte("package " + deepPath + "\ntype " + deepName + " string\n")},
 		unusedFile: {Data: []byte("package ext/unused\ntype Unused string\n")},
+	}
+}
+
+// useTree returns the workspace tree whose one file uses the store's
+// declaration of a name.
+func useTree(name string) fstest.MapFS {
+	return fstest.MapFS{
+		appFile: {Data: []byte("package " + appPath + "\nuse " + usedPackage + " " + name +
+			"\ntype " + appName + " string\n")},
+	}
+}
+
+// useStore returns the store whose declaration Used uses its declaration
+// Deeper.
+func useStore() fstest.MapFS {
+	return fstest.MapFS{
+		usedFile: {Data: []byte("package " + usedPackage + "\nuse " + usedPackage + " " + deeperName +
+			"\ntype " + usedName + " string\n")},
+		deeperFile: {Data: []byte("package " + usedPackage + "\ntype " + deeperName + " string\n")},
 	}
 }
 

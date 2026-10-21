@@ -56,6 +56,9 @@ type UnitRecord struct {
 	// Imports are the imports the unit's files name, sorted by path:
 	// what the unit adds to a dependency round's needs.
 	Imports []Import
+	// Uses are the uses of the unit's region, in identity order: what the
+	// unit adds to a dependency round's uses.
+	Uses []symbol.Identity
 	// Findings are every finding the unit's region records, its links'
 	// included, which a run that keeps the region reports again.
 	Findings []diag.Diag

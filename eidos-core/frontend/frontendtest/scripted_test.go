@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -35,6 +36,17 @@ const (
 	builtinName   = "int"
 	typeParamName = "T"
 )
+
+// The declaration of the use cases, and its file in the store of the
+// dependent role, which declares it alone.
+const (
+	usedName   = "Used"
+	usedMember = "ext/lib/Used.zz"
+	usedSource = "package ext/lib\ntype Used string\n"
+)
+
+// usedID is the bare identity of the declaration of the use cases.
+var usedID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: extPath, Name: usedName}
 
 // The spellings at each end of the capital range, which is where a
 // resolver's own bound decides whether a bare name is its package's.
@@ -150,6 +162,17 @@ func TestScripted(t *testing.T) {
 			assert.Length(t, gb.Scopes(), 1, "the bindings are recorded")
 			assert.Length(t, gb.Attachments(), 1, "the directive statement is recorded")
 			assert.Length(t, gb.StampRecords(), 1, "the stamp is recorded")
+		})
+
+		t.Run("records the use of a use statement", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			source := "package svc\nuse " + extPath + " " + usedName + "\n"
+			u, sink := unitOver(f, fstest.MapFS{svcFile: {Data: []byte(source)}}, svcFile)
+			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, u.Uses(), []symbol.Identity{usedID}, "the statement names the package and the declaration")
 		})
 
 		t.Run("lowers a type parameter onto the last type", func(t *testing.T) {
@@ -476,6 +499,50 @@ func TestScripted(t *testing.T) {
 
 			store := failingFS{tree: fstest.MapFS{extMember: {Data: []byte(extSource)}}, fail: extPath}
 			_, err := f.Dependencies(t.Context(), roundOf(extPath), storeReader{fsys: withStore(store)})
+			assert.ErrorIs(t, err, fs.ErrPermission, "the error is the store's own")
+		})
+
+		t.Run("returns the file of a use as one unit", func(t *testing.T) {
+			t.Parallel()
+
+			store := withStore(fstest.MapFS{
+				extMember:  {Data: []byte(extSource)},
+				usedMember: {Data: []byte(usedSource)},
+			})
+			round := &plugin.DependencyRound{Number: 1, Uses: []symbol.Identity{usedID}}
+			units, err := f.Dependencies(t.Context(), round, storeReader{fsys: store})
+			assert.NoError(t, err, "the round reads the store")
+			want := [][]plugin.SourceRef{{{Path: plugin.StorePath(frontendtest.ScriptedStore, usedMember)}}}
+			assert.Equal(t, units, want, "the unit has the file of the declaration alone")
+		})
+
+		uses := []struct {
+			name  string
+			store fs.FS
+		}{
+			{name: "returns no unit for a use whose file the store lacks", store: withStore(fstest.MapFS{
+				extMember: {Data: []byte(extSource)},
+			})},
+			{name: "returns no unit for a use in a load without the store", store: fstest.MapFS{}},
+		}
+		for _, tt := range uses {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				round := &plugin.DependencyRound{Number: 1, Uses: []symbol.Identity{usedID}}
+				units, err := f.Dependencies(t.Context(), round, storeReader{fsys: tt.store})
+				assert.NoError(t, err, "a use without a file fails nothing")
+				expect.Empty(t, units, "no unit declares the use")
+				expect.Empty(t, round.Unplaced(), "a use is not reported")
+			})
+		}
+
+		t.Run("returns a read's own error for a use", func(t *testing.T) {
+			t.Parallel()
+
+			store := failingFS{tree: fstest.MapFS{usedMember: {Data: []byte(usedSource)}}, fail: usedMember}
+			round := &plugin.DependencyRound{Number: 1, Uses: []symbol.Identity{usedID}}
+			_, err := f.Dependencies(t.Context(), round, storeReader{fsys: withStore(store)})
 			assert.ErrorIs(t, err, fs.ErrPermission, "the error is the store's own")
 		})
 	})

@@ -233,8 +233,11 @@ type unit struct {
 	sink   *diag.Sink
 	src    *plugin.SourceUnit
 	region *store.Region
-	// imports are the imports the unit's files name.
+	// imports are the imports the unit's files name, and uses the uses
+	// that a parsed unit recorded, which the load reads once after the
+	// parse.
 	imports []Import
+	uses    []symbol.Identity
 	// linked are the findings the splice and the assignment reported
 	// about the unit's declarations, and resolved the records of the
 	// references the link resolved through the frontend, by reference.
@@ -855,6 +858,7 @@ func parseAll(ctx context.Context, cfg Config, tree storeTree, units []*unit) er
 				cancel()
 				return
 			}
+			u.uses = u.src.Uses()
 			for _, p := range u.src.Graph().Packages() {
 				if p.Pos.IsZero() && len(p.Files) > 0 && p.Files[0] != nil {
 					p.Pos = p.Files[0].Pos
@@ -1023,15 +1027,16 @@ func (u *unit) warnf(sink *diag.Sink, c diag.Code, at position.Pos, by diag.Orig
 
 // regionOf returns one unit's region: the unit's own package nodes,
 // its attachments resolved to their identities, its references' link
-// record, and every finding its parse and its link reported. A subject
-// on a dropped duplicate attaches to the identity that is kept, and a
-// subject the resolution step never identified is a frontend defect and
-// panics.
+// record, its uses, and every finding its parse and its link reported.
+// A subject on a dropped duplicate attaches to the identity that is
+// kept, and a subject the resolution step never identified is a
+// frontend defect and panics.
 func regionOf(u *unit, ix *index) *store.Region {
 	gb := u.src.Graph()
 	r := &store.Region{
 		Packages: gb.Packages(),
 		Links:    u.number(gb.Packages()),
+		Uses:     u.useList(),
 		Findings: append(slices.Collect(u.sink.All()), u.linked...),
 	}
 	for _, a := range gb.Attachments() {

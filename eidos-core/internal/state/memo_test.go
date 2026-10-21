@@ -40,8 +40,8 @@ const (
 	// put, the entries hit and the entries torn.
 	newMemoAllocs = 4
 	// memoGetAllocs is one hit: the entry's name, the read of its bytes,
-	// and the decoded region.
-	memoGetAllocs = 64
+	// and the decoded region with its list of uses.
+	memoGetAllocs = 65
 	// memoPutAllocs is a first put into a new memo: the entry's name, and
 	// the first group of the map of the regions put.
 	memoPutAllocs = 2

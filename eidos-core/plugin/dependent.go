@@ -6,6 +6,8 @@ package plugin
 import (
 	"context"
 	"io/fs"
+
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Need is one import path that no loaded package of the frontend's
@@ -37,6 +39,14 @@ type DependencyRound struct {
 	// earlier round passed, sorted by path. The first round runs even
 	// when it has none.
 	Needs []Need
+
+	// Uses are the bare identities that the loaded units of the frontend
+	// use and that no earlier round passed, in identity order. A
+	// frontend places a unit that declares each use that it can place. A
+	// use that it cannot place does not yield a unit or a finding,
+	// because a unit records a use for each name that can resolve outside
+	// the workspace.
+	Uses []symbol.Identity
 
 	// Shared lists the shared inputs the frontend's partition declared
 	// on the workspace's units, sorted and without repeats: the build
@@ -78,9 +88,10 @@ type StoreReader interface {
 // declarations outside the workspace tree. After the workspace's units
 // parse, the load calls Dependencies once per round, parses every
 // returned unit at [DepthSignatures], and calls it again with the
-// imports the returned units name. A round after the first runs only
-// when it has a need no earlier round passed, and the rounds end at
-// the first round that returns no unit the load has not loaded.
+// imports and the uses that the returned units name. A round after the
+// first runs only when it has a need or a use that no earlier round
+// passed, and the rounds end at the first round that returns no unit
+// the load has not loaded.
 type Dependent interface {
 	// Dependencies returns the units that declare the round's needs,
 	// grouped as Partition groups, and every unit the language's build
