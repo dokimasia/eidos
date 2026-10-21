@@ -7,15 +7,15 @@ go 1.27.2
 
 require (
 	go.dokimi.dev/assert v0.2.0
-	go.dokimi.dev/eidos/lang v0.2.2
-	go.dokimi.dev/eidos/sdk v0.3.1
+	go.dokimi.dev/eidos/lang v0.2.3
+	go.dokimi.dev/eidos/sdk v0.4.0
 )
 
 require (
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
-	go.dokimi.dev/eidos/core v0.5.0 // indirect
+	go.dokimi.dev/eidos/core v0.6.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
 
