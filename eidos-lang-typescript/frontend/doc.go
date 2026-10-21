@@ -62,14 +62,20 @@
 //
 // The key of a library is its root files, sorted and joined with
 // typescript.LibraryKeySep. Its declarations load into the package of the
-// key in the store. The frontend is in the dependent role. The round places
-// one unit for each library that a shared input of the first round or a
-// need of any round names. A unit is every file of its library, followed
-// through the lib directives of its files, in the order in which
+// key in the store. The files of a library are its root files and each file
+// that a lib directive of its files names, in the order in which
 // typescript-go loads library files. A lib directive at the head of a
-// source file adds its library to the library of that file, and the file
-// imports the package of the extended library. A load without the store
-// has no library.
+// source file adds its library to the library of that file. A load without
+// the store has no library.
+//
+// A unit uses each global name of its library that one of its references
+// can resolve to. The frontend is in the dependent role, and its round
+// places one unit for each use. The unit has the statements of the name in
+// each file of the library, and the store serves them at
+// <key>/<file>#<name>. The global names of a module file of the library
+// share one unit with the statements of those names in the other files.
+// The rounds repeat while a loaded unit has a use that no round passed, so a
+// load contains the declarations of the library that its units use.
 //
 // A member of a library unit declares its script declarations and its
 // declare global blocks into the package of the library. The interfaces of
@@ -219,6 +225,7 @@
 // lang/typescript/frontend imports the sdk facade, the satellite root, its
 // package library, lang/treesitter and its TypeScript grammar,
 // lang/numeric, github.com/tailscale/hujson for the tsconfig chain, and the
-// Go standard library. It runs no tool and reads nothing outside the doors
-// of its units. The conformance corpus and a composition import it.
+// Go standard library. It does not run a tool. Beside the doors of its
+// units it reads the embedded library alone. The conformance corpus and a
+// composition import it.
 package frontend

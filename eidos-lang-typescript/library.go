@@ -10,8 +10,10 @@ import (
 
 // LibraryStore is the name of the store of the declaration files of the
 // TypeScript library. A path inside the store is <key>/<file>, a file of the
-// library of a project, as lib.es2024.d.ts/lib.es5.d.ts. The key of a
-// library is its root files, sorted and joined with [LibraryKeySep], and the
+// library of a project, as lib.es2024.d.ts/lib.es5.d.ts. The path
+// <key>/<file>#<name> is the fragment of the statements of one global name
+// of the file, as lib.es2024.d.ts/lib.es5.d.ts#Error. The key of a library
+// is its root files, sorted and joined with [LibraryKeySep], and the
 // package of its declarations is the qualified path of the key.
 const LibraryStore = "typescript-lib"
 

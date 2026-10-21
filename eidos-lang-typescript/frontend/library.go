@@ -5,10 +5,14 @@ package frontend
 
 import (
 	"cmp"
+	"io/fs"
+	"path"
 	"slices"
 	"strings"
+	"sync"
 
 	"go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript/frontend/library"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
@@ -169,6 +173,102 @@ const (
 // libraryStoreSep separates the key of a library from a file inside the
 // store of the library.
 const libraryStoreSep = "/"
+
+// fragmentSep separates a file of the library store from the global name
+// whose statements its fragment has, as in lib.es5.d.ts#Error.
+const fragmentSep = "#"
+
+// declarations returns the statements of [library.Index] by global name
+// and then by file, each list in the order of its file. The store serves
+// the fragment of a name from it, the dependency round places the unit of
+// a name from it, and the lowering records a use of a name that it
+// contains. It builds the map once for the process. Any number of
+// goroutines may read the map, and none writes it.
+var declarations = sync.OnceValue(func() map[string]map[string][]library.Statement {
+	out := map[string]map[string][]library.Statement{}
+	for file, entry := range library.Index {
+		for _, s := range entry.Statements {
+			if out[s.Name] == nil {
+				out[s.Name] = map[string][]library.Statement{}
+			}
+			out[s.Name][file] = append(out[s.Name][file], s)
+		}
+	}
+	return out
+})
+
+// sources contains the bytes of each embedded file of the library that
+// [sourceOf] read, by the name of the file.
+var sources = struct {
+	sync.Mutex
+	files map[string][]byte
+}{files: map[string][]byte{}}
+
+// sourceOf returns the bytes of an embedded file of the library. It reads
+// each file once for the process, and every caller shares the bytes, which
+// no caller writes. Any number of goroutines may call it.
+//
+// Error modes: sourceOf returns the error of the embed for a file that the
+// release does not have, and for the directory of the library.
+func sourceOf(file string) ([]byte, error) {
+	sources.Lock()
+	defer sources.Unlock()
+	if src, read := sources.files[file]; read {
+		return src, nil
+	}
+	src, err := fs.ReadFile(library.Files, path.Join(library.Dir, file))
+	if err != nil {
+		return nil, err
+	}
+	sources.files[file] = src
+	return src, nil
+}
+
+// keys contains the files of each library that [keyFiles] listed, by the
+// key of the library.
+var keys = struct {
+	sync.Mutex
+	files map[string][]string
+}{files: map[string][]string{}}
+
+// keyFiles returns the files of the library of a key, in the order of
+// [sortLibrary]. The files of a library are its root files, which the key
+// lists, and each file that a lib directive at the head of one of its files
+// refers to, followed to the end. A directive with a name that TypeScript
+// 7.0.2 does not know does not add a file. keyFiles reads the files through
+// [sourceOf] and lists the files of each key once for the process. Any
+// number of goroutines may call it, and no caller writes the list.
+//
+// Error modes: keyFiles returns the error of [sourceOf] for a root that the
+// release does not have.
+func keyFiles(key string) ([]string, error) {
+	keys.Lock()
+	defer keys.Unlock()
+	if files, listed := keys.files[key]; listed {
+		return files, nil
+	}
+	files := strings.Split(key, typescript.LibraryKeySep)
+	seen := make(map[string]bool, len(files))
+	for _, file := range files {
+		seen[file] = true
+	}
+	for i := 0; i < len(files); i++ {
+		src, err := sourceOf(files[i])
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range libReferences(files[i], src) {
+			//dokimi:mutate-skip lcr-right: each directive of the release refers to a library of the table of names
+			if file, known := fileOfLibrary(ref.name); known && !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+	sortLibrary(files)
+	keys.files[key] = files
+	return files, nil
+}
 
 // fileOfLibrary returns the declaration file of the library that an entry
 // of the lib option or a reference directive names: the file of the name,

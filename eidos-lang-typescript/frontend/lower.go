@@ -36,35 +36,38 @@ const wildcardName = "*"
 
 // lowering is the state of the lowering of one file. It has the unit, the
 // vocabulary of the grammar, the path and the module record of the file,
-// and the File node that the file contributes to each package. It also
-// has the comment walk of the file, the local names that the module
-// publishes through an export clause or a default export, and the number
-// of inline object bodies around the member under lowering, whose members
-// have no identity.
+// and the File node that the file contributes to each package with the
+// scope of the File node. It also has the comment walk of the file, the
+// local names that the module publishes through an export clause or a
+// default export, and the number of inline object bodies around the member
+// under lowering, whose members have no identity.
 //
 // global is the package that a script and a declare global block declare
 // into: the empty path of the global package of the workspace for a source
-// file, and the package of its library for a file of a library, whose
-// syntax errors library leaves unreported. libraryImport is the import of
-// the library that the directives of a source file extend, and nil for none.
-// interfaces are the interfaces that the files of the unit declared so far,
-// by package and name, which a later declaration of one name merges into.
-// The lowering of a source file creates the map with its first interface,
-// and the files of a library share one map.
+// file, and the package of its library for a file of a library. library
+// reports a file of a library, which is a declaration file whose syntax
+// errors the lowering leaves unreported. interfaces are the interfaces that
+// the files of the unit declared so far, by package and name, which a later
+// declaration of one name merges into. The lowering of a source file
+// creates the map with its first interface, and the files of a library
+// share one map. declared contains the identity of each declaration of the
+// unit by package and name where the file records uses, as
+// [lowering.recordUses] states them, and it is nil for a file without a
+// library. The files of a library share one map.
 type lowering struct {
-	u             *plugin.SourceUnit
-	v             *vocabulary
-	tree          *treesitter.Tree
-	path          string
-	module        *module
-	files         map[string]*node.File
-	comments      treesitter.Comments
-	exported      map[string]bool
-	inline        int
-	global        string
-	library       bool
-	libraryImport *node.Import
-	interfaces    map[mergeKey]*node.Interface
+	u          *plugin.SourceUnit
+	v          *vocabulary
+	tree       *treesitter.Tree
+	path       string
+	module     *module
+	files      map[string]fileScope
+	comments   treesitter.Comments
+	exported   map[string]bool
+	inline     int
+	global     string
+	library    bool
+	interfaces map[mergeKey]*node.Interface
+	declared   map[symbol.Identity]bool
 }
 
 // container is where the declarations of one statement list go: the File
@@ -86,11 +89,12 @@ type container struct {
 }
 
 // lower lowers one parsed file into the builder of the unit: the module
-// record, the import of the library of the file, the carriers of the
-// header of a module, every declaration into its package, the mark of a
-// generated file, the carriers that no declaration took, and the syntax
-// errors of a source file. The mark is the first comment of the file where
-// the comment contains [typescript.GeneratedMark].
+// record, the carriers of the header of a module, every declaration into
+// its package, the mark of a generated file, the carriers that no
+// declaration took, and the syntax errors of a source file. The mark is the
+// first comment of the file where the comment contains
+// [typescript.GeneratedMark]. A file of a library is ambient, also where
+// its path is a fragment.
 func (l *lowering) lower(root treesitter.Node) {
 	moduleFile := l.isModule(root)
 	if !moduleFile {
@@ -100,12 +104,9 @@ func (l *lowering) lower(root treesitter.Node) {
 		pkg:     l.module.pkg,
 		public:  !moduleFile,
 		module:  moduleFile,
-		ambient: typescript.DeclarationFile(l.path),
+		ambient: l.library || typescript.DeclarationFile(l.path),
 	}
 	top.file = l.fileIn(top.pkg, nil, root.Pos())
-	if l.libraryImport != nil {
-		top.file.Imports = append(top.file.Imports, l.libraryImport)
-	}
 	if first := root.FirstOf(l.v.comment); first.PrevNamedSibling().IsZero() &&
 		bytes.Contains(first.Bytes(), []byte(typescript.GeneratedMark)) {
 
@@ -170,7 +171,7 @@ func (l *lowering) isModule(root treesitter.Node) bool {
 // record, the package, and the packages around it.
 func (l *lowering) fileIn(pkg string, outer []string, at position.Pos) *node.File {
 	if f, met := l.files[pkg]; met {
-		return f
+		return f.file
 	}
 	gb := l.u.Graph()
 	p := gb.Package(pkg)
@@ -179,8 +180,9 @@ func (l *lowering) fileIn(pkg string, outer []string, at position.Pos) *node.Fil
 	}
 	f := &node.File{Path: l.path, Pos: at}
 	p.Files = append(p.Files, f)
-	gb.Scope(f, &scope{module: l.module, own: pkg, outer: outer})
-	l.files[pkg] = f
+	sc := &scope{module: l.module, own: pkg, outer: outer}
+	gb.Scope(f, sc)
+	l.files[pkg] = fileScope{file: f, scope: sc}
 	return f
 }
 

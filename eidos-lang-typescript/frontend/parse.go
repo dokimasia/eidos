@@ -19,6 +19,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/position"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // manifest is the part of a package.json that the frontend reads: the name
@@ -42,8 +43,9 @@ var workspaceGlobals = []string{""}
 // under [BadConfig], and the files that it governs resolve through neither a
 // baseUrl nor paths. Every package of the unit has the module of the
 // package.json of the member. The global scope of the file is the global
-// package of the workspace and the library of the file, as
-// [tsFrontend.globalsOf] states it.
+// package of the workspace and the library of the file, as [globalsOf]
+// states it. After a member with a library lowers, the unit records its
+// uses, as [lowering.recordUses] states them.
 func (f *tsFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 	if key, _, isLibrary := libraryPath(u.Files()[0].Path); isLibrary {
 		return f.parseLibrary(ctx, u, key)
@@ -58,17 +60,20 @@ func (f *tsFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 		if err != nil {
 			return err
 		}
-		globals, imported := globalsOf(u, ref, src)
+		globals := globalsOf(u, ref, src)
 		l := &lowering{
 			u: u, v: v, tree: tree, path: ref.Path,
-			module:        newModule(ref.Path, resolutionOf(u, ref), globals),
-			files:         map[string]*node.File{},
-			comments:      v.comments,
-			exported:      map[string]bool{},
-			libraryImport: imported,
+			module:   newModule(ref.Path, resolutionOf(u, ref), globals),
+			files:    map[string]fileScope{},
+			comments: v.comments,
+			exported: map[string]bool{},
+		}
+		if typescript.Library(globals[len(globals)-1]) {
+			l.declared = map[symbol.Identity]bool{}
 		}
 		l.lower(tree.Root())
 		tree.Close()
+		l.recordUses()
 	}
 	name, root := moduleOf(u)
 	gb := u.Graph()
@@ -79,11 +84,14 @@ func (f *tsFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 }
 
 // parseLibrary loads the members of a library unit into the package of its
-// library, the qualified path of key. It parses the trees of the members
-// concurrently, at most one parse for each processor, and lowers them one
-// after another in the order of the unit, so an interface of more than one
-// member merges in that order. It reports no syntax error, because the
-// author of the workspace cannot change the library.
+// library, the qualified path of key. A member is a file of the library or
+// the fragment of a global name of a file. It parses the trees of the
+// members concurrently, at most one parse for each processor, and lowers
+// them one after another in the order of the unit, so an interface of more
+// than one member merges in that order. It does not report a syntax error,
+// because the author of the workspace cannot change the library. After
+// every member lowers, the unit records the uses of each member, as
+// [lowering.recordUses] states them.
 //
 // Error modes: parseLibrary returns the error of a member that does not
 // read, and the error of the context.
@@ -121,36 +129,41 @@ func (f *tsFrontend) parseLibrary(ctx context.Context, u *plugin.SourceUnit, key
 	}
 	pkg := plugin.StorePath(typescript.LibraryStore, key)
 	interfaces := map[mergeKey]*node.Interface{}
+	declared := map[symbol.Identity]bool{}
+	lowerings := make([]*lowering, 0, len(files))
 	for i, ref := range files {
 		l := &lowering{
 			u: u, v: f.ts, tree: trees[i], path: ref.Path,
 			module:     newModule(ref.Path, resolution{}, []string{pkg}),
-			files:      map[string]*node.File{},
+			files:      map[string]fileScope{},
 			comments:   f.ts.comments,
 			exported:   map[string]bool{},
 			global:     pkg,
 			library:    true,
 			interfaces: interfaces,
+			declared:   declared,
 		}
 		l.lower(trees[i].Root())
 		trees[i].Close()
 		trees[i] = nil
+		lowerings = append(lowerings, l)
+	}
+	for _, l := range lowerings {
+		l.recordUses()
 	}
 	return nil
 }
 
-// globalsOf returns the packages of the global scope of a source file, and
-// the import of its library where its directives extend the library. The
-// global scope is the global package of the workspace, and then the package
-// of the library of the file where the load provides the library: the key
-// of the shared input of the library that the partition declared. A lib
-// directive at the head of the file adds the files of its library to the
-// library of the file. The file then imports the package of the extended
-// library, at the position of the first directive that extends it, so the
-// dependency round places it. A directive with a name that TypeScript 7.0.2
-// does not know reports under [UnknownLibrary]. A file without a library
-// reads no directive, because the options of its project select none.
-func globalsOf(u *plugin.SourceUnit, ref plugin.SourceRef, src []byte) ([]string, *node.Import) {
+// globalsOf returns the packages of the global scope of a source file: the
+// global package of the workspace, and then the package of the library of
+// the file where the load provides the library. The library of the file is
+// the key of the shared input of the library that the partition declared.
+// A lib directive at the head of the file adds the files of its library to
+// the library of the file, and the root files of the extended library form
+// its key, sorted. A directive with a name that TypeScript 7.0.2 does not
+// know reports under [UnknownLibrary]. A file without a library reads no
+// directive, because the options of its project select none.
+func globalsOf(u *plugin.SourceUnit, ref plugin.SourceRef, src []byte) []string {
 	key := ""
 	for _, s := range ref.Shared {
 		if k, _, isLibrary := libraryPath(s); isLibrary {
@@ -158,10 +171,9 @@ func globalsOf(u *plugin.SourceUnit, ref plugin.SourceRef, src []byte) ([]string
 		}
 	}
 	if key == "" {
-		return workspaceGlobals, nil
+		return workspaceGlobals
 	}
 	roots := strings.Split(key, typescript.LibraryKeySep)
-	var at position.Pos
 	for _, d := range libReferences(ref.Path, src) {
 		file, known := fileOfLibrary(d.name)
 		switch {
@@ -171,17 +183,10 @@ func globalsOf(u *plugin.SourceUnit, ref plugin.SourceRef, src []byte) ([]string
 				library.Release)
 		case !slices.Contains(roots, file):
 			roots = append(roots, file)
-			if at.IsZero() {
-				at = d.pos
-			}
 		}
 	}
-	if at.IsZero() {
-		return []string{"", plugin.StorePath(typescript.LibraryStore, key)}, nil
-	}
 	slices.Sort(roots)
-	pkg := plugin.StorePath(typescript.LibraryStore, strings.Join(roots, typescript.LibraryKeySep))
-	return []string{"", pkg}, &node.Import{Pos: at, Path: pkg}
+	return []string{"", plugin.StorePath(typescript.LibraryStore, strings.Join(roots, typescript.LibraryKeySep))}
 }
 
 // resolutionOf reads the tsconfig chain of a member through the door of

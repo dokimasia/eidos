@@ -171,20 +171,6 @@ func (r countingReader) Read(path string) ([]byte, error) {
 	return r.tree.ReadFile(path)
 }
 
-// countingStoreReader reads a tree with stores and counts the reads of each
-// path.
-type countingStoreReader struct {
-	tree  fs.FS
-	reads map[string]int
-}
-
-// Read counts the read of path and returns the bytes of the file of the
-// workspace or of a store.
-func (r countingStoreReader) Read(path string) ([]byte, error) {
-	r.reads[path]++
-	return plugin.ReadFile(r.tree, path)
-}
-
 // partitioned partitions every file of a tree through the frontend.
 func partitioned(tb testing.TB, tree fstest.MapFS, claimed ...string) [][]plugin.SourceRef {
 	tb.Helper()

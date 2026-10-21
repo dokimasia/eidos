@@ -33,6 +33,15 @@ const (
 	unparsedCode = "TYPESCRIPT-0001"
 )
 
+// The global name of the library that the whole-contract fixture uses,
+// which ES5 alone declares, and the statement of its fragment in the fake
+// library.
+const (
+	propertyKeyName  = "PropertyKey"
+	fakePropertyKey  = "type PropertyKey = string;\n"
+	fakePropertyPath = defaultRoot + "/" + es5Root + "#" + propertyKeyName
+)
+
 // newAllocs is the frontend that New returns: the state of the frontend
 // with its two vocabularies and its parse hook, the three closures of the
 // comment walk of each vocabulary, the version, the two of the syntax, the
@@ -228,12 +237,12 @@ func benchCall(b *testing.B, tt allocCall) {
 }
 
 // tsTree is the whole-contract fixture: two modules and a reference
-// between them, a carrier, a test file, a signature root, a file that
-// does not parse, and a barrel module that re-exports what another
-// module declares.
+// between them, a reference to the library, a carrier, a test file, a
+// signature root, a file that does not parse, and a barrel module that
+// re-exports what another module declares.
 func tsTree() fstest.MapFS {
 	return fstest.MapFS{
-		"api/user.ts": {Data: []byte("export interface User {\n  name: string;\n}\n")},
+		"api/user.ts": {Data: []byte("export interface User {\n  name: string;\n  key: PropertyKey;\n}\n")},
 		"store/row.ts": {Data: []byte("import { User } from '../api/user';\n\n" +
 			"/** Row is one record. */\n// +fixture:gen:table name=rows\n" +
 			"export class Row {\n  owner: User;\n  count: number;\n" +
@@ -249,11 +258,14 @@ func tsTree() fstest.MapFS {
 }
 
 // setup is the suite's entry over the whole-contract fixture, beside the
-// fake library store of the default key.
+// fake library store of the default key with the fragment of PropertyKey,
+// which the fixture uses.
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+	library := fakeLibrary()
+	library[fakePropertyPath] = &fstest.MapFile{Data: []byte(fakePropertyKey)}
 	return frontend.New(), &frontendtest.Fixture{
 		Sources:    tsTree(),
-		Stores:     map[string]fs.FS{typescript.LibraryStore: fakeLibrary()},
+		Stores:     map[string]fs.FS{typescript.LibraryStore: library},
 		Empty:      fstest.MapFS{"empty/empty.ts": {Data: []byte("export {};\n")}},
 		Signatures: []string{depRoot},
 		Dropped: []symbol.Identity{

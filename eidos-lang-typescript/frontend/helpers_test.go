@@ -80,6 +80,26 @@ func (r roundReader) Read(p string) ([]byte, error) { return plugin.ReadFile(r.t
 // store.
 func (r roundReader) ReadDir(p string) ([]fs.DirEntry, error) { return plugin.ReadDir(r.tree, p) }
 
+// countingStoreReader is the door of a partition and of a dependency round
+// over a tree with stores, which counts the reads of each path.
+type countingStoreReader struct {
+	tree  fs.FS
+	reads map[string]int
+}
+
+// Read counts the read of path and returns the bytes of the file of the
+// workspace or of a store.
+func (r countingStoreReader) Read(path string) ([]byte, error) {
+	r.reads[path]++
+	return plugin.ReadFile(r.tree, path)
+}
+
+// ReadDir returns the entries of one directory from the workspace or a
+// store, and counts no read.
+func (r countingStoreReader) ReadDir(p string) ([]fs.DirEntry, error) {
+	return plugin.ReadDir(r.tree, p)
+}
+
 // failingFS is a file system in which one path fails to open with
 // errBroken, an error that differs from the error of a missing file.
 type failingFS struct {
@@ -134,6 +154,30 @@ func partitionedThrough(tb testing.TB, tree storeTree, claimed ...string) [][]pl
 	units, err := frontend.New().Partition(tb.Context(), refs, roundReader{tree})
 	assert.NoError(tb, err, "the tree partitions")
 	return units
+}
+
+// runRound runs a round through a TypeScript frontend over the door r of a
+// workspace and its stores, under the context of the test, and returns the
+// units of the round.
+func runRound(tb assert.TB, r plugin.StoreReader, round *plugin.DependencyRound) ([][]plugin.SourceRef, error) {
+	tb.Helper()
+
+	dependent, depends := frontend.New().(plugin.Dependent)
+	assert.True(tb, depends, "the TypeScript frontend is a dependent")
+	return dependent.Dependencies(assert.Context(tb), round, r)
+}
+
+// membersOf returns the member paths of each unit.
+func membersOf(units [][]plugin.SourceRef) [][]string {
+	out := make([][]string, 0, len(units))
+	for _, unit := range units {
+		members := make([]string, 0, len(unit))
+		for _, ref := range unit {
+			members = append(members, ref.Path)
+		}
+		out = append(out, members)
+	}
+	return out
 }
 
 // parsedWithLibrary partitions src/a.ts of a workspace beside the embedded

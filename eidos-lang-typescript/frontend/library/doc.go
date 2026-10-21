@@ -11,12 +11,17 @@
 // satellite serves them as its library store, so every machine loads one
 // library.
 //
+// [Index] is the statements of the global names of each file, as the
+// grammar of TypeScript reads them. A load slices the statements of one name
+// out of a file without a parse.
+//
 // # Licence
 //
 // Microsoft licenses the files under the Apache License 2.0. LICENSE beside
 // this file reproduces the licence. NOTICE.txt reproduces the notices of the
 // release, which cover the W3C and WHATWG texts of the DOM library. A refresh
-// of the library copies the files of a newer release and changes [Release].
+// of the library copies the files of a newer release, changes [Release], and
+// runs the spec of [Index] with -update.
 //
 // # Dependency position
 //

@@ -8,7 +8,11 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
+	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -56,6 +60,10 @@ const (
 	shopModule      = "@acme/shop"
 	generatedHeader = "// " + typescript.GeneratedMark + " by protoc-gen-ts\n"
 )
+
+// descriptorName is an interface that ES5 declares without declare, so
+// only the file of the library makes it ambient.
+const descriptorName = "PropertyDescriptor"
 
 // The canonical scale every layer benches at: 1000 packages of 10 files
 // of 20 declarations, 200k declarations in all. A TypeScript unit is one
@@ -251,6 +259,14 @@ func TestParse(t *testing.T) {
 			assert.False(t, stamped, "the frontend reads the mark in the first comment alone")
 		})
 
+		t.Run("stamps nothing on a file whose first comment follows a statement", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, exportClass+generatedHeader)
+			_, stamped := stampOn(gb, fileIn(t, gb, aPackage), typescript.GeneratedKey)
+			assert.False(t, stamped, "the mark of a generator opens a file")
+		})
+
 		t.Run("returns the context's error for a done context", func(t *testing.T) {
 			t.Parallel()
 
@@ -313,6 +329,17 @@ func TestParse(t *testing.T) {
 			assert.Equal(t, nameOf(global.Files[0].Decls[0]), "IteratorObject", "the interface of the global block")
 		})
 
+		t.Run("stamps typescript.ambient on a declaration of a fragment of the library", func(t *testing.T) {
+			t.Parallel()
+
+			fragment := plugin.StorePath(typescript.LibraryStore, defaultRoot+"/"+es5Root+"#"+descriptorName)
+			gb, _ := parsedLibrary(t, storeTree{fstest.MapFS{}, realStores(t)}, fragment)
+			iface := named[*node.Interface](t, packageIn(t, gb, defaultPackage).Files[0].Decls, descriptorName)
+			ambient, stamped := stampOn(gb, iface, typescript.AmbientKey)
+			assert.True(t, stamped, "an interface of the library without declare is implemented elsewhere")
+			assert.Equal(t, ambient, any(true), "the stamp is set")
+		})
+
 		t.Run("does not report a syntax error of a member of a library", func(t *testing.T) {
 			t.Parallel()
 
@@ -372,7 +399,65 @@ func TestParse(t *testing.T) {
 			}
 			assert.Empty(t, got, "the grammar parses each construct of the library")
 		})
+
+		t.Run("lowers the units of the default library as the whole library lowers", func(t *testing.T) {
+			t.Parallel()
+
+			golden, err := os.ReadFile(filepath.Join("testdata", defaultOrderFile))
+			assert.NoError(t, err, "the golden order reads")
+			tree := storeTree{fstest.MapFS{}, realStores(t)}
+			order := strings.Fields(string(golden))
+			whole := make([]string, 0, len(order))
+			names := map[string]bool{}
+			for _, file := range order {
+				whole = append(whole, plugin.StorePath(typescript.LibraryStore, defaultRoot+"/"+file))
+				for _, s := range library.Index[file].Statements {
+					names[s.Name] = true
+				}
+			}
+			round := &plugin.DependencyRound{Number: 1}
+			for _, name := range slices.Sorted(maps.Keys(names)) {
+				round.Uses = append(round.Uses, id(defaultPackage, name))
+			}
+			units, err := runRound(t, roundReader{tree}, round)
+			assert.NoError(t, err, "the round places the units of the names")
+			got := map[string][]string{}
+			for _, members := range membersOf(units) {
+				gb, _ := parsedLibrary(t, tree, members...)
+				declsWithoutPositions(t, gb, got)
+			}
+			gb, _ := parsedLibrary(t, tree, whole...)
+			want := map[string][]string{}
+			declsWithoutPositions(t, gb, want)
+			for _, decls := range got {
+				slices.Sort(decls)
+			}
+			for _, decls := range want {
+				slices.Sort(decls)
+			}
+			assert.Equal(t, got, want, "the units declare what the whole library declares, in each package")
+		})
 	})
+}
+
+// positionField matches the position of a symbol in the JSON of the node
+// model.
+var positionField = regexp.MustCompile(`"pos":\{[^{}]*\}`)
+
+// declsWithoutPositions adds the JSON of each declaration of a builder to
+// the list of its package in decls, without the position of any symbol.
+func declsWithoutPositions(tb testing.TB, gb *plugin.GraphBuilder, decls map[string][]string) {
+	tb.Helper()
+
+	for _, p := range gb.Packages() {
+		for _, f := range p.Files {
+			for _, d := range f.Decls {
+				b, err := node.EncodeJSON(d)
+				assert.NoError(tb, err, "the declaration encodes")
+				decls[p.ID.Package] = append(decls[p.ID.Package], string(positionField.ReplaceAll(b, nil)))
+			}
+		}
+	}
 }
 
 // parsedLibrary parses a unit of the members of a library at signature

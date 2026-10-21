@@ -4,9 +4,10 @@
 package frontend_test
 
 import (
+	"maps"
 	"os"
-	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -15,6 +16,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
+	"go.dokimi.dev/eidos/lang/typescript/frontend/library"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
@@ -209,19 +211,19 @@ func TestLibrary(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
-			name      string
-			giveInput string
-			wantFile  string
+			name     string
+			giveKey  string
+			wantFile string
 		}{
 			{
-				name:      "returns the files of the default library in the load order of tsc 7.0.2",
-				giveInput: defaultInput,
-				wantFile:  defaultOrderFile,
+				name:     "returns the statements of each global name of the default library in the order of tsc 7.0.2",
+				giveKey:  defaultRoot,
+				wantFile: defaultOrderFile,
 			},
 			{
-				name:      "returns the files of the library of ES2015 in the load order of tsc 7.0.2",
-				giveInput: es6Input,
-				wantFile:  es6OrderFile,
+				name:     "returns the statements of each global name of the library of ES2015 in the order of tsc 7.0.2",
+				giveKey:  es6Root,
+				wantFile: es6OrderFile,
 			},
 		}
 		for _, tt := range tests {
@@ -230,14 +232,33 @@ func TestLibrary(t *testing.T) {
 
 				golden, err := os.ReadFile(filepath.Join("testdata", tt.wantFile))
 				assert.NoError(t, err, "the golden order reads")
-				units, _, err := runRound(t, storeTree{fstest.MapFS{}, realStores(t)}, []string{tt.giveInput}, 1)
-				assert.NoError(t, err, "the round places the library")
-				assert.Length(t, units, 1, "the library is one unit")
-				got := make([]string, 0, len(units[0]))
-				for _, ref := range units[0] {
-					got = append(got, path.Base(ref.Path))
+				order := strings.Fields(string(golden))
+				fragments := map[string][]string{}
+				for _, file := range order {
+					for _, s := range library.Index[file].Statements {
+						member := plugin.StorePath(typescript.LibraryStore, tt.giveKey+"/"+file+"#"+s.Name)
+						if !slices.Contains(fragments[s.Name], member) {
+							fragments[s.Name] = append(fragments[s.Name], member)
+						}
+					}
 				}
-				assert.Equal(t, got, strings.Fields(string(golden)), "the members in the order of tsc --listFiles")
+				for _, file := range order {
+					if library.Index[file].Module {
+						for _, s := range library.Index[file].Statements {
+							delete(fragments, s.Name)
+						}
+					}
+				}
+				pkg := plugin.StorePath(typescript.LibraryStore, tt.giveKey)
+				round := &plugin.DependencyRound{Number: 1}
+				want := make([][]string, 0, len(fragments))
+				for _, name := range slices.Sorted(maps.Keys(fragments)) {
+					round.Uses = append(round.Uses, id(pkg, name))
+					want = append(want, fragments[name])
+				}
+				units, err := runRound(t, roundReader{storeTree{fstest.MapFS{}, realStores(t)}}, round)
+				assert.NoError(t, err, "the round places the units of the names")
+				assert.Equal(t, membersOf(units), want, "the fragments of each name in the order of tsc --listFiles")
 			})
 		}
 	})

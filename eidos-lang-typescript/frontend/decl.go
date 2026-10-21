@@ -37,7 +37,8 @@ const (
 // takes its comments with it. A function signature of a name that
 // overloaded contains is marked as an overload signature. A declaration
 // whose name does not parse declares nothing, and neither does a
-// statement, so a carrier on one of them is refused.
+// statement, so a carrier on one of them is refused. The package and the
+// name of each declaration join the declarations of the unit.
 func (l *lowering) declaration(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	overloaded map[string]bool,
 ) {
@@ -85,10 +86,20 @@ func (l *lowering) declaration(n treesitter.Node, c container, exported bool, ou
 		return
 	}
 	c.file.Decls = append(c.file.Decls, decl)
+	l.declare(c.pkg, name)
 	if c.ambient {
 		l.mark(decl, typescript.AmbientKey, n.Pos())
 	}
 	l.u.AttachCarriers(decl, parts.Carriers, BadCarrier)
+}
+
+// declare records the declaration of a name in a package among the
+// declarations of the unit, where the file records uses. It records
+// nothing for a file without a library.
+func (l *lowering) declare(pkg, name string) {
+	if l.declared != nil {
+		l.declared[symbol.Identity{Lang: Lang, Package: pkg, Name: name}] = true
+	}
 }
 
 // typeDeclaration reports whether a kind declares a type: a class, an
@@ -364,7 +375,8 @@ func (l *lowering) function(n treesitter.Node, name string, vis symbol.Visibilit
 // documentation and the trailing comment of the statement, and the first
 // takes its carriers. A destructuring pattern binds no single name and
 // declares nothing, so a carrier on a statement of patterns alone is
-// refused.
+// refused. The package and the name of each variable join the declarations
+// of the unit.
 func (l *lowering) variables(n treesitter.Node, c container, exported bool, outermost treesitter.Node) {
 	constant := n.HasToken(keywordConst)
 	var names []treesitter.Node
@@ -409,6 +421,7 @@ func (l *lowering) variables(n treesitter.Node, c container, exported bool, oute
 			first = decl
 		}
 		c.file.Decls = append(c.file.Decls, decl)
+		l.declare(c.pkg, name.Text())
 		if c.ambient {
 			l.mark(decl, typescript.AmbientKey, name.Pos())
 		}

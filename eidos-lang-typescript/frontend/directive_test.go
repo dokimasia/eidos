@@ -5,7 +5,6 @@ package frontend_test
 
 import (
 	"slices"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -17,7 +16,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -53,12 +51,12 @@ func TestDirective(t *testing.T) {
 			wantPackage string
 		}{
 			{
-				name:        "imports the library that a lib directive extends",
+				name:        "probes the library that a lib directive extends",
 				giveHead:    domDirective,
 				wantPackage: domES2024Package,
 			},
 			{
-				name:        "imports nothing for a directive of a file of the library of the file",
+				name:        "probes the library of the file for a directive of a file of that library",
 				giveHead:    "/// <reference lib=\"es2024\" />\n",
 				wantPackage: es2024Package,
 			},
@@ -171,12 +169,7 @@ func TestDirective(t *testing.T) {
 				tiers := resolved(scopeOfFile(t, gb, file), eventName)
 				expect.Equal(t, tiers[len(tiers)-1], []symbol.Identity{id(tt.wantPackage, eventName)},
 					"a bare name probes the library of the file last")
-				if tt.wantPackage == es2024Package {
-					expect.Empty(t, file.Imports, "the file imports no library")
-					return
-				}
-				expect.Equal(t, file.Imports, []*node.Import{{Pos: directivePos(tt.giveHead), Path: tt.wantPackage}},
-					"the file imports the extended library at its directive")
+				expect.Empty(t, file.Imports, "the file imports no library")
 			})
 		}
 
@@ -210,11 +203,4 @@ func scopeOfFile(tb testing.TB, gb *plugin.GraphBuilder, file *node.File) plugin
 	at := slices.IndexFunc(scopes, func(rec plugin.ScopeRecord) bool { return rec.File == file })
 	assert.NotEqual(tb, at, -1, "the File node records a scope")
 	return plugin.ImportScope{Bindings: scopes[at].Bindings}
-}
-
-// directivePos returns the position of the directive of a head whose last
-// line before the body is the directive, in src/a.ts.
-func directivePos(head string) position.Pos {
-	lines := strings.Split(strings.TrimSuffix(head, "\n"), "\n")
-	return position.Pos{File: aFile, Line: len(lines), Col: 1}
 }

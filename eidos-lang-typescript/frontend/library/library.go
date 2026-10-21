@@ -18,3 +18,25 @@ const Dir = "libs"
 //
 //go:embed libs/*.d.ts
 var Files embed.FS
+
+// Statement is one top-level statement of a file of [Files] that declares
+// a name of the global scope. It has the name and the byte range of the
+// statement in the file. The range of a statement of a script starts where
+// the range of the statement before it ends, so it contains the comments
+// above the statement. It ends at the line break that ends the last line of
+// the statement. A statement of a module file covers the whole file.
+type Statement struct {
+	Name  string
+	Start int
+	End   int
+}
+
+// Entry is what one file of [Files] declares in the global scope. Module
+// reports a file with a top-level import or export, whose declare global
+// blocks declare its global names. Statements are in the order of the
+// file: one for each top-level declaration of a script, and one for each
+// name that the global blocks of a module declare.
+type Entry struct {
+	Module     bool
+	Statements []Statement
+}
