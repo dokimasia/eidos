@@ -1,5 +1,12 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [3f4bf95]
+  - go.dokimi.dev/eidos/core@0.5.0
+
 ## 0.3.0
 
 ### Minor Changes
