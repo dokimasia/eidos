@@ -208,11 +208,20 @@ The TypeScript frontend loads the library of each project from the
 declaration files of TypeScript 7.0.2, which the satellite embeds. The
 options `noLib`, `lib` and `target` of the tsconfig of a project select
 the library, and a file without a tsconfig has the default library of
-ES2025. A library loads as one dependency unit into the package
+ES2025. The declarations of a library load into the package
 `typescript-lib://<key>`. The key is the root files of the library,
 joined with `+`. A global name of a source file resolves in the global
 package of the workspace and then in its library. A lib directive at the
 head of a file adds its library to the library of that file alone.
+
+A load contains the declarations of the library that its units use. A
+unit uses each global name of its library that one of its references can
+resolve to, and the dependency round of the frontend places one unit for
+each use: the statements of the name in each file of the library, which a
+generated index of the statements of each file slices without a parse.
+The rounds repeat while a loaded unit has a use that no round passed. A
+one-file tree that references `Map` loads 402 declarations of the library
+in 5 rounds, and one that references `HTMLElement` loads 43,231 in 15.
 
 The TypeScript and Python frontends mark an overload signature with
 `Overload`, and the callable of its name without the mark is the

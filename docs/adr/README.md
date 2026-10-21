@@ -107,3 +107,6 @@ way.
 | [0086](0086-colliding-overloads-spell-their-type-parameters.md) | The discriminator of colliding overloads spells their type parameters | Accepted |
 | [0087](0087-eidos-reads-typescript-through-the-fork-of-tree-sitter-typescript.md) | eidos reads TypeScript through the fork of tree-sitter-typescript | Accepted |
 | [0088](0088-the-layout-qualifies-an-emitted-reference.md) | The layout qualifies an emitted reference by the file of its referent | Accepted |
+| [0089](0089-an-import-hides-the-global-scope-from-its-name.md) | An import hides the global scope from the name that it binds | Accepted |
+| [0090](0090-a-dependency-round-passes-the-uses-of-units.md) | A dependency round passes the uses of the loaded units | Accepted |
+| [0091](0091-the-typescript-library-loads-the-names-that-a-load-uses.md) | The TypeScript library loads one unit for each global name that a load uses | Accepted |

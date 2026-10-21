@@ -100,3 +100,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0081](0081-a-type-parameter-inside-a-structural-type.md) | A type parameter inside a structural type | Accepted |
 | [0082](0082-the-declaration-files-of-the-typescript-library.md) | The declaration files of the TypeScript library | Accepted |
 | [0083](0083-references-to-declarations-that-the-plan-emits.md) | References to declarations that the plan emits | Accepted |
+| [0084](0084-the-library-declarations-that-a-load-uses.md) | The declarations of the TypeScript library that a load uses | Accepted |
