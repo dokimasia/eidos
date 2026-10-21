@@ -153,6 +153,43 @@ func Join(lines []string) string {
 	return core.Join(lines)
 }
 
+// Cut cuts a payload before its first argument for which opens reports
+// true. Cut reads the arguments of the payload at the top level of the
+// grammar. A quoted value or a list is one argument. Cut does not look
+// inside it for blanks or for text for which opens reports true. The name
+// of the directive is not an argument, so Cut never cuts before it. opens
+// receives the payload from the first byte of an argument on.
+//
+// Cut returns the payload before the argument without the blanks before
+// it, the payload from the argument on, and true. It returns the payload,
+// the empty string and false where opens reports false for every
+// argument. Cut reads a payload outside the grammar as far as it can.
+// [Parse] refuses such a payload. The owner of a carrier line cuts the
+// line before each mark that opens another directive, so one line can
+// contain more than one directive.
+//
+// # Allocation contract
+//
+// Cut does not allocate. Both parts share the bytes of the payload.
+func Cut(payload string, opens func(rest string) bool) (before, after string, found bool) {
+	return core.Cut(payload, opens)
+}
+
+// Locate returns the line of lines that contains the byte at offset of
+// the payload that [Join] folds from lines, and the offset of the byte in
+// that line. An offset at the space that Join writes between two lines
+// returns the end of the earlier line. An offset past the payload returns
+// the end of the last line. Locate returns line 0 and offset 0 for no
+// lines. The owner of a carrier line locates each directive that [Cut]
+// finds in a continued payload at the line where the author wrote it.
+//
+// # Allocation contract
+//
+// Locate does not allocate.
+func Locate(lines []string, offset int) (line, at int) {
+	return core.Locate(lines, offset)
+}
+
 // Parse reads one payload against the pinned grammar. The payload
 // is the text after the carrier marker, one logical line with
 // continuations already joined.

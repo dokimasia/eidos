@@ -321,6 +321,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Cut", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(directive.Cut), reflect.TypeOf(core.Cut), "the wrapper has the kernel function's signature")
+		})
+	})
+
+	t.Run("Locate", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(directive.Locate), reflect.TypeOf(core.Locate), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
