@@ -152,8 +152,14 @@ type Language struct {
 	// name. With a nil TemplateImport, the use builtin records every import
 	// outside the name assignment.
 	TemplateImport func(path, name string) (local, item string, ok bool)
-	// Finalise is the language formatter, run last per file.
+	// Finalise is the language formatter, run last per file. A language
+	// declares one formatter: Finalise or FinaliseUnder.
 	Finalise func(src []byte) ([]byte, error)
+	// FinaliseUnder is the formatter of a language whose format depends on
+	// a policy of the plan, such as the width of a line. The pass runs it
+	// last per file with the policy of the render context, in place of
+	// Finalise.
+	FinaliseUnder func(src []byte, p plugin.Policy) ([]byte, error)
 	// Coverage is the declared fact coverage of the language. A declared
 	// coverage arms the guard. A refused fact reports, and the declaration
 	// renders without it. A rejected fact reports, and the declaration is

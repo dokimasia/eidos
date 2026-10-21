@@ -280,9 +280,19 @@ func (b *Builder) TemplateImport(fn func(path, name string) (local, item string,
 // Finalise sets the language formatter, run last per file. A
 // failure at render is a positioned finding that names the file it
 // could not format, and the pass continues with the remaining
-// files.
+// files. A backend declares one formatter: Finalise or
+// [Builder.FinaliseUnder].
 func (b *Builder) Finalise(f func(src []byte) ([]byte, error)) *Builder {
 	b.lang.Finalise = f
+	return b
+}
+
+// FinaliseUnder sets the formatter of a language whose format depends on
+// a policy of the plan, such as the width of a line. The render runs it
+// last per file with the plan's resolved policy, and reports a failure as
+// [Builder.Finalise] does.
+func (b *Builder) FinaliseUnder(f func(src []byte, p plugin.Policy) ([]byte, error)) *Builder {
+	b.lang.FinaliseUnder = f
 	return b
 }
 
@@ -419,7 +429,7 @@ type Backend interface {
 //   - every defect of a policy spec that [plugin.NewPolicy] reports;
 //   - every fault [render.New] joins, such as an empty kind-template
 //     set, a kind both spelt and refused, a template that does not
-//     parse and a missing formatter.
+//     parse, a missing formatter and two formatters.
 func (b *Builder) Build() Backend {
 	if b.name == "" {
 		panic("backend: New with an empty name")

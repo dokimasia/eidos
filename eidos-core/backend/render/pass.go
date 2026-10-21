@@ -30,7 +30,7 @@ const skeletonName = "file"
 // for concurrent use: its fields are fixed at [New], and every
 // render call has frames of its own. Within one call, files
 // render in parallel on up to GOMAXPROCS workers. The language's
-// Scaffold, Value, Imports, Finalise and Cluster, every helper in its
+// Scaffold, Value, Imports, formatter and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
 // trees run on those workers concurrently, so each must be safe
 // for concurrent use. Naming and Split run where the plan's layout
@@ -56,10 +56,13 @@ type Pass struct {
 	scaffold    func(s emit.Stmt, set *ImportSet) ([]byte, error)
 	// value is the language's [Language.Value], which the value builtin
 	// calls, and nil for a language without a writer of values.
-	value    func(v emit.Value, set *ImportSet) (string, error)
-	imports  func(set *ImportSet) string
-	final    func(src []byte) ([]byte, error)
-	coverage Coverage
+	value   func(v emit.Value, set *ImportSet) (string, error)
+	imports func(set *ImportSet) string
+	// final is the language's [Language.Finalise], and finalUnder its
+	// [Language.FinaliseUnder]. One of the two is set.
+	final      func(src []byte) ([]byte, error)
+	finalUnder func(src []byte, p plugin.Policy) ([]byte, error)
+	coverage   Coverage
 	// templateImport is the language's [Language.TemplateImport], which
 	// the use builtin calls.
 	templateImport func(path, name string) (local, item string, ok bool)
@@ -90,7 +93,8 @@ const defaultFile = "{{" + BuiltinImports + "}}{{" + BuiltinDecls + "}}"
 //     not parse;
 //   - a builtin name the shared vocabulary claims;
 //   - a Cluster without group templates;
-//   - a missing naming, scaffold, import renderer or formatter.
+//   - a missing naming, scaffold, import renderer or formatter;
+//   - both Finalise and FinaliseUnder.
 //
 // The kit converts these to panics at its own Build, because there
 // they are declaration defects.
@@ -154,9 +158,13 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		faults = append(faults,
 			errors.New("render: the language renders no import block"))
 	}
-	if l.Finalise == nil {
+	switch {
+	case l.Finalise == nil && l.FinaliseUnder == nil:
 		faults = append(faults,
 			errors.New("render: the language declares no formatter"))
+	case l.Finalise != nil && l.FinaliseUnder != nil:
+		faults = append(faults,
+			errors.New("render: the language declares two formatters"))
 	}
 	skeleton := l.File
 	if skeleton == "" {
@@ -174,7 +182,8 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		groups: groups, file: file, shared: shared,
 		vocab: l.Funcs, spell: l.Naming, split: l.Split, cluster: l.Cluster,
 		evaluated: l.Evaluated, implemented: l.Implemented,
-		scaffold: l.Scaffold, value: l.Value, imports: l.Imports, final: l.Finalise,
+		scaffold: l.Scaffold, value: l.Value, imports: l.Imports,
+		final: l.Finalise, finalUnder: l.FinaliseUnder,
 		coverage: l.Coverage, memberIndent: l.MemberIndent, templateImport: l.TemplateImport,
 	}, nil
 }
@@ -580,7 +589,15 @@ func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 			"the file skeleton refused %s: %v", g.Path, err)
 		return nil, false
 	}
-	body, err := f.pass.final(f.fileOut.Bytes())
+	var (
+		body []byte
+		err  error
+	)
+	if f.pass.finalUnder != nil {
+		body, err = f.pass.finalUnder(f.fileOut.Bytes(), f.set.Policy())
+	} else {
+		body, err = f.pass.final(f.fileOut.Bytes())
+	}
 	if err != nil {
 		f.sink.Errorf(UnformattedFile, f.at, f.origin,
 			"%s cannot be formatted and is withheld: %v", g.Path, err)

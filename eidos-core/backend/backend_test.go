@@ -622,6 +622,54 @@ func TestBackend(t *testing.T) {
 		})
 	})
 
+	t.Run("FinaliseUnder", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend that formats each file under the policy of the plan", func(t *testing.T) {
+			t.Parallel()
+
+			b := backend.New(kitName, kitTarget, kitSyntax()).
+				FileTemplate(kitFile).
+				KindTemplates(kitStructs()).
+				KindTemplates(kitCallables()).
+				Funcs(kitFuncs).
+				Naming(kitNaming).
+				Scaffold(kitScaffold).
+				Imports(kitImports).
+				Policies(widthPolicy).
+				FinaliseUnder(func(src []byte, p plugin.Policy) ([]byte, error) {
+					return append(src, string(p.Choice(widthPolicy.Key))...), nil
+				}).
+				Build()
+			wide := widthPolicy.Choices[1]
+			policy, err := plugin.NewPolicy(kitTarget, b.Policies(), map[plugin.PolicyKey]plugin.Choice{
+				widthPolicy.Key: wide,
+			})
+			assert.NoError(t, err, "the plan selects a declared choice")
+			e := kitStore(t)
+			sink := diag.NewSink()
+			files, err := b.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, b), Sink: sink, Plugin: kitName, Policy: policy,
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the fixture renders one file")
+			assert.Equal(t, string(files[0].Body), kitBody+string(wide),
+				"the formatter receives the choice of the plan")
+		})
+
+		t.Run("panics at Build for a declaration with two formatters", func(t *testing.T) {
+			t.Parallel()
+
+			recovered := assert.Panics(t, func() {
+				kitBackend(kitName, kitTarget).
+					FinaliseUnder(func(src []byte, _ plugin.Policy) ([]byte, error) { return src, nil }).
+					Build()
+			}, "a file has one formatter")
+			assert.Contains(t, fmt.Sprint(recovered), "two formatters", "the panic names the defect")
+		})
+	})
+
 	t.Run("Funcs", func(t *testing.T) {
 		t.Parallel()
 
@@ -1458,6 +1506,7 @@ func setters() []setter {
 	rule := plugin.PackageRule(func(p plugin.Placement) (symbol.Identity, error) { return p.Origin, nil })
 	cluster := render.Cluster(func([]symbol.Symbol) []render.Clustered { return nil })
 	evaluated := render.Evaluated(func(symbol.Symbol, func(string)) {})
+	under := func(src []byte, _ plugin.Policy) ([]byte, error) { return src, nil }
 	return []setter{
 		{name: "Version", set: func(b *backend.Builder) *backend.Builder { return b.Version(kitVersion) }},
 		{name: "FileTemplate", set: func(b *backend.Builder) *backend.Builder { return b.FileTemplate(kitFile) }},
@@ -1471,6 +1520,7 @@ func setters() []setter {
 		{name: "Implemented", set: func(b *backend.Builder) *backend.Builder { return b.Implemented() }},
 		{name: "Imports", set: func(b *backend.Builder) *backend.Builder { return b.Imports(kitImports) }},
 		{name: "Finalise", set: func(b *backend.Builder) *backend.Builder { return b.Finalise(kitFinalise) }},
+		{name: "FinaliseUnder", set: func(b *backend.Builder) *backend.Builder { return b.FinaliseUnder(under) }},
 		{name: "Coverage", set: func(b *backend.Builder) *backend.Builder { return b.Coverage(render.Coverage{}) }},
 		{name: "Lower", set: func(b *backend.Builder) *backend.Builder { return b.Lower(kitLower) }},
 		{name: "Respell", set: func(b *backend.Builder) *backend.Builder { return b.Respell(kitRespell) }},

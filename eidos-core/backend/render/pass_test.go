@@ -238,6 +238,16 @@ func TestPass(t *testing.T) {
 			assert.Contains(t, err.Error(), "group templates", "naming the gap")
 		})
 
+		t.Run("returns an error for a language that declares two formatters", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.FinaliseUnder = func(src []byte, _ plugin.Policy) ([]byte, error) { return src, nil }
+			_, err := render.New(passName, l)
+			assert.HasError(t, err, "a file has one formatter")
+			assert.Contains(t, err.Error(), "declares two formatters", "the error names the fault")
+		})
+
 		refusals := []struct {
 			name string
 			give map[symbol.Kind]string
@@ -793,6 +803,31 @@ func TestPass(t *testing.T) {
 			assert.Length(t, files, 2, "the units route into two files")
 			for _, f := range files {
 				assert.HasSuffix(t, string(f.Body), " "+string(wideWidth)+"\n", f.Path+" reads the chosen width")
+			}
+		})
+
+		t.Run("formats each file under the policy of the context", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Finalise = nil
+			l.FinaliseUnder = func(src []byte, p plugin.Policy) ([]byte, error) {
+				c, _ := p.Lookup(widthKey)
+				return append(src, string(c)...), nil
+			}
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey, alphaName), unitOf(emitter, userKey, betaName))
+			sink := diag.NewSink()
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName, Policy: widthPolicy(t),
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 2, "the units route into two files")
+			for _, f := range files {
+				assert.HasSuffix(t, string(f.Body), "\n"+string(wideWidth),
+					f.Path+" has the format of the chosen width")
 			}
 		})
 
