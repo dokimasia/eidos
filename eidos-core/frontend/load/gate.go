@@ -172,8 +172,9 @@ func (g *gate) unchanged(was FileRecord, now *FileRecord) bool {
 // whose record the stat did not prove is read whole, hashed, and judged
 // output where it ends in the brand's provenance trailer. An unclaimed
 // file is judged without a read. It returns the claimed files the
-// verdicts made inputs, per frontend, and the outputs, sorted by path.
-func (g *gate) judge(claims [][]string) ([][]string, []string, error) {
+// verdicts made inputs and the claimed files they made outputs, each per
+// frontend. The outputs of a frontend are sorted by path.
+func (g *gate) judge(claims [][]string) ([][]string, [][]string, error) {
 	claimed := make(map[string]bool, len(g.walked))
 	for _, paths := range claims {
 		for _, path := range paths {
@@ -199,19 +200,21 @@ func (g *gate) judge(claims [][]string) ([][]string, []string, error) {
 		}
 	}
 
-	var excluded []string
 	inputs := make([][]string, len(claims))
+	outputs := make([][]string, len(claims))
 	for i, paths := range claims {
 		for _, path := range paths {
 			if g.files[path].Verdict == VerdictOutput {
-				excluded = append(excluded, path)
+				outputs[i] = append(outputs[i], path)
 				continue
 			}
 			inputs[i] = append(inputs[i], path)
 		}
+		// The walk visits a/x before a-b. A byte sort puts a-b first,
+		// because '-' sorts before '/'.
+		slices.Sort(outputs[i])
 	}
-	slices.Sort(excluded)
-	return inputs, excluded, nil
+	return inputs, outputs, nil
 }
 
 // digest returns the digest of a file a unit or a door reads: the

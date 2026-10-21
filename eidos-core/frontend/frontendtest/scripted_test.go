@@ -48,6 +48,10 @@ const (
 // usedID is the bare identity of the declaration of the use cases.
 var usedID = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: extPath, Name: usedName}
 
+// generatedFile is an output of the brand in the directory that the path
+// of the store's package names.
+const generatedFile = "ext/lib/gen.zz"
+
 // The spellings at each end of the capital range, which is where a
 // resolver's own bound decides whether a bare name is its package's.
 const (
@@ -492,6 +496,17 @@ func TestScripted(t *testing.T) {
 			_, err := f.Dependencies(t.Context(), round, storeReader{fsys: store})
 			assert.NoError(t, err, "the round lists the store")
 			assert.Empty(t, round.Unplaced(), "the store declares the package")
+		})
+
+		t.Run("passes over a need whose path is the directory of an output", func(t *testing.T) {
+			t.Parallel()
+
+			round := roundOf(extPath)
+			round.Outputs = []string{generatedFile}
+			units, err := f.Dependencies(t.Context(), round, storeReader{fsys: withStore(fstest.MapFS{})})
+			assert.NoError(t, err, "the round lists nothing")
+			expect.Empty(t, units, "no unit declares the package")
+			expect.Empty(t, round.Unplaced(), "the brand writes the package, so the round reports nothing")
 		})
 
 		t.Run("returns a listing's own error", func(t *testing.T) {

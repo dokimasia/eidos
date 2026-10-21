@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -386,7 +387,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string, types
 // the directory its path names in [ScriptedStore], one unit per need.
 // A need the store has no scripted file for yields no unit, and the
 // round reports it placed nowhere, so a load without the store loads
-// no dependency and reports every need.
+// no dependency and reports every need. A round passes over a need
+// whose path is the directory of an output of the round.
 //
 // A use resolves to the scripted file of its name in the directory of
 // its package, as ext/lib/Used.zz for the use of Used in ext/lib, one
@@ -403,12 +405,13 @@ func NewScriptedDependent() *ScriptedDependent {
 	return &ScriptedDependent{Scripted: NewScripted()}
 }
 
-// Dependencies returns one unit per need whose directory the store
-// lists, its members the directory's scripted files in name order, and
-// reports every other need placed nowhere: the store absent, the
-// directory absent, or a directory without a scripted file. It then
-// returns one unit per use whose file the store has, with that file as
-// its member.
+// Dependencies passes over each need whose path is the directory of an
+// output of the round. It returns one unit per other need whose
+// directory the store lists, its members the directory's scripted files
+// in name order, and reports every other need placed nowhere: the store
+// absent, the directory absent, or a directory without a scripted file.
+// It then returns one unit per use whose file the store has, with that
+// file as its member.
 //
 // Error modes: the error of a listing or a read of the store for a
 // cause other than an absent store or an absent file.
@@ -417,6 +420,9 @@ func (*ScriptedDependent) Dependencies(
 ) ([][]plugin.SourceRef, error) {
 	var out [][]plugin.SourceRef
 	for _, need := range round.Needs {
+		if slices.ContainsFunc(round.Outputs, func(o string) bool { return path.Dir(o) == need.Path }) {
+			continue
+		}
 		dir := plugin.StorePath(ScriptedStore, need.Path)
 		entries, err := r.ReadDir(dir)
 		switch {

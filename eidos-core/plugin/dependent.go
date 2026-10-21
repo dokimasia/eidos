@@ -25,10 +25,10 @@ type Unplaced struct {
 	Reason string
 }
 
-// DependencyRound is one dependency round of a frontend: its number,
-// its needs and its shared inputs, and the needs the frontend reports
-// it cannot place. The load passes the round by pointer and reads the
-// reports after Dependencies returns. A round is not safe for
+// DependencyRound is one dependency round of a frontend: its number, its
+// needs, uses, shared inputs and outputs, and the needs the frontend
+// reports it cannot place. The load passes the round by pointer and reads
+// the reports after Dependencies returns. A round is not safe for
 // concurrent use, so a frontend that places needs concurrently
 // serializes its reports.
 type DependencyRound struct {
@@ -53,6 +53,12 @@ type DependencyRound struct {
 	// files a language reads its dependency set from, such as the
 	// nearest go.mod above each workspace file.
 	Shared []string
+
+	// Outputs lists the files that the frontend's selection claims and
+	// that the load refused as the brand's own outputs, sorted by path.
+	// Every round of a load passes the same outputs. The language places
+	// an output in a package by the rule that it applies to an input.
+	Outputs []string
 
 	// unplaced lists the needs the frontend reported, in report order.
 	unplaced []Unplaced
@@ -100,6 +106,9 @@ type Dependent interface {
 	// selection does not claim, such as a Go vendor tree. A need the
 	// language cannot place yields no unit, the frontend reports it
 	// through [DependencyRound.Unplace], and its references keep their
-	// spellings. A returned error is fatal to the load.
+	// spellings. The frontend does not place or report a need of a package
+	// of the round's outputs, because the brand writes that package. Its
+	// references keep their spellings too. A returned error is fatal to
+	// the load.
 	Dependencies(ctx context.Context, round *DependencyRound, r StoreReader) ([][]SourceRef, error)
 }

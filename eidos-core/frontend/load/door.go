@@ -31,8 +31,8 @@ type Digested struct {
 
 // DoorRecord is what a partition or a dependency round read and
 // returned: each path it read or listed with the digest of the bytes or
-// the listing, a round's needs and uses, the units it returned, and the
-// findings it reported.
+// the listing, a round's needs, uses and outputs, the units it returned,
+// and the findings it reported.
 type DoorRecord struct {
 	// Round is zero for the partition, and the round's number for a
 	// dependency round.
@@ -41,8 +41,12 @@ type DoorRecord struct {
 	Needs []plugin.Need
 	// Uses are the uses that the round passed, in identity order. A
 	// partition passes none.
-	Uses  []symbol.Identity
-	Units [][]plugin.SourceRef
+	Uses []symbol.Identity
+	// Outputs are the outputs that the first round passed, sorted by
+	// path. Every round of a load passes the outputs of the first, so the
+	// record of a later round and of a partition does not list them.
+	Outputs []string
+	Units   [][]plugin.SourceRef
 	// Findings are the needs a round reported it placed nowhere, each a
 	// warning under [UnplacedNeed]. A partition reports none.
 	Findings []diag.Diag

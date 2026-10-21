@@ -88,6 +88,17 @@ const (
 	webPath = "svc/web"
 )
 
+// The output tree: a workspace file that imports a package whose one file
+// is an output of the brand, the package and its file, and an output that
+// another frontend's selection claims.
+const (
+	stubPath    = "svc/stub"
+	stubFile    = "svc/stub/stub.zz"
+	stubImport  = "package " + appPath + "\nimport stub " + stubPath + "\n"
+	stubSource  = "package " + stubPath + "\ntype Stub string\n"
+	otherOutput = "other/gen.zz"
+)
+
 // The uses of the use tree: the declaration that the workspace uses, and
 // the declaration that it uses in turn.
 var (
@@ -152,6 +163,20 @@ func TestDependency(t *testing.T) {
 			second.Sel = []string{otherSelection}
 			loadTree(t, tree, with(first, second), stores(depStore()))
 			assert.Empty(t, needPaths(second.rounds[0]), "the earlier frontend's rounds loaded the library")
+		})
+
+		t.Run("hands the rounds no output of another frontend's selection", func(t *testing.T) {
+			t.Parallel()
+
+			tree := depTree()
+			tree[otherOutput] = &fstest.MapFile{Data: stamped(t, ownBrand, "package other\n")}
+			rec := recorded()
+			rec.Sel = []string{serviceSelection}
+			plain := frontendtest.NewScripted()
+			plain.ID = plainID
+			plain.Sel = []string{otherSelection}
+			loadTree(t, tree, with(rec, plain), stores(depStore()))
+			assert.Empty(t, rec.rounds[0].Outputs, "the other frontend's selection claims the output")
 		})
 	})
 
@@ -229,6 +254,25 @@ func TestDependency(t *testing.T) {
 			assert.NotEmpty(t, rec.rounds, "the partition declared a shared input that the record lacks")
 			assertSameLoad(t, warm, loadOf(t, grown, with(recorded()), stores(depStore())))
 		})
+
+		t.Run("keeps the recorded rounds of an unchanged tree with outputs", func(t *testing.T) {
+			t.Parallel()
+
+			prior := committed(t, loadOf(t, withStub(t, importingStub()), with(recorded()), stores(depStore())).report)
+			rec := recorded()
+			warm := loadOf(t, withStub(t, importingStub()), with(rec), stores(depStore()),
+				func(cfg *load.Config) { cfg.Prior = prior })
+			assert.Empty(t, rec.rounds, "every round would return its recorded units")
+			assertSameLoad(t, warm, loadOf(t, withStub(t, importingStub()), with(recorded()), stores(depStore())))
+		})
+
+		t.Run("runs the rounds again where the outputs change", func(t *testing.T) {
+			t.Parallel()
+
+			warm, cold := warmCold(t, importingStub(), withStub(t, importingStub()), with(recorded()),
+				stores(depStore()))
+			assertSameLoad(t, warm, cold)
+		})
 	})
 
 	t.Run("run", func(t *testing.T) {
@@ -270,6 +314,28 @@ func TestDependency(t *testing.T) {
 			}
 			assert.Equal(t, rounds, map[string]int{appFile: 0, member(libFile): 1, member(deepFile): 2},
 				"a partition's unit is round zero, and a dependency unit is its round's number")
+		})
+
+		t.Run("hands every round the outputs of the frontend's selection", func(t *testing.T) {
+			t.Parallel()
+
+			rec := recorded()
+			loadTree(t, withStub(t, depTree()), with(rec), stores(depStore()))
+			assert.Length(t, rec.rounds, 2, "the library imports the deep package")
+			for _, round := range rec.rounds {
+				assert.Equal(t, round.Outputs, []string{stubFile}, "the stub is the brand's output")
+			}
+		})
+
+		t.Run("records the outputs in the first round's record alone", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, withStub(t, depTree()), with(recorded()), stores(depStore()))
+			doors := report.Doors[frontendtest.ScriptedID]
+			assert.Length(t, doors, 3, "the partition and the two rounds")
+			expect.Empty(t, doors[0].Outputs, "the partition passes no output")
+			expect.Equal(t, doors[1].Outputs, []string{stubFile}, "the first round's record has the outputs")
+			expect.Empty(t, doors[2].Outputs, "the second round passes the outputs of the first")
 		})
 
 		t.Run("passes a need to one round alone", func(t *testing.T) {
@@ -551,6 +617,13 @@ func TestDependency(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 		})
 
+		t.Run("reports nothing for a need of a package of the outputs", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, withStub(t, importingStub()), with(recorded()), stores(depStore()))
+			coretest.AssertCodes(t, sink)
+		})
+
 		t.Run("positions the finding at the need's import in the first file in path order", func(t *testing.T) {
 			t.Parallel()
 
@@ -746,6 +819,21 @@ func absentTree() fstest.MapFS {
 		secondFile: {Data: []byte("package " + twoPath + "\nimport x " + absentPath + "\n")},
 		thirdFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
 	}
+}
+
+// importingStub returns the tree whose one file imports the package of
+// the output tree, before the brand writes the package.
+func importingStub() fstest.MapFS {
+	return fstest.MapFS{appFile: {Data: []byte(stubImport)}}
+}
+
+// withStub adds the brand's output of the output tree to a tree, and
+// returns the tree.
+func withStub(tb testing.TB, tree fstest.MapFS) fstest.MapFS {
+	tb.Helper()
+
+	tree[stubFile] = &fstest.MapFile{Data: stamped(tb, ownBrand, stubSource)}
+	return tree
 }
 
 // stores hands the load one store under the scripted dependent's

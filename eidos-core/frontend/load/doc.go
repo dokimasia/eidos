@@ -45,8 +45,9 @@
 //   - A frontend's partition runs again only where its claimed paths
 //     changed or a path the partition read reads otherwise, a path
 //     nothing was at included. A frontend's dependency rounds run again
-//     only where the first round's needs or shared inputs changed, a
-//     path a round read reads otherwise, or a round's unit changed.
+//     only where the first round's needs, uses, shared inputs or outputs
+//     changed, a path a round read reads otherwise, or a round's unit
+//     changed.
 //   - A unit whose key the record states is kept: the graph decodes its
 //     region from the record the first time a read needs it, and the
 //     load reports the findings the record states for it.
@@ -125,23 +126,31 @@
 // [plugin.ErrStoreAbsent].
 //
 // After the workspace's units parse, each [plugin.Dependent] frontend
-// runs its rounds, in composition order. A round hands the frontend the
-// import paths its files name that no loaded package of its language
-// declares and no earlier round passed, and the shared inputs its
-// partition declared on the workspace's units. The load parses every
-// unit a round returns at [plugin.DepthSignatures], and the imports of
-// those units are the next round's needs. The first round always runs,
-// and a later round runs only when it has a need. A returned unit whose
-// every member a loaded unit already has is dropped, so a frontend that
-// returns its declared dependencies in every round loads them once. The
-// report records each unit's round, and zero for a unit the partition
-// returned.
+// runs its rounds, in composition order. Each round contains:
+//
+//   - the import paths that its files import, that no loaded package of
+//     its language declares and that no earlier round passed;
+//   - the uses of its loaded units that no earlier round passed;
+//   - the shared inputs that its partition declared on the workspace's
+//     units;
+//   - the files that its selection claims and that the load refused as
+//     the brand's own outputs.
+//
+// The load parses every unit a round returns at [plugin.DepthSignatures],
+// and the imports and the uses of those units are the next round's needs
+// and uses. The first round always runs, and a later round runs only when
+// it has a need or a use. A returned unit whose every member a loaded unit
+// already has is dropped, so a frontend that returns its declared
+// dependencies in every round loads them once. The report records each
+// unit's round, and zero for a unit the partition returned.
 //
 // A frontend reports each need it places nowhere through the round, with
-// the reason. The load reports each such need once, under
-// [UnplacedNeed], at its import in the first file in path order that
-// imports it, naming how many files import it and quoting the reason.
-// Every reference into the need keeps its spelling.
+// the reason. The frontend does not report a need of a package of the
+// round's outputs, because the brand writes that package. The load reports
+// each reported need once, under [UnplacedNeed], at its import in the first
+// file in path order that imports it, naming how many files import it and
+// quoting the reason. Every reference into a need that no unit declares
+// keeps its spelling.
 //
 // # The gate
 //

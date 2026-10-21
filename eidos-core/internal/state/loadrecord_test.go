@@ -258,6 +258,18 @@ func TestLoadState(t *testing.T) {
 			assert.Equal(t, doors[1].Uses, []symbol.Identity{usedID}, "the first round passed the use")
 		})
 
+		t.Run("returns the outputs of a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			report := &load.Report{Doors: map[plugin.ID][]load.DoorRecord{
+				frontendtest.ScriptedID: {{Round: 1, Outputs: []string{createdFile}}},
+			}}
+			doors, err := recordedLoad(t, ledger.NewMem(), report).Load(t.Context()).Doors(frontendtest.ScriptedID)
+			assert.NoError(t, err, "the doors read")
+			assert.Length(t, doors, 1, "the record of the round")
+			assert.Equal(t, doors[0].Outputs, []string{createdFile}, "the round passed the file that the run wrote")
+		})
+
 		t.Run("returns nothing for a frontend the record lacks", func(t *testing.T) {
 			t.Parallel()
 

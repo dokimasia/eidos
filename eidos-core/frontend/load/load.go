@@ -320,14 +320,14 @@ func newLoader(ctx context.Context, cfg Config) (*loader, error) {
 
 // load runs the load's steps and returns its graph and its report.
 func (l *loader) load() (*store.Graph, *Report, error) {
-	inputs, excluded, claimed, err := survey(l.cfg, l.gate)
+	inputs, outputs, claimed, err := survey(l.cfg, l.gate)
 	if err == nil {
 		err = l.locate(inputs)
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	units, err := l.unitsOf(inputs, claimed)
+	units, err := l.unitsOf(inputs, outputs, claimed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -356,11 +356,12 @@ func (l *loader) load() (*store.Graph, *Report, error) {
 
 	report := &Report{
 		Units:    make([]UnitReport, len(units)),
-		Excluded: excluded,
+		Excluded: slices.Concat(outputs...),
 		Doors:    l.doors,
 		Anchor:   l.gate.anchor,
 		decoded:  l.decoded,
 	}
+	slices.Sort(report.Excluded)
 	for i, u := range units {
 		if u.parsed() {
 			u.region = regionOf(u, ix)
@@ -385,9 +386,9 @@ func (l *loader) load() (*store.Graph, *Report, error) {
 }
 
 // survey walks the tree through the gate, matches every frontend's
-// claim over it, and judges the claimed files. It returns the inputs
-// per frontend, the outputs it excluded, and every claimed path.
-func survey(cfg Config, g *gate) ([][]string, []string, map[string]bool, error) {
+// claim over it, and judges the claimed files. It returns the inputs and
+// the outputs per frontend, and every claimed path.
+func survey(cfg Config, g *gate) ([][]string, [][]string, map[string]bool, error) {
 	if err := g.walk(); err != nil {
 		return nil, nil, nil, err
 	}
@@ -395,7 +396,7 @@ func survey(cfg Config, g *gate) ([][]string, []string, map[string]bool, error) 
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	inputs, excluded, err := g.judge(claims)
+	inputs, outputs, err := g.judge(claims)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -405,7 +406,7 @@ func survey(cfg Config, g *gate) ([][]string, []string, map[string]bool, error) 
 			claimed[path] = true
 		}
 	}
-	return inputs, excluded, claimed, nil
+	return inputs, outputs, claimed, nil
 }
 
 // locate adds the stores of each frontend that implements
@@ -453,12 +454,13 @@ func (l *loader) locate(inputs [][]string) error {
 
 // unitsOf partitions the inputs into units, keys each, keeps, restores
 // or parses each, loads the dependencies, and parses every kept unit
-// the parsed ones couple to, recording every door. It returns the units
-// in splice order.
+// the parsed ones couple to, recording every door. inputs and outputs
+// are the claimed files of each frontend that the gate judged inputs and
+// outputs. It returns the units in splice order.
 //
 // Error modes: the error of a frontend, of a door that breaks the
 // contract, and of a record that does not read whole.
-func (l *loader) unitsOf(inputs [][]string, claimed map[string]bool) ([]*unit, error) {
+func (l *loader) unitsOf(inputs, outputs [][]string, claimed map[string]bool) ([]*unit, error) {
 	units, err := l.partitionAll(inputs)
 	if err == nil {
 		err = keyAll(units, l.gate, l.cfg.Brand)
@@ -469,7 +471,7 @@ func (l *loader) unitsOf(inputs [][]string, claimed map[string]bool) ([]*unit, e
 	if err != nil {
 		return nil, err
 	}
-	deps, err := l.dependencies(claimed, units)
+	deps, err := l.dependencies(claimed, outputs, units)
 	if err != nil {
 		return nil, err
 	}

@@ -718,6 +718,7 @@ func encodeDoor(door load.DoorRecord) []byte {
 		e.texts(n.From)
 	}
 	e.identities(door.Uses)
+	e.texts(door.Outputs)
 	e.uvarint(uint64(len(door.Units)))
 	for _, u := range door.Units {
 		e.refs(u)
@@ -745,6 +746,7 @@ func decodeDoor(row []byte, interned map[string]string) (load.DoorRecord, error)
 		}
 	}
 	door.Uses = d.identities()
+	door.Outputs = d.texts()
 	if n := d.Count(); n > 0 {
 		door.Units = make([][]plugin.SourceRef, n)
 		for i := range door.Units {

@@ -23,7 +23,7 @@ import (
 // Format is the version of the kernel's encoding of every generation,
 // table, run and region. A generation of another format is unusable,
 // and the run that meets it goes cold.
-const Format = 6
+const Format = 7
 
 // ErrFormat reports a generation written in another format than
 // [Format]: its tables and regions do not read under the kernel's

@@ -23,12 +23,14 @@ import (
 // returned, each keyed from the gate's digests at
 // [plugin.DepthSignatures] and kept, restored or parsed. The workspace's
 // units are classified before the first round, so their imports decide
-// the first round's needs.
+// the first round's needs. outputs has the outputs of each frontend in
+// the order of [Config.Frontends]. Every round of a frontend passes the
+// outputs of that frontend.
 //
 // Error modes: the error of a frontend's round or parse, of a round that
 // breaks the dependency contract, and of a record that does not read
 // whole.
-func (l *loader) dependencies(claimed map[string]bool, units []*unit) ([]*unit, error) {
+func (l *loader) dependencies(claimed map[string]bool, outputs [][]string, units []*unit) ([]*unit, error) {
 	loaded := make(map[string]bool, len(units))
 	for _, u := range units {
 		for _, ref := range u.files {
@@ -36,13 +38,13 @@ func (l *loader) dependencies(claimed map[string]bool, units []*unit) ([]*unit, 
 		}
 	}
 	var out []*unit
-	for _, f := range l.cfg.Frontends {
+	for i, f := range l.cfg.Frontends {
 		dependent, is := f.(plugin.Dependent)
 		if !is {
 			continue
 		}
 		r := &rounds{
-			l: l, frontend: f, dependent: dependent,
+			l: l, frontend: f, dependent: dependent, outputs: outputs[i],
 			claimed: claimed, loaded: loaded, units: slices.Concat(units, out),
 		}
 		got, kept, err := r.reuse()
@@ -64,13 +66,15 @@ type importKey struct {
 	file string
 }
 
-// rounds is one frontend's dependency rounds: the load, its claimed and
-// loaded files, the units classified so far, which the needs of each
-// round are read from, and the record of each round.
+// rounds runs the dependency rounds of one frontend and records each
+// round. The needs and the uses of a round come from the units classified
+// so far. outputs are the outputs of the frontend. claimed and loaded are
+// the files that the load claims and loads.
 type rounds struct {
 	l         *loader
 	frontend  plugin.Frontend
 	dependent plugin.Dependent
+	outputs   []string
 	claimed   map[string]bool
 	loaded    map[string]bool
 	units     []*unit
@@ -104,7 +108,7 @@ func (r *rounds) run() ([]*unit, error) {
 			used[id] = true
 		}
 		reader := &recordingReader{fsys: r.l.tree, gate: r.l.gate}
-		asked := &plugin.DependencyRound{Number: number, Needs: needs, Uses: uses, Shared: shared}
+		asked := &plugin.DependencyRound{Number: number, Needs: needs, Uses: uses, Shared: shared, Outputs: r.outputs}
 		parts, err := r.dependent.Dependencies(r.l.ctx, asked, reader)
 		if err != nil {
 			return nil, fmt.Errorf("load: dependencies %s: %w", f.Name(), err)
@@ -119,6 +123,9 @@ func (r *rounds) run() ([]*unit, error) {
 		}
 		record := DoorRecord{
 			Round: number, Reads: reader.reads, Needs: needs, Uses: uses, Units: fresh, Findings: found,
+		}
+		if number == 1 {
+			record.Outputs = r.outputs
 		}
 		r.records = append(r.records, record)
 		round := r.unitsOf(record, config, version)
@@ -136,7 +143,7 @@ func (r *rounds) run() ([]*unit, error) {
 
 // reuse returns the units of the frontend's rounds the history recorded,
 // and reports true, where the rounds would return them again: the first
-// round's needs, uses and shared inputs are the recorded ones,
+// round's needs, uses, shared inputs and outputs are the recorded ones,
 // everything every round read reads the same, no recorded member is now
 // claimed or loaded, and every unit keeps its recorded key, so no later
 // round's needs or uses move either. It reports each round's recorded
@@ -162,7 +169,8 @@ func (r *rounds) reuse() ([]*unit, bool, error) {
 	needs, _ := r.needs(map[string]bool{})
 	if !slices.EqualFunc(needs, recorded[0].Needs, sameNeed) ||
 		!slices.Equal(r.uses(map[symbol.Identity]bool{}), recorded[0].Uses) ||
-		!slices.Equal(r.shared(), r.recordedShared()) {
+		!slices.Equal(r.shared(), r.recordedShared()) ||
+		!slices.Equal(r.outputs, recorded[0].Outputs) {
 
 		return nil, false, nil
 	}
