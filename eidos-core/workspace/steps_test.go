@@ -47,6 +47,17 @@ const (
 	ghostFlagName meta.KeyName      = "flag.ghost"
 )
 
+// The dual fixture of the ordering cases. duoID is the plugin with both
+// roles, makerID is the generator that provides the capability that duoID
+// requires or runs after, and duoKeyName is the key that the annotator half
+// of duoID stamps. The name duoID sorts before makerID, so only the
+// capability orders the two generators.
+const (
+	duoID      plugin.ID    = "duo"
+	makerID    plugin.ID    = "maker"
+	duoKeyName meta.KeyName = "duo.seen"
+)
+
 // The language of [keyedFrontend] and the key that it registers.
 const (
 	keyedLang symbol.Lang  = "kv"
@@ -1081,6 +1092,22 @@ func TestSteps(t *testing.T) {
 			assert.Contains(t, err.Error(), want, "the error names the annotator and the generator")
 		})
 
+		t.Run("runs the generator half of a dual plugin after the generator of a capability that it requires",
+			func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, dualOrder(t, caps("cap"), nil), []plugin.ID{makerID, duoID},
+					"the requirement orders the generator half after the provider")
+			})
+
+		t.Run("runs the generator half of a dual plugin after the generator of a capability that it runs after",
+			func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, dualOrder(t, nil, caps("cap")), []plugin.ID{makerID, duoID},
+					"the capability orders the generator half after the provider")
+			})
+
 		t.Run("returns an error naming the plugins of a cycle through a followed capability", func(t *testing.T) {
 			t.Parallel()
 
@@ -1430,6 +1457,56 @@ func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 	g, _ := alpha(t)
 	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
 	assert.NoError(t, err, "the ordering fixture runs")
+}
+
+// dualOrder composes the generator makerID, which provides the capability
+// cap, with the plugin duoID, which requires the capabilities requires and
+// runs after the capabilities after. The annotator half of duoID stamps
+// every struct, and each generator records its runs. dualOrder runs the
+// composition over the fixture of one struct and returns the generators in
+// the order of their runs.
+func dualOrder(t *testing.T, requires, after []plugin.Capability) []plugin.ID {
+	t.Helper()
+
+	var (
+		calls []plugin.ID
+		seen  meta.Key[bool]
+	)
+	maker := eidos.NewPlugin(makerID).
+		Provides("cap").
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "made"}).
+		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+			calls = append(calls, makerID)
+			return nil
+		})).Generator()
+	duo := eidos.NewPlugin(duoID).
+		Requires(requires...).
+		After(after...).
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace(duoKeyName.Namespace()); err != nil {
+				return err
+			}
+			k, err := meta.Register[bool](r, meta.KeySpec{Name: duoKeyName, Doc: "a struct that duo saw"})
+			seen = k
+			return err
+		}).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "duo"}).
+		Handle(
+			eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+				eidos.Stamp(st, seen, true)
+				return nil
+			}),
+			eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+				calls = append(calls, duoID)
+				return nil
+			}),
+		).Dual()
+	w, err := valid().Plans(planTo("second", "fixture", maker, duo)).Build()
+	assert.NoError(t, err, "the dual fixture composes")
+	g, _ := alpha(t)
+	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
+	assert.NoError(t, err, "the dual fixture runs")
+	return calls
 }
 
 // capable returns a hand-rolled annotator with the capability lists

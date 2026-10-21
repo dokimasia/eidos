@@ -560,7 +560,9 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 // entries run before every annotator, in the order of their names, so
 // each annotator reads every target name. Every generator runs after the
 // annotators, so lower returns a fault for an annotator that requires or
-// runs after a capability that only a generator provides.
+// runs after a capability that only a generator provides. A plugin that
+// also generates is exempt, because the capability then orders its
+// generator half among the generators.
 func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry, []error) {
 	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
@@ -588,6 +590,9 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 	}
 	faults := slices.Concat(aerr, gerr)
 	for _, a := range annotators {
+		if _, generates := a.p.(plugin.Generator); generates {
+			continue
+		}
 		for k, caps := range [...][]plugin.Capability{a.requires, a.after} {
 			for i, c := range caps {
 				if slices.Contains(caps[:i], c) || k > 0 && slices.Contains(a.requires, c) ||

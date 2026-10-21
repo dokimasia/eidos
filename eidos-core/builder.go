@@ -155,8 +155,11 @@ func (b *Builder) Provides(caps ...plugin.Capability) *Builder {
 
 // Requires declares the capabilities that the plugin requires. The
 // workspace refuses a composition without a provider of each of them, and
-// runs the providers before the plugin. A first call allocates the list
-// of labels, and a later call allocates only to grow it.
+// runs the providers before the plugin. In a plugin with both roles, a
+// capability that a generator provides orders the generator half alone,
+// because every annotator runs before the generators. A first call
+// allocates the list of labels, and a later call allocates only to grow
+// it.
 func (b *Builder) Requires(caps ...plugin.Capability) *Builder {
 	b.requires = append(b.requires, caps...)
 	return b
@@ -164,8 +167,10 @@ func (b *Builder) Requires(caps ...plugin.Capability) *Builder {
 
 // After declares the capabilities whose providers run before the plugin
 // where the composition contains them. The workspace requires no provider
-// of them. A first call allocates the list of labels, and a later call
-// allocates only to grow it.
+// of them. In a plugin with both roles, a capability that a generator
+// provides orders the generator half alone, because every annotator runs
+// before the generators. A first call allocates the list of labels, and a
+// later call allocates only to grow it.
 func (b *Builder) After(caps ...plugin.Capability) *Builder {
 	b.after = append(b.after, caps...)
 	return b
