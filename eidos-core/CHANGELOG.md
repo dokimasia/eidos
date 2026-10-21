@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/core
 
+## 0.5.0
+
+### Minor Changes
+
+- 3f4bf95: Order the generator half of a plugin with both roles after a generator whose capability it requires or runs after.
+
 ## 0.4.0
 
 ### Minor Changes
