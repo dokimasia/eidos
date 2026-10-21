@@ -32,8 +32,7 @@ const KeyClassified meta.KeyName = "shape.classified"
 const Declared Shape = "declared"
 
 // DeclaredParams are the params of the shape declared.
-type DeclaredParams struct {
-}
+type DeclaredParams struct{}
 
 // DeclaredOf returns the params of the shape declared on the subject of m, and
 // false where the subject does not have the shape. It records each read in the
@@ -93,13 +92,19 @@ func ProbeReaderOf(m sdk.Matcher) (ProbeReaderParams, bool) {
 var probeReaderShapeKey meta.Key[bool] = meta.Named[bool]("shape.probe-reader.shape")
 
 // probeReaderKeyKey is the handle of the key shape.probe-reader.key.
-var probeReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.probe-reader.key")
+var probeReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.probe-reader.key",
+)
 
 // probeReaderValueKey is the handle of the key shape.probe-reader.value.
-var probeReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.probe-reader.value")
+var probeReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.probe-reader.value",
+)
 
 // probeReaderReadsKey is the handle of the key shape.probe-reader.reads.
-var probeReaderReadsKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.probe-reader.reads")
+var probeReaderReadsKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.probe-reader.reads",
+)
 
 // ProbeWriter is the shape probe-writer. The callable persists one value.
 const ProbeWriter Shape = "probe-writer"
@@ -137,7 +142,9 @@ func ProbeWriterOf(m sdk.Matcher) (ProbeWriterParams, bool) {
 var probeWriterShapeKey meta.Key[bool] = meta.Named[bool]("shape.probe-writer.shape")
 
 // probeWriterValueKey is the handle of the key shape.probe-writer.value.
-var probeWriterValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.probe-writer.value")
+var probeWriterValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.probe-writer.value",
+)
 
 // probeWriterSampleKey is the handle of the key shape.probe-writer.sample.
 var probeWriterSampleKey meta.Key[string] = meta.Named[string]("shape.probe-writer.sample")
@@ -191,7 +198,9 @@ var txProbeRoleKey meta.Key[string] = meta.Named[string]("shape.tx-probe.role")
 var txProbeIDKey meta.Key[string] = meta.Named[string]("shape.tx-probe.id")
 
 // txProbeClosedKey is the handle of the key shape.tx-probe.closed.
-var txProbeClosedKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.tx-probe.closed")
+var txProbeClosedKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.tx-probe.closed",
+)
 
 // XSSSafe is the mixin xss-safe. The callable escapes what it writes into a
 // page.
@@ -285,8 +294,20 @@ func Specs() []Spec {
 				},
 			},
 			Bindings: []Binding{
-				{Key: ProbeReaderKey, Fact: "shape.probe-reader.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: ProbeReaderValue, Fact: "shape.probe-reader.value", From: SourceResult, Index: 0, Doc: "the return of the value"},
+				{
+					Key:   ProbeReaderKey,
+					Fact:  "shape.probe-reader.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   ProbeReaderValue,
+					Fact:  "shape.probe-reader.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the value",
+				},
 			},
 			YieldsTo: []Shape{ProbeWriter},
 		},
@@ -309,7 +330,13 @@ func Specs() []Spec {
 				},
 			},
 			Bindings: []Binding{
-				{Key: ProbeWriterValue, Fact: "shape.probe-writer.value", From: SourceInput, Index: 0, Doc: "the parameter of the value"},
+				{
+					Key:   ProbeWriterValue,
+					Fact:  "shape.probe-writer.value",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the value",
+				},
 			},
 		},
 		{
@@ -390,4 +417,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:3c2802969b20562e647deeb056f9ab943ebe248c105ae14036d9eb77302cad5c
+// shapegen:provenance sha256:6090bade523cc5ac11f210f00217007b23265fdc7eef860520497950fc5cad08

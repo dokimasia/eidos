@@ -15,8 +15,14 @@ require (
 )
 
 require (
+	github.com/dave/dst v0.28.0 // indirect
+	github.com/golangci/golines v0.16.0 // indirect
+	github.com/ldez/structtags v0.6.1 // indirect
 	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
+	mvdan.cc/gofumpt v0.12.0 // indirect
 )
 
 replace go.dokimi.dev/eidos/core => ../../eidos-core
