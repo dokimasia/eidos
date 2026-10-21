@@ -113,7 +113,24 @@ decides it.
    `plugin.File.Referents`, sorted by package path. A target whose
    package clause does not follow from the package path, such as
    protobuf, reads the clause of the other file from the name of that
-   package.
+   package. The layout finds the referent of three kinds of reference:
+   - A bare reference has neither a target nor a package. Its referent
+     is the declaration of the package of its unit with its settled
+     name. The layout sets `emit.TypeRef.Emitted` on a bare reference
+     that it qualifies into another package.
+   - A translated reference has a target in another language than the
+     plan. Its referent is the declaration of the plan whose origin is
+     the target and whose settled name is the spelling.
+   - An emitted reference has a target and has `emit.TypeRef.Emitted`
+     set. A generator writes it for a declaration that another generator
+     emits, such as a fixture in a test package. Its referent is found
+     as the referent of a translated reference is, in any language.
+
+   A backend imports a reference with the mark from the package that the
+   layout sets. The TypeScript backend writes that module path relative
+   to the file, such as `./thing.maker`. The layout refuses the
+   referencing declaration under `UnemittedReference` where the plan
+   does not emit the referent of an emitted reference.
 8. **Names.** Each settled file-level name occurs once in the namespace
    of its file and its receiver. The layout reports the declarations of
    one name as one `CollidingNames` Error, positioned at the second
@@ -289,6 +306,7 @@ carrier line of the directive that caused them:
 | EID-0053 | `PathCollision` | two routed paths one tree cannot contain |
 | EID-0054 | `UnderivedPackage` | a reference into a file whose package the target derives none for, or a bound reference whose binder derives no package |
 | EID-0070 | `UntranslatedReference` | a translated reference to a declaration that the plan does not emit, or a bound reference in a plan whose backend has no binder |
+| EID-0081 | `UnemittedReference` | an emitted reference to a declaration that the plan does not emit |
 | EID-0031 | `CollidingNames` | two file-level declarations of one namespace and receiver with one settled name |
 
 A refused declaration is left out, and the rest of its file renders.
