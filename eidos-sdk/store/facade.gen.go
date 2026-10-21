@@ -149,10 +149,11 @@ type ReadLog = core.ReadLog
 // ReadSet is what one derived artifact read.
 //
 // Edges deduplicate, so a loop reading one declaration a thousand
-// times records one edge. The set records five grains of the four edge
+// times records one edge. The set records six grains of the four edge
 // kinds: a declaration edge for a targeted read, a package edge for a
 // package taken whole, a membership edge for an enumeration by kind,
-// a membership edge for an enumeration by directive, and a fact edge at
+// a membership edge for an enumeration by directive, a membership edge
+// for an enumeration of the subjects of a key, and a fact edge at
 // (subject, key) for a fact read. ReadSet satisfies [meta.Recorder], so
 // one artifact's declaration reads and fact reads arrive in one set.
 //

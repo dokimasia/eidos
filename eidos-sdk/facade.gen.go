@@ -19,6 +19,7 @@ package sdk
 
 import (
 	"io/fs"
+	"iter"
 	"text/template"
 
 	core "go.dokimi.dev/eidos/core"
@@ -43,7 +44,8 @@ import (
 // what the plugin declares, and nothing where the plugin declares nothing.
 //
 // [plugin.DirectiveProvider] returns the schema of each [Directive]
-// wrapper. A typed build sets an empty Kinds of a schema to the kinds of
+// wrapper in the order of the declaration, a wrapper around no rules
+// included. A typed build sets an empty Kinds of a schema to the kinds of
 // the rules under the wrapper, in the order of [symbol.Kind]. For an
 // override schema, it also adds the kinds of the rules of the plugin that
 // no directive gates. An [OnGraph] rule has no subject, so it adds no
@@ -58,7 +60,10 @@ import (
 // at the first build in any test, before a run exists. The workspace
 // returns the faults of a composition as errors. The defects are:
 //
-//   - an empty name, no rules, and a wrapper around no rules
+//   - an empty name, no rules, and a [Where] or [Gated] wrapper around no
+//     rules
+//   - a [Directive] wrapper around no rules whose schema states no Kinds
+//     and does not override
 //   - a duplicate output tag, an empty output word, a zero cardinality,
 //     and a family template that is not a slash-separated path inside a
 //     tree
@@ -339,7 +344,8 @@ type Reporter = core.Reporter
 
 // SubjectMatch is the part that every match with a subject has: the
 // language and the rules of the subject, the reader, the gating
-// directive, the keys of the kernel, the exports of the plans that the
+// directive, the instances of the directives of the plugin on the
+// subject, the keys of the kernel, the exports of the plans that the
 // plan depends on, and the reports of [Reporter]. A function that two
 // handlers of different kinds share takes a SubjectMatch, such as one
 // that writes the double of an interface and of a struct. Every match of
@@ -364,6 +370,32 @@ func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 // does.
 func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	return core.FactOf[T](m, id, k)
+}
+
+// Subjects returns the subjects under the scope of the match on which k
+// reads present, in identity order. It records the membership edge on k
+// into the read set of the invocation when the range starts. A subject in
+// the scope that gains or loses k then runs the handler again, and a change
+// of the value of k on a subject does not. A handler reads the value on a
+// subject through [FactOf], which records the fact edge. A named handle
+// resolves by its name in the registry of the run, because the presence of
+// a key does not depend on its value type. A name that the registry does
+// not contain does not yield a subject, and the edge records the name. The
+// zero Key does not yield a subject or record an edge. A graph match
+// enumerates as a match with a subject does.
+//
+// The enumeration lists the subjects that read present when the range
+// starts. In the annotate phase these are the subjects of the stamps of the
+// load, of the directives and of the annotators of earlier turns. A handler
+// does not read a key that another match of its own phase call stamps,
+// because handlers are order-independent within a plugin.
+//
+// # Allocation contract
+//
+// A range over Subjects allocates what [meta.Facts.ByKey] allocates, and
+// what the read set allocates to record the edge.
+func Subjects[T meta.FactValue](m Matcher, k meta.Key[T]) iter.Seq[symbol.Identity] {
+	return core.Subjects[T](m, k)
 }
 
 // Mirror returns an emit method with the signature of the node method
@@ -514,8 +546,11 @@ type Rule = core.Rule
 // sets an empty Kinds of s from the rules, as the documentation of
 // [Builder] states. A typed build gives a schema with an empty Plugin the
 // name of the plugin, and the workspace refuses a schema that names
-// another plugin. Directive allocates the copy of the schema and the list
-// of rules, two allocations.
+// another plugin. A wrapper around no rules registers s and gates nothing,
+// for a directive that a handler of another rule reads through the
+// Directives method of [SubjectMatch]. Its schema states its Kinds unless
+// it overrides, and a typed build panics otherwise. Directive allocates the
+// copy of the schema and the list of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return core.Directive(s, rules...)
 }
