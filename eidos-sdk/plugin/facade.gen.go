@@ -1147,9 +1147,9 @@ type MemberRespeller = core.MemberRespeller
 // so the settle checks no record for a collision, and no reference
 // follows a record.
 //
-// The settle records whether a declaration that renders has a type
-// reference to a declaration of another language than the target of the
-// backend. [Emit.Translates] reports the result.
+// The settle records whether a declaration that renders has an emitted
+// reference, or a type reference to a declaration of another language
+// than the target of the backend. [Emit.Translates] reports the result.
 //
 // The settle reports its findings to the sink under the name of the
 // backend. A refused construct or name withholds its declaration.
