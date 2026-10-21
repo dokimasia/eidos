@@ -192,13 +192,15 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // and [Anonymous] for a nil t. A reference with arguments has its bare
 // name in Spelling, and Spell writes the argument list in angle
 // brackets. A structural reference keeps its written spelling. Spell
-// returns an error where a type inside a structural reference imports
-// under another name, because the composite spelling of TypeScript does
-// not follow from its structure. Spell also returns an error where a
-// declaration of the file hides the global type that t names, because the
-// spelling would refer to that declaration. Every declaration of a
-// library of TypeScript is global. A reference without a module names a
-// global type where [typescript.GlobalType] reports true for its name.
+// writes each string literal of the spelling in the quote that the policy
+// of the set selects, through [typescript.Requote]. Spell returns an
+// error where a type inside a structural reference imports under another
+// name, because the composite spelling of TypeScript does not follow from
+// its structure. Spell also returns an error where a declaration of the
+// file hides the global type that t names, because the spelling would
+// refer to that declaration. Every declaration of a library of TypeScript
+// is global. A reference without a module refers to a global type where
+// [typescript.GlobalType] reports true for its name.
 //
 // Spell allocates nothing for a name in its written form, a nil
 // reference and a structural reference. An imported declaration
@@ -206,7 +208,8 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // reference with arguments writes into one buffer, which is one
 // allocation where every bound name is as long as its written spelling.
 // A member of an imported declaration allocates the member after the
-// bound name.
+// bound name. A spelling with a string literal in the other quote
+// allocates the spelling in the new quote.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return s.spell(t, true)
 }
@@ -484,6 +487,38 @@ func (s Speller) Results(results *emit.Slot[*emit.Return]) (string, error) {
 	return s.resultType(results.Items(), annotationSep, "")
 }
 
+// PropKey writes the property key of the field f, as [Speller.MethodKey]
+// writes the key of a method. A quoted key is a name such as the wire name
+// content-type or a key that starts with a digit, and the type then
+// declares the whole name. It allocates once for a quoted key and nothing
+// otherwise. A refusal allocates its error.
+func (s Speller) PropKey(f *emit.Field) (string, error) {
+	return s.memberKey(f.Name, f.Hard, f.Computed)
+}
+
+// MethodKey writes the member key of the method m. It writes an
+// identifier as it is, a computed name as written, and any other name as
+// a string in the quote that the policy of the set selects. TypeScript
+// allows a quoted member key on classes and on interfaces. MethodKey
+// returns an error for a hard-private name that is not an identifier
+// after its #, because # takes no quoted form. It allocates once for a
+// quoted key and nothing otherwise. A refusal allocates its error.
+func (s Speller) MethodKey(m *emit.Method) (string, error) {
+	return s.memberKey(m.Name, m.Hard, m.Computed)
+}
+
+// EnumKey writes the key of the enum member v. It writes an identifier
+// as it is and any other name as a string in the quote that the policy of
+// the set selects. TypeScript allows a quoted key on an enum member.
+// EnumKey allocates once for a quoted key and nothing for an identifier.
+func (s Speller) EnumKey(v *emit.EnumVariant) string {
+	if spell.IsIdentifier(v.Name) {
+		return v.Name
+	}
+	style, _ := s.set.Policy().Lookup(typescript.QuoteStyle)
+	return quote(v.Name, style)
+}
+
 // resultType writes the type of one or more results between open and
 // closer. It writes the type of one result, and a tuple for two or more.
 // It joins the text in one concatenation, so one result allocates once.
@@ -505,13 +540,15 @@ func (s Speller) resultType(rs []*emit.Return, open, closer string) (string, err
 // spell writes the reference t. Where typeOnly is true, it imports the
 // declaration of t for the type checker alone. A composite whose child
 // imports under another name, and a composite that the rules substituted,
-// restate through [typescript.Restate].
+// restate through [typescript.Restate]. Each string literal takes the
+// quote of the policy of the set.
 func (s Speller) spell(t *emit.TypeRef, typeOnly bool) (string, error) {
 	out, err := spellref.SpellRestated(t, argsOpener, argsCloser, Anonymous, s.qualify(typeOnly), typescript.Restate)
 	if err != nil {
 		return "", refuse("%w", err)
 	}
-	return out, nil
+	style, _ := s.set.Policy().Lookup(typescript.QuoteStyle)
+	return typescript.Requote(out, style), nil
 }
 
 // qualify returns a function that writes a named reference through its
@@ -568,13 +605,29 @@ func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)
 	return out, nil
 }
 
+// memberKey writes the key of a member named name, as
+// [Speller.MethodKey] states. hard and computed are the facts of the
+// member. The name of a hard-private member must be an identifier after
+// its #.
+func (s Speller) memberKey(name string, hard, computed bool) (string, error) {
+	switch {
+	case hard && !spell.IsIdentifier(strings.TrimPrefix(name, hardMark)):
+		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier", name)
+	case hard, computed, spell.IsIdentifier(name):
+		return name, nil
+	}
+	style, _ := s.set.Policy().Lookup(typescript.QuoteStyle)
+	return quote(name, style), nil
+}
+
 // Funcs returns the template vocabulary that the kind templates call. The
 // helpers import every declaration of another module that they write into
-// set, the import set of one file. Every helper takes
-// a fixed list of arguments, because text/template allocates the list of
-// a variadic call and a value for each string argument in a template.
-// Funcs allocates the map of twenty-six helpers in four allocations,
-// and the nine bound helpers of the speller.
+// set, the import set of one file, and they quote in the quote that the
+// policy of set selects. Every helper takes a fixed list of arguments,
+// because text/template allocates the list of a variadic call and a value
+// for each string argument in a template. Funcs allocates the map of
+// twenty-six helpers in four allocations, and the twelve bound helpers of
+// the speller.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -601,9 +654,9 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 		FuncAccessor:         AccessorKw,
 		FuncHard:             Hard,
 		FuncIndexSig:         s.IndexSig,
-		FuncPropKey:          PropKey,
-		FuncMethodKey:        MethodKey,
-		FuncEnumKey:          EnumKey,
+		FuncPropKey:          s.PropKey,
+		FuncMethodKey:        s.MethodKey,
+		FuncEnumKey:          s.EnumKey,
 	}
 }
 
@@ -628,37 +681,6 @@ func MemberDocs(lines []string) string {
 // what [textfmt.Wrap] allocates.
 func WrapDocs(text string) []string {
 	return textfmt.Wrap(text, textfmt.DocsWidth, textfmt.MarkupTags|textfmt.MarkupMarkdown)
-}
-
-// PropKey writes the property key of the field f, as [MethodKey] writes
-// the key of a method. A quoted key is a name such as the wire name
-// content-type or a key that starts with a digit, and the type then
-// declares the whole name. It allocates once for a quoted key and nothing
-// otherwise. A refusal allocates its error.
-func PropKey(f *emit.Field) (string, error) {
-	return memberKey(f.Name, f.Hard, f.Computed)
-}
-
-// MethodKey writes the member key of the method m. It writes an
-// identifier as it is, a computed name as written, and any other name in
-// single quotes. TypeScript allows a quoted member key on classes and on
-// interfaces. MethodKey returns an error for a hard-private name that is
-// not an identifier after its #, because # takes no quoted form. It
-// allocates once for a quoted key and nothing otherwise. A refusal
-// allocates its error.
-func MethodKey(m *emit.Method) (string, error) {
-	return memberKey(m.Name, m.Hard, m.Computed)
-}
-
-// EnumKey writes the key of the enum member v. It writes an identifier
-// as it is and any other name in single quotes. TypeScript allows a
-// quoted key on an enum member. EnumKey allocates once for a quoted key
-// and nothing for an identifier.
-func EnumKey(v *emit.EnumVariant) string {
-	if spell.IsIdentifier(v.Name) {
-		return v.Name
-	}
-	return quote(v.Name)
 }
 
 // AccessorKw writes the accessor keyword of the method m. It returns an
@@ -1140,19 +1162,6 @@ func relativeTo(home, module string) string {
 	}
 	b.WriteString(module[shared:])
 	return b.String()
-}
-
-// memberKey writes the key of a member named name, as [MethodKey] states.
-// hard and computed are the facts of the member. The name of a
-// hard-private member must be an identifier after its #.
-func memberKey(name string, hard, computed bool) (string, error) {
-	switch {
-	case hard && !spell.IsIdentifier(strings.TrimPrefix(name, hardMark)):
-		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier", name)
-	case hard, computed, spell.IsIdentifier(name):
-		return name, nil
-	}
-	return quote(name), nil
 }
 
 // unthrown returns the refusal of declared failure types for the

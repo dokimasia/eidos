@@ -36,10 +36,11 @@ const (
 )
 
 // The lowering pins the discriminant's property name, and the circle
-// variant's literal type, which it quotes in TypeScript's grammar.
+// variant's literal type, which it quotes in TypeScript's grammar. The
+// render writes the literal in the quote of the policy of its plan.
 const (
 	discriminantName = "kind"
-	circleLiteral    = "'circle'"
+	circleLiteral    = `"circle"`
 )
 
 // The refusal cases add a method a union cannot host, a decorator, a

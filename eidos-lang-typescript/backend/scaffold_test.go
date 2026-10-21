@@ -180,7 +180,7 @@ func scaffoldCalls() []allocCall {
 		},
 		{
 			name: "Scaffold", caseName: "a return of a string", allocs: stringAllocs,
-			call: func() { out, err = backend.Scaffold(text, &set) }, check: spells("  return 'hi';\n"),
+			call: func() { out, err = backend.Scaffold(text, &set) }, check: spells("  return \"hi\";\n"),
 		},
 	}
 }

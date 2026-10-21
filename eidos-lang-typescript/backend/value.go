@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/eidos/lang/scaffold"
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -38,15 +39,35 @@ const (
 	abstractKeyword = "abstract"
 )
 
-// leaves is TypeScript's spelling of the literal leaves. A number
-// keeps its text, and a string quotes in TypeScript's own grammar.
-// The vocabulary has one absent value and TypeScript has two, so the
-// derived one is null, which a JSON-shaped value takes.
-var leaves = scaffold.Leaves{
-	Lang:   typescript.Lang,
-	Absent: typescript.TypeNull,
-	Quote:  quote,
-}
+// The braces of an object literal with the space that Biome and Prettier
+// write inside them, and an object literal without entries.
+const (
+	entriesOpen  = "{ "
+	entriesClose = " }"
+	emptyObject  = "{}"
+)
+
+// quoteScratch is the size of the buffer on the stack that [quote] writes
+// a literal into. A longer literal allocates once more.
+const quoteScratch = 64
+
+// leaves and singleLeaves are TypeScript's spellings of the literal
+// leaves, with a string in the double quote and in the single quote. A
+// number keeps its text. The vocabulary has one absent value and
+// TypeScript has two, so the derived one is null, the absent value of a
+// JSON payload.
+var (
+	leaves = scaffold.Leaves{
+		Lang:   typescript.Lang,
+		Absent: typescript.TypeNull,
+		Quote:  func(text string) string { return quote(text, typescript.DoubleQuote) },
+	}
+	singleLeaves = scaffold.Leaves{
+		Lang:   typescript.Lang,
+		Absent: typescript.TypeNull,
+		Quote:  func(text string) string { return quote(text, typescript.SingleQuote) },
+	}
+)
 
 // target spells a value tree as TypeScript, importing through the
 // file's import set what its references and callees name.
@@ -55,8 +76,14 @@ type target struct{ set *render.ImportSet }
 // Lang names the target for a refusal.
 func (target) Lang() string { return string(typescript.Lang) }
 
-// Literal spells one leaf through [leaves].
-func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
+// Literal spells one leaf through [leaves], and a string in the quote that
+// the policy of the set selects.
+func (t target) Literal(v emit.Value) (string, error) {
+	if style, _ := t.set.Policy().Lookup(typescript.QuoteStyle); style == typescript.SingleQuote {
+		return singleLeaves.Literal(v)
+	}
+	return leaves.Literal(v)
+}
 
 // Type spells a reference through the file's [Speller], so a value
 // and a declaration import one declaration under one name.
@@ -71,18 +98,29 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 // declaration relative to the module of the file. A declaration in no
 // module, a declaration of a library of TypeScript, which is global, a
 // declaration of the module of the file, and an identity without a name
-// spell their own name. Callee returns a [render.ValueError] for a
-// declaration of a library that a declaration of the file hides, because
-// the name would refer to the declaration of the file.
+// spell their own name. A member with an owner, such as the static method
+// assign of Object, spells as the owner, a dot and the member. The owner
+// takes the place of the name in the import and in the scope. Callee
+// returns a [render.ValueError] for a declaration of a library that a
+// declaration of the file hides, because the name would refer to the
+// declaration of the file.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	library := typescript.Library(id.Package)
-	switch {
-	case library && t.set.Reserved(id.Name):
-		return "", render.RefuseValue(t.Lang(), "a declaration of the file hides the global %s", id.Name)
-	case library || id.Package == "" || id.Name == "" || id.Package == t.set.Home():
-		return id.Name, nil
+	head := id.Name
+	if id.Owner != "" {
+		head = id.Owner
 	}
-	return t.set.BindItem(relativeTo(t.set.Home(), id.Package), id.Name, false), nil
+	switch {
+	case library && t.set.Reserved(head):
+		return "", render.RefuseValue(t.Lang(), "a declaration of the file hides the global %s", head)
+	case library || id.Package == "" || id.Name == "" || id.Package == t.set.Home():
+	default:
+		head = t.set.BindItem(relativeTo(t.set.Home(), id.Package), head, false)
+	}
+	if id.Owner == "" {
+		return head, nil
+	}
+	return head + qualifierSep + id.Name, nil
 }
 
 // Conversion spells a type assertion. TypeScript erases its types,
@@ -95,7 +133,9 @@ func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
 // Composite spells an array literal for a list, an array, a tuple and
 // the global Array and ReadonlyArray, and an object literal for every
 // other type, such as a record or a map. The reference decides, and an
-// entry that the literal cannot write is refused.
+// entry that the literal cannot write is refused. An object literal has a
+// space inside its braces, as Biome and Prettier write it, and an object
+// literal without entries is two braces.
 func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
@@ -125,7 +165,10 @@ func (t target) Composite(
 				"a %s value has a positional element, and an object literal names every entry", typ)
 		}
 	}
-	return "{" + strings.Join(parts, ", ") + "}", nil
+	if len(parts) == 0 {
+		return emptyObject, nil
+	}
+	return entriesOpen + strings.Join(parts, ", ") + entriesClose, nil
 }
 
 // Address refuses: TypeScript has no address operator, and a
@@ -184,12 +227,24 @@ func (t target) Make(_ *emit.TypeRef, typ string) (string, error) {
 // Value spells one value of the value tree as TypeScript, through a
 // target that imports into set what the references and the callees of
 // the value name. The value builtin calls it, so a template writes a
-// value as a body of the same file writes it. A value that TypeScript has
-// no form for returns a [render.ValueError].
+// value as a body of the same file writes it. Each string takes the quote
+// that the policy of set selects. A value that TypeScript has no form for
+// returns a [render.ValueError].
 //
 // Value allocates what [scaffold.Value] allocates: the text of each part
 // of the value that it joins, and the relative specifier of the module of
-// a callee of another module. A literal does not allocate.
+// a callee of another module. A literal other than a string does not
+// allocate.
 func Value(v emit.Value, set *render.ImportSet) (string, error) {
 	return scaffold.Value(target{set: set}, v)
+}
+
+// quote returns text as a string literal in the quote that style selects,
+// as [typescript.AppendQuote] writes it. A quoted key, a string value and
+// the literal of a discriminant spell through it. It
+// allocates the literal once, and once more where the literal has more
+// than 64 bytes.
+func quote(text string, style plugin.Choice) string {
+	var scratch [quoteScratch]byte
+	return string(typescript.AppendQuote(scratch[:0], text, style))
 }

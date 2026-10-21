@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -16,30 +15,29 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The tokens of the compact spelling that [Language] writes: the tokens of
-// the frontend's spelling without whitespace, with one space between two
-// identifier tokens.
+// The parts of the spelling that [Language] writes, with the spaces of the
+// layout of the frontend's spelling.
 const (
 	listMark     = "[]"
-	unionSep     = "|"
-	intersectSep = "&"
+	unionSep     = " | "
+	intersectSep = " & "
 	tupleOpen    = "["
 	tupleClose   = "]"
-	itemSep      = ","
+	itemSep      = ", "
 	groupOpen    = "("
 	groupClose   = ")"
-	arrow        = "=>"
+	arrow        = " => "
 	paramPrefix  = "p"
-	typeMark     = ":"
-	indexOpen    = "{[key:"
-	readonlyOpen = "{readonly[key:"
-	indexClose   = "]:"
-	bodyOpen     = "{"
-	bodyClose    = "}"
-	memberSep    = ";"
+	typeMark     = ": "
+	indexOpen    = "{ [key: "
+	readonlyOpen = "{ readonly [key: "
+	indexClose   = "]: "
+	bodyOpen     = "{ "
+	bodyClose    = " }"
+	emptyBody    = "{}"
+	memberSep    = "; "
 	optionalMark = "?"
 	readonlyWord = "readonly "
-	readonlyMark = "readonly"
 	argsOpen     = "<"
 	argsClose    = ">"
 )
@@ -50,13 +48,12 @@ const (
 var errOneResult = errors.New("testing: a function type of TypeScript has exactly one return type")
 
 // Language is the spelling adapter of TypeScript for a fixture of
-// nodetest. It writes the compact spelling that the TypeScript frontend
-// records: the tokens of the source without whitespace, with one space
-// between two identifier tokens. It puts a union, an intersection, an
-// optional and a function type in parentheses where such a type is a child
-// of a list, an optional, a union or an intersection. A reference to a type
-// of another package has the name of the type alone, as an import binds
-// it. TypeScript overloads.
+// nodetest. It writes the spelling that the TypeScript frontend records: the
+// tokens of the type in the layout in which Biome and Prettier write it on
+// one line. It puts a union, an intersection, an optional and a function
+// type in parentheses where such a type is a child of a list, an optional,
+// a union or an intersection. A reference to a type of another package has
+// the name of the type alone, as an import binds it. TypeScript overloads.
 //
 // # Concurrency
 //
@@ -73,19 +70,20 @@ func (Language) Lang() symbol.Lang { return typescript.Lang }
 // function.
 func (Language) Overloads() bool { return true }
 
-// Spell writes ref in the compact spelling of TypeScript:
+// Spell writes ref in the spelling of TypeScript that the frontend records:
 //
-//   - T[] for a list, [A,B] for a tuple, A|B for a union and A&B for an
-//     intersection.
-//   - T|undefined for an optional without absent members, and T followed
-//     by its absent members for any other optional, such as T|null.
-//   - readonly T[] and readonly[A,B] for an immutable list and tuple. An
+//   - T[] for a list, [A, B] for a tuple, A | B for a union and A & B for
+//     an intersection.
+//   - T | undefined for an optional without absent members, and T followed
+//     by its absent members for any other optional, such as T | null.
+//   - readonly T[] and readonly [A, B] for an immutable list and tuple. An
 //     immutable list or tuple inside a list is in parentheses.
-//   - (p0:A,p1:B)=>R for a function type, whose parameters are named by
-//     their position.
-//   - {[key:K]:V} for a map and {readonly[key:K]:V} for an immutable map,
-//     and {a:T;b?:U;readonly c:V;m(p0:A):R} for an inline body.
-//   - Map<K,V> for a child with type arguments.
+//   - (p0: A, p1: B) => R for a function type, whose parameters are named
+//     by their position.
+//   - { [key: K]: V } for a map and { readonly [key: K]: V } for an
+//     immutable map, and { a: T; b?: U; readonly c: V; m(p0: A): R } for an
+//     inline body. An inline body without members is {}.
+//   - Map<K, V> for a child with type arguments.
 //
 // Error modes: a function type without exactly one result and a method of
 // an inline body with more than one result return errOneResult, because
@@ -166,17 +164,13 @@ func grouped(elems []*node.TypeRef, children []string, sep string) string {
 	return strings.Join(parts, sep)
 }
 
-// readonly returns text after readonly where ref is immutable, and text
-// alone otherwise. The compact spelling has a space between readonly and
-// text only where text starts with a character of an identifier.
+// readonly returns text after readonly and a space where ref is immutable,
+// and text alone otherwise.
 func readonly(ref *node.TypeRef, text string) string {
 	if ref.Mutability != symbol.MutabilityImmutable {
 		return text
 	}
-	if r, _ := utf8.DecodeRuneInString(text); typescript.IsIdentifierPart(r) {
-		return readonlyWord + text
-	}
-	return readonlyMark + text
+	return readonlyWord + text
 }
 
 // signature writes the parameter list of a function type or a method, each
@@ -219,6 +213,9 @@ func inline(ref *node.TypeRef) (string, error) {
 			return "", errOneResult
 		}
 		members = append(members, member)
+	}
+	if len(members) == 0 {
+		return emptyBody, nil
 	}
 	return bodyOpen + strings.Join(members, memberSep) + bodyClose, nil
 }

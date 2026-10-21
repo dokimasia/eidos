@@ -45,7 +45,8 @@ const variantSep = "_"
 // follows the settle the way any reference does. The discriminant
 // literal keeps the variant's declared name, quoted in TypeScript's
 // grammar, because the property is data and a respell must not move
-// what a wire may send.
+// what a wire may send. The lowering writes the literal in the double
+// quote, and the render writes it in the quote of the policy of its plan.
 //
 // Every output has the sum's origin and none restates the sum, so a
 // second settle changes nothing. A sum stating methods refuses,
@@ -244,7 +245,7 @@ func variantInterface(
 	fields = append(fields, &emit.Field{
 		Origin: v.Origin,
 		Name:   discriminant,
-		Type:   &emit.TypeRef{Spelling: quote(v.Name)},
+		Type:   &emit.TypeRef{Spelling: quote(v.Name, typescript.DoubleQuote)},
 	})
 	for _, f := range payload {
 		if f.Name == discriminant {

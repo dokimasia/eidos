@@ -33,8 +33,8 @@ const (
 	NamespaceKey meta.KeyName = "typescript.namespace"
 
 	// CallSignatureKey records the call signatures of an interface or of
-	// the object type of an alias as written. The model has no member for
-	// a callable object.
+	// the object type of an alias, each in the layout of the spelling of a
+	// type. The model has no member for a callable object.
 	CallSignatureKey meta.KeyName = "typescript.callSignature"
 
 	// AmbientKey marks a declaration whose implementation is elsewhere,
@@ -94,7 +94,7 @@ func Keys(r *meta.Registry) error {
 	})
 	_, callErr := meta.Register[[]string](r, meta.KeySpec{
 		Name: CallSignatureKey, Kinds: []symbol.Kind{symbol.KindInterface, symbol.KindAlias},
-		Doc: "records the call signatures of a callable object type as written",
+		Doc: "records the call signatures of a callable object type in the layout of a spelled type",
 	})
 	_, ambientErr := meta.Register[bool](r, meta.KeySpec{
 		Name: AmbientKey,

@@ -53,7 +53,8 @@ const wildcardName = "*"
 // share one map. declared contains the identity of each declaration of the
 // unit by package and name where the file records uses, as
 // [lowering.recordUses] states them, and it is nil for a file without a
-// library. The files of a library share one map.
+// library. The files of a library share one map. tokens is the buffer of
+// the tokens of the type that [lowering.spelling] spells.
 type lowering struct {
 	u          *plugin.SourceUnit
 	v          *vocabulary
@@ -68,6 +69,7 @@ type lowering struct {
 	library    bool
 	interfaces map[mergeKey]*node.Interface
 	declared   map[symbol.Identity]bool
+	tokens     []treesitter.Token
 }
 
 // container is where the declarations of one statement list go: the File

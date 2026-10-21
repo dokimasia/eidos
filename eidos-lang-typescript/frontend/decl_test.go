@@ -227,7 +227,7 @@ func TestDecl(t *testing.T) {
 				"export interface A { a?: \"y\" | \"x\"; b: number }\n")
 			fields := decls[0].(*node.Interface).Fields
 			assert.Length(t, fields, 2, "the second declaration adds b alone")
-			assert.Equal(t, fields[0].Type.Spelling, `"x"|"y"`, "the first declaration of a keeps its type")
+			assert.Equal(t, fields[0].Type.Spelling, `"x" | "y"`, "the first declaration of a keeps its type")
 		})
 
 		// mergedRun is the first declaration of the merge cases: one method run
@@ -410,7 +410,7 @@ func TestDecl(t *testing.T) {
 			a := named[*node.Alias](t, fileIn(t, gb, aPackage).Decls, "Kind")
 			got, stamped := stampOn(gb, a, typescript.ConditionalTypeKey)
 			assert.True(t, stamped, "the model has no conditional type")
-			assert.Equal(t, got, any("T extends string?'text':'other'"), "the spelling of the target")
+			assert.Equal(t, got, any("T extends string ? 'text' : 'other'"), "the spelling of the target")
 		})
 
 		t.Run("stamps no conditional type on an alias of another type", func(t *testing.T) {

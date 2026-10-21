@@ -4,9 +4,10 @@
 package backend
 
 import (
-	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
@@ -25,6 +26,9 @@ const (
 	relativeMark = "."
 	// specifierQuotes is the two quotes around a specifier.
 	specifierQuotes = 2
+	// specifierScratch is the size of the buffer on the stack that a
+	// specifier is quoted into. A longer literal allocates.
+	specifierScratch = 256
 )
 
 // specifierKind is the group of the block a path's statements belong
@@ -51,14 +55,15 @@ const (
 // import. A value
 // import runs the module too, so it replaces the side-effect import
 // of its path. TypeScript erases import type, so the side-effect
-// import renders before it. Specifiers quote single, TypeScript's own
-// canon.
+// import renders before it. Each specifier is a string in the quote that
+// the policy of the set selects, as [typescript.AppendQuote] writes it.
 //
 // # Allocation contract
 //
 // Imports allocates the sorted entries and the block, which it sizes
 // once: two allocations. A specifier that needs escapes grows the block
-// once more. An empty set allocates nothing.
+// once more, and a specifier of more than 254 bytes allocates its literal.
+// An empty set allocates nothing.
 func Imports(set *render.ImportSet) string {
 	entries := set.Entries()
 	if len(entries) == 0 {
@@ -70,10 +75,11 @@ func Imports(set *render.ImportSet) string {
 		size += importOf(group).size()
 		rest = rest[len(group):]
 	}
+	style, _ := set.Policy().Lookup(typescript.QuoteStyle)
 	var b strings.Builder
 	b.Grow(size)
-	writeImports(&b, entries, packageSpecifier)
-	writeImports(&b, entries, relativeSpecifier)
+	writeImports(&b, entries, packageSpecifier, style)
+	writeImports(&b, entries, relativeSpecifier, style)
 	b.WriteString("\n")
 	return b.String()
 }
@@ -91,12 +97,12 @@ func TemplateImport(_, name string) (local, item string, ok bool) {
 }
 
 // writeImports writes the statements of every path of one group, in
-// entry order.
-func writeImports(b *strings.Builder, entries []render.Entry, kind specifierKind) {
+// entry order, with each specifier in the quote that style selects.
+func writeImports(b *strings.Builder, entries []render.Entry, kind specifierKind, style plugin.Choice) {
 	for rest := entries; len(rest) > 0; {
 		group := rest[:pathRun(rest)]
 		if kindOf(group[0].Path) == kind {
-			importOf(group).write(b)
+			importOf(group).write(b, style)
 		}
 		rest = rest[len(group):]
 	}
@@ -188,12 +194,14 @@ func (p pathImport) size() int {
 	return n
 }
 
-// write writes the statements of p into b.
-func (p pathImport) write(b *strings.Builder) {
-	path := p.entries[0].Path
+// write writes the statements of p into b, with the specifier in the
+// quote that style selects.
+func (p pathImport) write(b *strings.Builder, style plugin.Choice) {
+	var scratch [specifierScratch]byte
+	quoted := typescript.AppendQuote(scratch[:0], p.entries[0].Path, style)
 	if p.bare && p.typeOnly {
 		b.WriteString(importKeyword)
-		writeQuoted(b, path)
+		b.Write(quoted)
 		b.WriteString(statementEnd)
 	}
 	if !p.named {
@@ -223,7 +231,7 @@ func (p pathImport) write(b *strings.Builder) {
 		written++
 	}
 	b.WriteString(namedClose)
-	writeQuoted(b, path)
+	b.Write(quoted)
 	b.WriteString(statementEnd)
 }
 
@@ -255,69 +263,4 @@ func (p pathImport) specifies(i int) bool {
 		return false
 	}
 	return i == 0 || p.entries[i-1].Name != e.Name || p.entries[i-1].Item != e.Item
-}
-
-// The two Unicode line separators a string literal escapes, because
-// an engine before ES2019 ends the literal at either.
-const (
-	lineSeparator      = 0x2028
-	paragraphSeparator = 0x2029
-)
-
-// The hexadecimal escape a character without a named escape takes:
-// its opener, and the zeros that pad its digits to four.
-const (
-	hexEscape = `\u`
-	hexPad    = "0000"
-)
-
-// quote spells a string in single quotes, TypeScript's own canon,
-// through [writeQuoted]. A specifier, a quoted member key and a string
-// value all spell through it. It sizes its buffer for the string and
-// its quotes, one allocation, and an escape grows it once more.
-func quote(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + specifierQuotes)
-	writeQuoted(&b, s)
-	return b.String()
-}
-
-// writeQuoted writes s into b in single quotes, in TypeScript's escape
-// grammar: the backslash, the quote and the named escapes \b \f \n \r
-// \t \v, every other control character and the two line separators as
-// a four-digit hex escape, and everything else as itself. It allocates
-// only where b grows.
-func writeQuoted(b *strings.Builder, s string) {
-	b.WriteByte('\'')
-	for _, r := range s {
-		switch r {
-		case '\\':
-			b.WriteString(`\\`)
-		case '\'':
-			b.WriteString(`\'`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\v':
-			b.WriteString(`\v`)
-		default:
-			if r < ' ' || r == 0x7f || r == lineSeparator || r == paragraphSeparator {
-				var scratch [len(hexPad)]byte
-				digits := strconv.AppendUint(scratch[:0], uint64(r), 16)
-				b.WriteString(hexEscape)
-				b.WriteString(hexPad[len(digits):])
-				b.Write(digits)
-				continue
-			}
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('\'')
 }

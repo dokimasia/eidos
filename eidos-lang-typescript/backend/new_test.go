@@ -60,10 +60,11 @@ const (
 // corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the seven kind templates. The six lowering policies
-	// add nine: their specs, the kit's list of them, and the check of the
-	// specs that Build makes.
-	newAllocs = 1_836
+	// template and the seven kind templates. The seven lowering policies
+	// add eleven: their specs, the kit's list of them, and the check of the
+	// specs that Build makes. Each of the two vocabularies that the build
+	// binds allocates the twelve bound helpers of the speller.
+	newAllocs = 1_844
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 8,851,050, and the budget is a round number about
@@ -160,7 +161,7 @@ func TestNew(t *testing.T) {
 			for _, f := range backendtest.RenderSettled(t, setup) {
 				text = append(text, f.Body...)
 			}
-			assert.Contains(t, string(text), `  kind: 'circle';`,
+			assert.Contains(t, string(text), `  kind: "circle";`,
 				"a lowered variant leads with its discriminant, quoted in TypeScript's grammar")
 			assert.Contains(t, string(text), "export type Shape = ShapeCircle | ShapeEmpty;",
 				"the union alias joins the lowered interfaces")
@@ -174,8 +175,23 @@ func TestNew(t *testing.T) {
 			body, findings := rendered(t, holder)
 			assert.Empty(t, findings, "the file renders clean")
 			assert.That(t, body).
-				Contains("import type { Row } from './store';\n", "the type-only import").
+				Contains("import type { Row } from \"./store\";\n", "the type-only import").
 				Contains("  row: Row;\n", "the field through the imported name")
+		})
+
+		t.Run("returns a backend that writes the strings of a plan in the quote of its policy", func(t *testing.T) {
+			t.Parallel()
+
+			holder := declared(holderName)
+			holder.Fields.Append(
+				&emit.Field{Name: "row", Type: imported(storeModule, rowName)},
+				&emit.Field{Name: wireName, Type: ref(doubleLiterals)},
+			)
+			body, findings := renderedUnder(t, singleQuoted(t).Policy(), holder)
+			assert.Empty(t, findings, "the file renders clean")
+			assert.That(t, body).
+				Contains("import type { Row } from './store';\n", "the specifier in the single quote").
+				Contains("  "+singleWire+": "+singleLiterals+";\n", "the key and the literals in the single quote")
 		})
 
 		t.Run("returns a backend that imports a class of the source module of the unit", func(t *testing.T) {
@@ -201,7 +217,7 @@ func TestNew(t *testing.T) {
 			assert.Empty(t, findings, "the file renders clean")
 			assert.Length(t, files, 1, "the unit renders into one file")
 			assert.Equal(t, files[0].Path, builderPath, "the file is beside the source module, as a plan routes it")
-			assert.Contains(t, string(files[0].Body), "import type { Account } from './catalog';\n",
+			assert.Contains(t, string(files[0].Body), "import type { Account } from \"./catalog\";\n",
 				"the file imports the class from the source module")
 		})
 
@@ -403,9 +419,18 @@ func benchSetup(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
 }
 
 // rendered settles one unit of declarations through the backend and
-// renders it. It returns the body of the file and the findings of the
-// run.
+// renders it under the zero policy. It returns the body of the file and
+// the findings of the run.
 func rendered(tb assert.TB, decls ...symbol.Symbol) (string, []diag.Diag) {
+	tb.Helper()
+
+	return renderedUnder(tb, plugin.Policy{}, decls...)
+}
+
+// renderedUnder settles one unit of declarations through the backend and
+// renders it under the policy p. It returns the body of the file and the
+// findings of the run.
+func renderedUnder(tb assert.TB, p plugin.Policy, decls ...symbol.Symbol) (string, []diag.Diag) {
 	tb.Helper()
 
 	files, findings := backendtest.Rendered(tb, func(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
@@ -415,12 +440,25 @@ func rendered(tb assert.TB, decls ...symbol.Symbol) (string, []diag.Diag) {
 			Pkg:   symbol.Identity{Lang: typescript.Lang, Package: unitModule, Kind: symbol.KindPackage},
 			Decls: decls,
 		}), "the unit is added")
-		return backend.New(), &backendtest.Fixture{Emit: e}
+		return backend.New(), &backendtest.Fixture{Emit: e, Policy: p}
 	})
 	if len(files) == 0 {
 		return "", findings
 	}
 	return string(files[0].Body), findings
+}
+
+// singleQuoted returns an empty import set whose policy selects the single
+// quote.
+func singleQuoted(tb assert.TB) *render.ImportSet {
+	tb.Helper()
+
+	p, err := plugin.NewPolicy(typescript.Target, typescript.Policies(),
+		map[plugin.PolicyKey]plugin.Choice{typescript.QuoteStyle: typescript.SingleQuote})
+	assert.NoError(tb, err, "the policy resolves")
+	set := &render.ImportSet{}
+	set.SetPolicy(p)
+	return set
 }
 
 // declared returns a struct of the unit's module named name.

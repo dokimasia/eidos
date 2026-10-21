@@ -43,8 +43,18 @@ func TestImports(t *testing.T) {
 			var set render.ImportSet
 			set.Add(storeModule)
 			set.Add(pathPackage)
-			assert.Equal(t, backend.Imports(&set), "import 'node:path';\nimport './store';\n\n",
-				"single quotes and a blank line after the block")
+			assert.Equal(t, backend.Imports(&set), "import \"node:path\";\nimport \"./store\";\n\n",
+				"double quotes and a blank line after the block")
+		})
+
+		t.Run("writes the specifiers in the single quote of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			set := singleQuoted(t)
+			set.Add(storeModule)
+			set.AddType(storeModule, rowName)
+			assert.Equal(t, backend.Imports(set), "import './store';\nimport type { Row } from './store';\n\n",
+				"single quotes, as the policy selects")
 		})
 
 		t.Run("writes import type for a path bound for the type checker alone", func(t *testing.T) {
@@ -53,7 +63,7 @@ func TestImports(t *testing.T) {
 			var set render.ImportSet
 			set.AddType(storeModule, rowName)
 			set.AddType(storeModule, keyedName)
-			assert.Equal(t, backend.Imports(&set), "import type { Keyed, Row } from './store';\n\n",
+			assert.Equal(t, backend.Imports(&set), "import type { Keyed, Row } from \"./store\";\n\n",
 				"the names sorted")
 		})
 
@@ -63,7 +73,7 @@ func TestImports(t *testing.T) {
 			var set render.ImportSet
 			set.AddType(codecModule, codecName)
 			set.AddNamed(codecModule, decodeName)
-			assert.Equal(t, backend.Imports(&set), "import { type Codec, decode } from './codec';\n\n",
+			assert.Equal(t, backend.Imports(&set), "import { type Codec, decode } from \"./codec\";\n\n",
 				"the type-only specifier of the value import has the type modifier")
 		})
 
@@ -76,7 +86,7 @@ func TestImports(t *testing.T) {
 			set.BindItem(legacyModule, joinName, false)
 			assert.Equal(t, local, rowName+"2", "the second Row binds under a numbered name")
 			assert.Equal(t, backend.Imports(&set),
-				"import { type Row as Row2, join } from './legacy';\nimport type { Row } from './store';\n\n",
+				"import { type Row as Row2, join } from \"./legacy\";\nimport type { Row } from \"./store\";\n\n",
 				"the modifier comes before the exported name")
 		})
 
@@ -89,7 +99,7 @@ func TestImports(t *testing.T) {
 			set.Add(storeModule)
 			set.Add(sideEffect)
 			assert.Equal(t, backend.Imports(&set),
-				"import 'side/effect';\nimport { Row, Store } from './store';\n\n",
+				"import \"side/effect\";\nimport { Row, Store } from \"./store\";\n\n",
 				"a value import runs the module")
 		})
 
@@ -100,7 +110,7 @@ func TestImports(t *testing.T) {
 			set.AddType(storeModule, rowName)
 			set.Add(storeModule)
 			assert.Equal(t, backend.Imports(&set),
-				"import './store';\nimport type { Row } from './store';\n\n",
+				"import \"./store\";\nimport type { Row } from \"./store\";\n\n",
 				"TypeScript erases import type, so the module runs through the bare import alone")
 		})
 
@@ -111,7 +121,7 @@ func TestImports(t *testing.T) {
 			set.BindItem(storeModule, rowName, true)
 			set.BindItem(legacyModule, rowName, true)
 			assert.Equal(t, backend.Imports(&set),
-				"import type { Row as Row2 } from './legacy';\nimport type { Row } from './store';\n\n",
+				"import type { Row as Row2 } from \"./legacy\";\nimport type { Row } from \"./store\";\n\n",
 				"the exported name, then the name it binds under")
 		})
 
@@ -121,7 +131,7 @@ func TestImports(t *testing.T) {
 			var set render.ImportSet
 			set.BindItem(storeModule, rowName, true)
 			set.BindItem(storeModule, rowName, false)
-			assert.Equal(t, backend.Imports(&set), "import { Row } from './store';\n\n",
+			assert.Equal(t, backend.Imports(&set), "import { Row } from \"./store\";\n\n",
 				"one value specifier")
 		})
 
@@ -181,9 +191,9 @@ func importsCalls() []allocCall {
 			call: func() { out = backend.Imports(&set) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, out,
-					"import { join } from 'node:path';\n"+
-						"import type { Row as Row2 } from './legacy';\n"+
-						"import type { Row } from './store';\n\n",
+					"import { join } from \"node:path\";\n"+
+						"import type { Row as Row2 } from \"./legacy\";\n"+
+						"import type { Row } from \"./store\";\n\n",
 					"Imports writes the block")
 			},
 		},

@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -134,9 +135,118 @@ var (
 	codesID    = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: "Codes", Kind: symbol.KindEnum}
 	loopID     = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: "Loop1", Kind: symbol.KindAlias}
 	missingID  = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: "Missing", Kind: symbol.KindAlias}
-	optionalID = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: "Optional", Kind: symbol.KindInterface}
-	mixedID    = symbol.Identity{Lang: typescript.Lang, Package: aPkg, Name: "Mixed", Kind: symbol.KindStruct}
 )
+
+// samplesName is the class of samplesTree whose fields have the types that
+// the construction cases derive.
+const samplesName = "Samples"
+
+// samplesTree is a module of classes that construct through a constructor,
+// set their fields after the construction or refuse, and of interfaces with
+// required properties, a required method or a property without a pair.
+var samplesTree = fstest.MapFS{aFile: {Data: []byte(`export class Point {
+  constructor(public x: number, public y: number) {}
+}
+
+export class Entry {
+  note!: string;
+  constructor(public key: string) {}
+}
+
+export class Counter {
+  count: number = 0;
+  label: string = "";
+  describe(): string {
+    return this.label;
+  }
+}
+
+export class Snapshot {
+  readonly at: number = 0;
+  value!: number;
+}
+
+export class Failure extends Error {
+  code!: number;
+}
+
+export class Box<T> {
+  constructor(public item: T) {}
+}
+
+export class Pick {
+  constructor(run: () => void);
+  constructor(n: number);
+  constructor(a: any) {}
+}
+
+export class Tagged {
+  constructor(public name: string, public note?: string) {}
+}
+
+export class Hook {
+  tag!: string;
+  constructor(run?: () => void) {}
+}
+
+export abstract class Shape {
+  area!: number;
+}
+
+export class Locked {
+  private constructor() {}
+}
+
+export interface Person {
+  name: string;
+  age: number;
+  nick?: string;
+}
+
+export interface Wrapper<T> {
+  inner: T;
+}
+
+export interface Greeter {
+  name: string;
+  greet(): string;
+}
+
+export interface Holder {
+  run: () => void;
+}
+
+export interface Options {
+  run?: () => void;
+  size?: number;
+}
+
+export class Samples {
+  point!: Point;
+  entry!: Entry;
+  counter!: Counter;
+  snapshot!: Snapshot;
+  failure!: Failure;
+  box!: Box<string>;
+  pick!: Pick;
+  tagged!: Tagged;
+  hook!: Hook;
+  options!: Options;
+  shape!: Shape;
+  locked!: Locked;
+  person!: Person;
+  wrapper!: Wrapper<number>;
+  greeter!: Greeter;
+  holder!: Holder;
+}
+`)}}
+
+// objectAssign is Object.assign of the global scope, which the sample of a
+// class calls to set its fields after the construction.
+var objectAssign = symbol.Identity{
+	Lang: typescript.Lang, Package: plugin.StorePath(typescript.LibraryStore, ""), Owner: "Object", Name: "assign",
+	Kind: symbol.KindMethod,
+}
 
 // TestValues checks the pair that each type form derives, its zero
 // value, and the literals that it takes.
@@ -416,52 +526,195 @@ func TestValues(t *testing.T) {
 			})
 		}
 
-		objects := []struct {
-			name     string
-			host     string
-			field    string
-			target   symbol.Identity
-			property string
-			sample   emit.Value
+		sampleNumber := emit.Number(emit.LiteralFloat, "1.5", 64)
+		alternateNumber := emit.Number(emit.LiteralFloat, "2.5", 64)
+		constructed := func(class *emit.TypeRef, args []emit.Value, fields []emit.ValueField) rules.Sample {
+			construction := emit.Construction(class, args...)
+			if len(fields) == 0 {
+				return rules.Of(construction)
+			}
+			return rules.Of(emit.Call(objectAssign, construction, emit.Composite(class, fields...)))
+		}
+		classes := []struct {
+			name      string
+			tree      fstest.MapFS
+			host      string
+			field     string
+			args      []emit.Value
+			altArgs   []emit.Value
+			fields    []emit.ValueField
+			altFields []emit.ValueField
 		}{
 			{
-				name: "derives an object that sets the first required property of a class", host: rowName,
-				field: "next", target: rowID, property: "id",
-				sample: emit.Number(emit.LiteralFloat, "1.5", 64),
+				name: "derives a construction that passes the sample of each required parameter",
+				tree: samplesTree, host: samplesName, field: "point",
+				args: []emit.Value{sampleNumber, sampleNumber}, altArgs: []emit.Value{alternateNumber, sampleNumber},
 			},
 			{
-				name: "derives an object of a class of another module", host: rowName, field: "target",
-				target: targetID, property: "v",
-				sample: emit.Number(emit.LiteralFloat, "1.5", 64),
+				name: "derives a construction that sets a field that its constructor does not set",
+				tree: samplesTree, host: samplesName, field: "entry",
+				args:      []emit.Value{emit.Literal(emit.LiteralString, "key-a")},
+				altArgs:   []emit.Value{emit.Literal(emit.LiteralString, "key-b")},
+				fields:    []emit.ValueField{emit.NamedField("note", emit.Literal(emit.LiteralString, "note-a"))},
+				altFields: []emit.ValueField{emit.NamedField("note", emit.Literal(emit.LiteralString, "note-a"))},
 			},
 			{
-				name: "derives an object that sets the first property of an interface without a required one",
-				host: shapesName, field: "opt", target: optionalID, property: "label",
-				sample: emit.Literal(emit.LiteralString, "label-a"),
+				name: "derives a construction that sets the first initialized field of a class without an argument",
+				tree: samplesTree, host: samplesName, field: "counter",
+				fields:    []emit.ValueField{emit.NamedField("count", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("count", alternateNumber)},
 			},
 			{
-				name: "derives an object that sets the first required property whose pair derives",
-				host: shapesName, field: "mixed", target: mixedID, property: "id",
-				sample: emit.Number(emit.LiteralFloat, "1.5", 64),
+				name: "derives a construction that leaves out a readonly field", tree: samplesTree, host: samplesName,
+				field:     "snapshot",
+				fields:    []emit.ValueField{emit.NamedField("value", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("value", alternateNumber)},
+			},
+			{
+				name: "derives a construction that passes the first parameter of a constructor without a required one",
+				tree: samplesTree, host: samplesName, field: "failure",
+				args:      []emit.Value{emit.Literal(emit.LiteralString, "message-a")},
+				altArgs:   []emit.Value{emit.Literal(emit.LiteralString, "message-b")},
+				fields:    []emit.ValueField{emit.NamedField("code", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("code", sampleNumber)},
+			},
+			{
+				name: "derives a construction of a generic class with its arguments substituted",
+				tree: samplesTree, host: samplesName, field: "box",
+				args:    []emit.Value{emit.Literal(emit.LiteralString, "item-a")},
+				altArgs: []emit.Value{emit.Literal(emit.LiteralString, "item-b")},
+			},
+			{
+				name: "derives a construction through the first constructor whose required parameters derive",
+				tree: samplesTree, host: samplesName, field: "pick",
+				args: []emit.Value{sampleNumber}, altArgs: []emit.Value{alternateNumber},
+			},
+			{
+				name: "derives a construction that leaves out an optional parameter after the required ones",
+				tree: samplesTree, host: samplesName, field: "tagged",
+				args:    []emit.Value{emit.Literal(emit.LiteralString, "name-a")},
+				altArgs: []emit.Value{emit.Literal(emit.LiteralString, "name-b")},
+			},
+			{
+				name: "derives a construction without an argument where the first parameter does not derive",
+				tree: samplesTree, host: samplesName, field: "hook",
+				fields:    []emit.ValueField{emit.NamedField("tag", emit.Literal(emit.LiteralString, "tag-a"))},
+				altFields: []emit.ValueField{emit.NamedField("tag", emit.Literal(emit.LiteralString, "tag-b"))},
+			},
+			{
+				name: "derives a construction of a class of another module", tree: fixtureTree, host: rowName,
+				field:     "target",
+				fields:    []emit.ValueField{emit.NamedField("v", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("v", alternateNumber)},
+			},
+			{
+				name: "derives a construction that leaves out a field whose pair does not derive", tree: fixtureTree,
+				host: shapesName, field: "mixed",
+				fields:    []emit.ValueField{emit.NamedField("id", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("id", alternateNumber)},
+			},
+		}
+		for _, tt := range classes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, tt.tree)
+				fd := f.field(t, tt.host, tt.field)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
+				class := rules.EmitRef(fd.Type)
+				expect.Equal(t, sample, constructed(class, tt.args, tt.fields), "the sample constructs the class")
+				expect.Equal(t, alternate, constructed(class, tt.altArgs, tt.altFields),
+					"the alternate constructs the class with one other value")
+			})
+		}
+
+		t.Run("derives the construction alone of a class without a field to set", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			fd := f.field(t, shapesName, "bare")
+			sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
+			expect.Equal(t, sample, rules.Of(emit.Construction(rules.EmitRef(fd.Type))),
+				"the sample constructs the class")
+			expect.Equal(t, alternate, rules.Refused(rules.RefusedNoLiteral), "no second value differs from the first")
+		})
+
+		objects := []struct {
+			name      string
+			tree      fstest.MapFS
+			host      string
+			field     string
+			fields    []emit.ValueField
+			altFields []emit.ValueField
+		}{
+			{
+				name: "derives an object literal that sets each required property of an interface",
+				tree: samplesTree, host: samplesName, field: "person",
+				fields: []emit.ValueField{
+					emit.NamedField("name", emit.Literal(emit.LiteralString, "name-a")),
+					emit.NamedField("age", sampleNumber),
+				},
+				altFields: []emit.ValueField{
+					emit.NamedField("name", emit.Literal(emit.LiteralString, "name-b")),
+					emit.NamedField("age", sampleNumber),
+				},
+			},
+			{
+				name: "derives an object literal of a generic interface with its arguments substituted",
+				tree: samplesTree, host: samplesName, field: "wrapper",
+				fields:    []emit.ValueField{emit.NamedField("inner", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("inner", alternateNumber)},
+			},
+			{
+				name: "derives an object literal that sets the first property of an interface without a required one",
+				tree: fixtureTree, host: shapesName, field: "opt",
+				fields:    []emit.ValueField{emit.NamedField("label", emit.Literal(emit.LiteralString, "label-a"))},
+				altFields: []emit.ValueField{emit.NamedField("label", emit.Literal(emit.LiteralString, "label-b"))},
+			},
+			{
+				name: "derives an object literal that sets the first optional property whose pair derives",
+				tree: samplesTree, host: samplesName, field: "options",
+				fields:    []emit.ValueField{emit.NamedField("size", sampleNumber)},
+				altFields: []emit.ValueField{emit.NamedField("size", alternateNumber)},
 			},
 		}
 		for _, tt := range objects {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				f := loaded(t)
+				f := loadedFrom(t, tt.tree)
 				fd := f.field(t, tt.host, tt.field)
 				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
-				assert.Equal(t, sample.Value.Kind, emit.ValueConversion, "the object is asserted to the type")
-				assert.True(t, alternate.OK(), "the alternate derives")
-				expect.Equal(t, sample.Value.Type.Target, tt.target, "the assertion is to the type")
-				expect.Equal(t, sample.Value.Inner.Kind, emit.ValueComposite, "the asserted value is an object literal")
-				expect.Equal(t, sample.Value.Inner.Fields, []emit.ValueField{emit.NamedField(tt.property, tt.sample)},
-					"the object literal sets the one property")
+				iface := rules.EmitRef(fd.Type)
+				expect.Equal(t, sample, rules.Of(emit.Composite(iface, tt.fields...)),
+					"the sample is an object literal")
+				expect.Equal(t, alternate, rules.Of(emit.Composite(iface, tt.altFields...)),
+					"the alternate differs in the first property")
 			})
 		}
 
-		t.Run("derives an object from the values that an author stated for its property", func(t *testing.T) {
+		refusedObjects := []struct {
+			name  string
+			field string
+		}{
+			{name: "refuses an abstract class", field: "shape"},
+			{name: "refuses a class without a public constructor", field: "locked"},
+			{name: "refuses an interface with a required method", field: "greeter"},
+			{name: "refuses an interface whose required property does not derive", field: "holder"},
+		}
+		for _, tt := range refusedObjects {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, samplesTree)
+				fd := f.field(t, samplesName, tt.field)
+				sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
+				expect.Equal(t, sample, rules.Refused(rules.RefusedNoLiteral), "the sample refuses")
+				expect.Equal(t, alternate, rules.Refused(rules.RefusedNoLiteral), "the alternate refuses")
+			})
+		}
+
+		t.Run("derives a construction from the values that an author stated for its field", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
@@ -474,10 +727,13 @@ func TestValues(t *testing.T) {
 			}
 			fd := f.field(t, rowName, "target")
 			sample, alternate := tsrules.New().DeriveSamples(fd.Type, fd.Name, f.view)
-			expect.Equal(t, sample.Value.Inner.Fields[0].Value, emit.Number(emit.LiteralFloat, "7", 64),
-				"the sample is the stated value")
-			expect.Equal(t, alternate.Value.Inner.Fields[0].Value, emit.Number(emit.LiteralFloat, "8", 64),
-				"the alternate is the stated value")
+			class := rules.EmitRef(fd.Type)
+			expect.Equal(t, sample, constructed(class, nil,
+				[]emit.ValueField{emit.NamedField("v", emit.Number(emit.LiteralFloat, "7", 64))}),
+				"the sample sets the stated value")
+			expect.Equal(t, alternate, constructed(class, nil,
+				[]emit.ValueField{emit.NamedField("v", emit.Number(emit.LiteralFloat, "8", 64))}),
+				"the alternate sets the stated value")
 		})
 
 		t.Run("derives one value of a literal type and refuses the second", func(t *testing.T) {
@@ -502,10 +758,6 @@ func TestValues(t *testing.T) {
 			},
 			{name: "refuses a Record over an enum", host: shapesName, field: "byColor", want: rules.RefusedNoLiteral},
 			{name: "refuses an inline object type", host: shapesName, field: "box", want: rules.RefusedNoLiteral},
-			{
-				name: "refuses a class without a public property", host: shapesName, field: "bare",
-				want: rules.RefusedNoLiteral,
-			},
 			{name: "refuses a function type", host: shapesName, field: "fn", want: rules.RefusedNoLiteral},
 			{name: "refuses an intersection", host: shapesName, field: "both", want: rules.RefusedNoLiteral},
 			{

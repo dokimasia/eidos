@@ -56,11 +56,12 @@ const (
 
 // rulesAllocs is the allocation count of one projection pass over the
 // fixture tree, which [rulestest.BenchRules] measures. The pass allocated
-// 520 times at 2,000 iterations and at one second. A memory profile
-// attributes 197 allocations to TypeOf, 198 to SamplesOf, 78 to MembersOf
-// and 22 to CallableOf. The profile samples the tiny allocations of the
+// 617 times at 2,000 iterations. A memory profile attributes 198
+// allocations to TypeOf, 286 to SamplesOf and 23 to CallableOf. It
+// attributes 82 to MembersOf, which the samples of the classes and the
+// interfaces also call. The profile samples the tiny allocations of the
 // rest only in part.
-const rulesAllocs = 520
+const rulesAllocs = 617
 
 // returnRolesAllocs is the allocation count of the classification of a
 // signature. The classification allocates the list of the roles of its

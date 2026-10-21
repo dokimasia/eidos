@@ -15,11 +15,12 @@ import (
 // restMark opens a rest member of a tuple type.
 const restMark = "..."
 
-// typeRef lowers one type. The spelling of a reference is the tokens of
-// its source without the whitespace between them, with one space between
-// two identifier tokens, so a reformatted signature has one identity.
-// typeRef sets the structural forms that the syntax states, and leaves
-// every other type Named with its spelling:
+// typeRef lowers one type. The spelling of a name is its tokens without the
+// whitespace between them. The spelling of every other type has the layout
+// of [lowering.spelling], in which Biome and Prettier write it on one line.
+// Neither depends on the whitespace of the source, so a reformatted
+// signature has one identity. typeRef sets the structural forms that the
+// syntax states, and leaves every other type Named with its spelling:
 //
 //   - A name, a qualified name and a predefined type are Named. A generic
 //     instantiation is Named with its arguments in Args, and its bare
@@ -84,7 +85,7 @@ func (l *lowering) typeRef(n treesitter.Node) *node.TypeRef {
 	case l.v.objectType:
 		return l.object(n)
 	default:
-		return &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos()}
+		return &node.TypeRef{Spelling: l.spelling(n), Pos: n.Pos()}
 	}
 }
 
@@ -96,7 +97,7 @@ func (l *lowering) structural(n treesitter.Node, form symbol.TypeForm, children 
 	for _, child := range children {
 		elems = append(elems, l.typeRef(child))
 	}
-	return plugin.Composite(n.Compact(), n.Pos(), form, elems...)
+	return plugin.Composite(l.spelling(n), n.Pos(), form, elems...)
 }
 
 // tuple lowers a tuple type to a mutable Tuple of its members in order:
@@ -111,7 +112,7 @@ func (l *lowering) tuple(n treesitter.Node) *node.TypeRef {
 			typ := member.Child(l.v.fieldType)
 			if member.Child(l.v.fieldName).Kind() == l.v.restPattern {
 				elems = append(elems, &node.TypeRef{
-					Spelling: restMark + l.firstType(typ).Compact(), Pos: member.Pos(),
+					Spelling: restMark + l.spelling(l.firstType(typ)), Pos: member.Pos(),
 				})
 				continue
 			}
@@ -122,7 +123,7 @@ func (l *lowering) tuple(n treesitter.Node) *node.TypeRef {
 			elems = append(elems, l.typeRef(member))
 		}
 	}
-	tuple := plugin.Composite(n.Compact(), n.Pos(), symbol.FormTuple, elems...)
+	tuple := plugin.Composite(l.spelling(n), n.Pos(), symbol.FormTuple, elems...)
 	tuple.Mutability = symbol.MutabilityMutable
 	return tuple
 }
@@ -193,7 +194,7 @@ func (l *lowering) funcRef(n treesitter.Node) *node.TypeRef {
 	if !result.IsZero() {
 		results = []*node.TypeRef{l.typeRef(result)}
 	}
-	return plugin.FuncType(n.Compact(), n.Pos(), params, results)
+	return plugin.FuncType(l.spelling(n), n.Pos(), params, results)
 }
 
 // readonly lowers a readonly array or tuple to an immutable List or Tuple,
@@ -207,7 +208,7 @@ func (l *lowering) readonly(n treesitter.Node) *node.TypeRef {
 		return &node.TypeRef{Pos: n.Pos()}
 	}
 	if ref.Form != symbol.FormNamed {
-		ref.Spelling, ref.Pos = n.Compact(), n.Pos()
+		ref.Spelling, ref.Pos = l.spelling(n), n.Pos()
 	}
 	if ref.Form == symbol.FormList || ref.Form == symbol.FormTuple {
 		ref.Mutability = symbol.MutabilityImmutable
@@ -225,7 +226,7 @@ func (l *lowering) object(n treesitter.Node) *node.TypeRef {
 	var members []treesitter.Node
 	for m := range n.Content() {
 		if m.Kind() == l.v.indexSignature && !m.FirstOf(l.v.mappedTypeClause).IsZero() {
-			return &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos()}
+			return &node.TypeRef{Spelling: l.spelling(n), Pos: n.Pos()}
 		}
 		members = append(members, m)
 	}
@@ -238,9 +239,9 @@ func (l *lowering) object(n treesitter.Node) *node.TypeRef {
 		}
 		return entries
 	}
-	ref := &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos(), Form: symbol.FormInline}
+	ref := &node.TypeRef{Spelling: l.spelling(n), Pos: n.Pos(), Form: symbol.FormInline}
 	l.inline++
-	_, ref.Elems = l.objectMembers(n, &ref.Fields, &ref.Methods)
+	l.objectMembers(n, &ref.Fields, &ref.Methods, &ref.Elems)
 	l.inline--
 	return ref
 }

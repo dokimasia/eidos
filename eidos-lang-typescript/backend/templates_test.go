@@ -589,7 +589,7 @@ func TestTemplates(t *testing.T) {
 
 			s := &emit.Struct{Name: "Client"}
 			s.Methods.Append(&emit.Method{Name: "do-fetch"})
-			assert.Contains(t, execute(t, kind(symbol.KindStruct), s), `'do-fetch'()`, "the wire name is kept")
+			assert.Contains(t, execute(t, kind(symbol.KindStruct), s), `"do-fetch"()`, "the wire name is kept")
 		})
 
 		t.Run("writes const before a const enum", func(t *testing.T) {

@@ -69,7 +69,7 @@ func TestSignature(t *testing.T) {
 			},
 			{
 				name: "keeps a rest parameter's tuple type, which states no element",
-				give: "(...rest: [string, number])", want: "[string,number]",
+				give: "(...rest: [string, number])", want: "[string, number]",
 			},
 			{
 				name: "keeps a rest parameter's generic type other than an array",

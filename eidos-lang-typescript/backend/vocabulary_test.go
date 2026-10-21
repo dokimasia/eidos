@@ -79,6 +79,15 @@ const (
 	logDecorate = "log"
 )
 
+// The wire name as a key in the double quote of the default policy and in
+// the single quote, and a union of two string literals in each quote.
+const (
+	quotedWire     = `"content-type"`
+	singleWire     = `'content-type'`
+	doubleLiterals = `"a" | "b"`
+	singleLiterals = `'a' | 'b'`
+)
+
 // The allocations of the vocabulary.
 const (
 	// textAllocs is one spelling, sized once or joined once.
@@ -103,8 +112,8 @@ const (
 	// annotation.
 	resultTupleAllocs = 1 + 1
 	// funcsAllocs is the vocabulary of a file: the map of twenty-six
-	// helpers, four allocations, and the speller's nine bound helpers.
-	funcsAllocs = 4 + 9
+	// helpers, four allocations, and the speller's twelve bound helpers.
+	funcsAllocs = 4 + 12
 	// joinedKeywordsAllocs is two keywords joined behind an accessibility,
 	// one join each.
 	joinedKeywordsAllocs = 1 + 1
@@ -412,6 +421,22 @@ func TestVocabulary(t *testing.T) {
 			_, err := s.Spell(unspellable(t, s))
 			assert.HasError(t, err, "the spelling does not follow from the structure")
 			assert.Contains(t, err.Error(), string(typescript.Lang)+": ", "under the language's prefix")
+		})
+
+		t.Run("writes each string literal of a type in the double quote of the default policy", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			assert.Equal(t, spelled(t, s, ref(singleLiterals)), doubleLiterals,
+				"the literals take the default quote of Biome and Prettier")
+		})
+
+		t.Run("writes each string literal of a type in the single quote of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			s := backend.NewSpeller(singleQuoted(t))
+			assert.Equal(t, spelled(t, s, ref(doubleLiterals)), singleLiterals,
+				"the literals take the quote of the policy")
 		})
 	})
 
@@ -1069,7 +1094,8 @@ func TestVocabulary(t *testing.T) {
 		t.Run("writes an identifier bare", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.PropKey(&emit.Field{Name: idName})
+			s, _ := speller()
+			got, err := s.PropKey(&emit.Field{Name: idName})
 			assert.NoError(t, err, "the key spells")
 			assert.Equal(t, got, idName, "unquoted")
 		})
@@ -1077,7 +1103,8 @@ func TestVocabulary(t *testing.T) {
 		t.Run("writes an identifier with a letter outside ASCII bare", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.PropKey(&emit.Field{Name: cafeName})
+			s, _ := speller()
+			got, err := s.PropKey(&emit.Field{Name: cafeName})
 			assert.NoError(t, err, "the key spells")
 			assert.Equal(t, got, cafeName, "unquoted")
 		})
@@ -1085,22 +1112,33 @@ func TestVocabulary(t *testing.T) {
 		t.Run("quotes a name that is no identifier", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.PropKey(&emit.Field{Name: wireName})
+			s, _ := speller()
+			got, err := s.PropKey(&emit.Field{Name: wireName})
 			assert.NoError(t, err, "the key spells")
-			assert.Equal(t, got, "'content-type'", "the wire name whole")
+			assert.Equal(t, got, quotedWire, "the wire name whole")
+		})
+
+		t.Run("quotes a name that is no identifier in the single quote of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.NewSpeller(singleQuoted(t)).PropKey(&emit.Field{Name: wireName})
+			assert.NoError(t, err, "the key spells")
+			assert.Equal(t, got, singleWire, "the wire name in the quote of the policy")
 		})
 
 		t.Run("returns an error for a hard-private name that is no identifier", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := backend.PropKey(&emit.Field{Name: wireName, Hard: true})
+			s, _ := speller()
+			_, err := s.PropKey(&emit.Field{Name: wireName, Hard: true})
 			assert.HasError(t, err, "# admits no quoted form")
 		})
 
 		t.Run("writes a hard-private name with its # as written", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.PropKey(&emit.Field{Name: "#" + idName, Hard: true})
+			s, _ := speller()
+			got, err := s.PropKey(&emit.Field{Name: "#" + idName, Hard: true})
 			assert.NoError(t, err, "the name is an identifier after its #")
 			assert.Equal(t, got, "#"+idName, "PropKey writes the name as written")
 		})
@@ -1108,7 +1146,8 @@ func TestVocabulary(t *testing.T) {
 		t.Run("writes a computed name as written", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.PropKey(&emit.Field{Name: computedKey, Computed: true})
+			s, _ := speller()
+			got, err := s.PropKey(&emit.Field{Name: computedKey, Computed: true})
 			assert.NoError(t, err, "the key spells")
 			assert.Equal(t, got, computedKey, "PropKey writes the expression in its brackets")
 		})
@@ -1120,7 +1159,8 @@ func TestVocabulary(t *testing.T) {
 		t.Run("writes an identifier bare", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.MethodKey(&emit.Method{Name: makeName})
+			s, _ := speller()
+			got, err := s.MethodKey(&emit.Method{Name: makeName})
 			assert.NoError(t, err, "the key spells")
 			assert.Equal(t, got, makeName, "unquoted")
 		})
@@ -1128,29 +1168,41 @@ func TestVocabulary(t *testing.T) {
 		t.Run("quotes a name that is no identifier", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.MethodKey(&emit.Method{Name: wireName})
+			s, _ := speller()
+			got, err := s.MethodKey(&emit.Method{Name: wireName})
 			assert.NoError(t, err, "the key spells")
-			assert.Equal(t, got, "'content-type'", "the wire name whole")
+			assert.Equal(t, got, quotedWire, "the wire name whole")
+		})
+
+		t.Run("quotes a name that is no identifier in the single quote of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.NewSpeller(singleQuoted(t)).MethodKey(&emit.Method{Name: wireName})
+			assert.NoError(t, err, "the key spells")
+			assert.Equal(t, got, singleWire, "the wire name in the quote of the policy")
 		})
 
 		t.Run("returns an error for a hard-private name that is no identifier", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := backend.MethodKey(&emit.Method{Name: wireName, Hard: true})
+			s, _ := speller()
+			_, err := s.MethodKey(&emit.Method{Name: wireName, Hard: true})
 			assert.HasError(t, err, "# admits no quoted form")
 		})
 
 		t.Run("returns an error for a computed hard-private name", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := backend.MethodKey(&emit.Method{Name: computedKey, Hard: true, Computed: true})
+			s, _ := speller()
+			_, err := s.MethodKey(&emit.Method{Name: computedKey, Hard: true, Computed: true})
 			assert.HasError(t, err, "# admits no expression in brackets")
 		})
 
 		t.Run("writes a computed name as written", func(t *testing.T) {
 			t.Parallel()
 
-			got, err := backend.MethodKey(&emit.Method{Name: computedKey, Computed: true})
+			s, _ := speller()
+			got, err := s.MethodKey(&emit.Method{Name: computedKey, Computed: true})
 			assert.NoError(t, err, "the key spells")
 			assert.Equal(t, got, computedKey, "MethodKey writes the expression in its brackets")
 		})
@@ -1162,14 +1214,24 @@ func TestVocabulary(t *testing.T) {
 		t.Run("writes an identifier bare", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.EnumKey(&emit.EnumVariant{Name: openName}), openName, "unquoted")
+			s, _ := speller()
+			assert.Equal(t, s.EnumKey(&emit.EnumVariant{Name: openName}), openName, "unquoted")
 		})
 
 		t.Run("quotes any other name", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.EnumKey(&emit.EnumVariant{Name: wireName}), "'content-type'",
+			s, _ := speller()
+			assert.Equal(t, s.EnumKey(&emit.EnumVariant{Name: wireName}), quotedWire,
 				"an enum member admits the quoted form")
+		})
+
+		t.Run("quotes any other name in the single quote of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			s := backend.NewSpeller(singleQuoted(t))
+			assert.Equal(t, s.EnumKey(&emit.EnumVariant{Name: wireName}), singleWire,
+				"the name in the quote of the policy")
 		})
 	})
 
@@ -1865,6 +1927,7 @@ func vocabularyCalls() []allocCall {
 		Spelling: rowName, Target: symbol.Identity{Lang: typescript.Lang, Package: storePath, Name: rowName},
 	}
 	instance := &emit.TypeRef{Spelling: "Map", Args: []*emit.TypeRef{ref(stringType), bare}}
+	literals := ref(singleLiterals)
 	index := indexer()
 	params := []*emit.TypeParam{
 		{Name: keyParam, Bounds: []*emit.TypeRef{ref(eqTrait), ref(hashTrait)}},
@@ -1939,6 +2002,10 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.Spell(instance) }, check: spells("Map<string, number>"),
 		},
 		{
+			name: "Spell", caseName: "a union of literals in the other quote", allocs: textAllocs,
+			call: func() { out, err = s.Spell(literals) }, check: spells(doubleLiterals),
+		},
+		{
 			name: "IndexSig", allocs: textAllocs,
 			call: func() { out, err = s.IndexSig(index) }, check: spells("[key: string]: Row;"),
 		},
@@ -2001,15 +2068,15 @@ func vocabularyCalls() []allocCall {
 		{
 			name:     "PropKey",
 			caseName: "a plain key",
-			call:     func() { out, err = backend.PropKey(field) },
+			call:     func() { out, err = s.PropKey(field) },
 			check:    spells(idName),
 		},
 		{
 			name: "PropKey", caseName: "a quoted key", allocs: textAllocs,
-			call: func() { out, err = backend.PropKey(wire) }, check: spells("'content-type'"),
+			call: func() { out, err = s.PropKey(wire) }, check: spells(quotedWire),
 		},
-		{name: "MethodKey", call: func() { out, err = backend.MethodKey(method) }, check: spells(makeName)},
-		{name: "EnumKey", call: func() { out = backend.EnumKey(variant) }, check: spells(openName)},
+		{name: "MethodKey", call: func() { out, err = s.MethodKey(method) }, check: spells(makeName)},
+		{name: "EnumKey", call: func() { out = s.EnumKey(variant) }, check: spells(openName)},
 		{name: "AccessorKw", call: func() { out, err = backend.AccessorKw(get) }, check: spells("get ")},
 		{name: "Hard", call: func() { out, err = backend.Hard(hard) }, check: spells("#")},
 		{

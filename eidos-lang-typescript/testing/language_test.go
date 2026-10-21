@@ -41,6 +41,7 @@ export interface Row {
   rt: readonly [string, number];
   rm: { readonly [key: string]: number };
   n: string | null;
+  e: {};
 }
 `
 )
@@ -79,6 +80,7 @@ const (
 	roTupleProp   = "rt"
 	roMapProp     = "rm"
 	nullProp      = "n"
+	emptyProp     = "e"
 )
 
 // refShape is what the parity cases compare of a reference: everything but
@@ -144,6 +146,7 @@ func TestLanguage(t *testing.T) {
 			{name: "writes an immutable tuple as the frontend records it", prop: roTupleProp},
 			{name: "writes an immutable map as the frontend records it", prop: roMapProp},
 			{name: "writes an optional of null as the frontend records it", prop: nullProp},
+			{name: "writes an inline body without members as the frontend records it", prop: emptyProp},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -241,6 +244,7 @@ func builtProps(tb testing.TB) map[string]refShape {
 		{Name: roMapProp, Type: mutable(symbol.MutabilityImmutable,
 			nodetest.Map(nodetest.Named(stringName), nodetest.Named(numberName)))},
 		{Name: nullProp, Type: absent(nodetest.Optional(nodetest.Named(stringName)), nullName)},
+		{Name: emptyProp, Type: nodetest.Inline(nil, nil)},
 	}}
 	b.File(parityPackage, parityFile, box, foo, bar, row)
 	b.Build(tb)

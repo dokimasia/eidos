@@ -195,7 +195,7 @@ func (l *lowering) iface(n treesitter.Node, name string, vis symbol.Visibility, 
 			it.Extends = append(it.Extends, l.typeRef(t))
 		}
 	}
-	calls, _ := l.objectMembers(n.Child(l.v.fieldBody), &it.Fields, &it.Methods)
+	calls := l.objectMembers(n.Child(l.v.fieldBody), &it.Fields, &it.Methods, nil)
 	key := mergeKey{pkg: c.pkg, name: name}
 	first, merges := l.interfaces[key]
 	if !merges {
@@ -402,18 +402,19 @@ func (l *lowering) variables(n treesitter.Node, c container, exported bool, oute
 	var first symbol.Symbol
 	for _, name := range names {
 		declarator := name.Parent()
-		vis := l.visibility(c, exported, name.Text())
+		text := name.Text()
+		vis := l.visibility(c, exported, text)
 		typ := l.typeRef(declarator.Child(l.v.fieldType))
 		value := declarator.Child(l.v.fieldValue).Text()
 		var decl symbol.Symbol
 		if constant {
 			decl = &node.Constant{
-				Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
+				Name: text, Pos: name.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
 				Type: typ, Value: value,
 			}
 		} else {
 			decl = &node.Variable{
-				Name: name.Text(), Pos: name.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
+				Name: text, Pos: name.Pos(), Doc: parts.Docs, Comment: comment, Visibility: vis,
 				Mutability: symbol.MutabilityMutable, Type: typ, Value: value,
 			}
 		}
@@ -421,7 +422,7 @@ func (l *lowering) variables(n treesitter.Node, c container, exported bool, oute
 			first = decl
 		}
 		c.file.Decls = append(c.file.Decls, decl)
-		l.declare(c.pkg, name.Text())
+		l.declare(c.pkg, text)
 		if c.ambient {
 			l.mark(decl, typescript.AmbientKey, name.Pos())
 		}

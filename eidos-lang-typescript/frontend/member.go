@@ -264,36 +264,38 @@ func (l *lowering) indexer(m treesitter.Node) *node.Method {
 // into fields and methods. A property signature is a field, a method
 // signature an abstract method, a construct signature a method named new
 // that constructs, and an index signature a method named []. It returns
-// the call signatures as written. The caller of an interface stamps them,
-// and the spelling of an inline body keeps them.
+// the call signatures in the layout of [lowering.spelling]. The caller of
+// an interface stamps them, and the spelling of an inline body keeps them.
 //
-// objectMembers also returns the types that the members state, in the
-// order of the body, as the children of an inline body: the type of each
-// property, and for each signature the bounds and the defaults of its type
-// parameters, the type of its receiver, its parameter types and its result
-// type, as the method records them. A rest parameter has the type of one
-// argument, and a void result and the promise of an async result have no
-// child of their own. Each child is a copy of the type of its member, which
-// [node.CloneRef] returns, because a node of the graph has one place. A
-// parameter or a result without a type has no child.
+// Where children is not nil, objectMembers also appends to it the types
+// that the members state, in the order of the body, as the children of an
+// inline body: the type of each property, and for each signature the
+// bounds and the defaults of its type parameters, the type of its
+// receiver, its parameter types and its result type, as the method records
+// them. A rest parameter has the type of one argument, and a void result
+// and the promise of an async result have no child of their own. Each
+// child is a copy of the type of its member, which [node.CloneRef] returns,
+// because a node of the graph has one place. A parameter or a result
+// without a type has no child. An interface has no children, so its
+// caller passes nil and does not allocate the copies.
 func (l *lowering) objectMembers(
-	body treesitter.Node, fields *[]*node.Field, methods *[]*node.Method,
-) (calls []string, children []*node.TypeRef) {
+	body treesitter.Node, fields *[]*node.Field, methods *[]*node.Method, children *[]*node.TypeRef,
+) (calls []string) {
 	for m := range body.NamedChildren() {
 		var built *node.Method
 		switch m.Kind() {
 		case l.v.propertySignature:
 			f := l.property(m)
 			*fields = append(*fields, f)
-			if f.Type != nil {
-				children = append(children, node.CloneRef(f.Type))
+			if children != nil && f.Type != nil {
+				*children = append(*children, node.CloneRef(f.Type))
 			}
 		case l.v.methodSignature:
 			built = l.methodOf(m, nil, true)
 		case l.v.constructSignature:
 			built = l.construct(m)
 		case l.v.callSignature:
-			calls = append(calls, m.Compact())
+			calls = append(calls, l.spelling(m))
 			l.refuse(m, "a call signature")
 		case l.v.indexSignature:
 			built = l.indexer(m)
@@ -302,37 +304,41 @@ func (l *lowering) objectMembers(
 			continue
 		}
 		*methods = append(*methods, built)
+		if children == nil {
+			continue
+		}
 		for _, tp := range built.TypeParams {
 			for _, b := range tp.Bounds {
-				children = append(children, node.CloneRef(b))
+				*children = append(*children, node.CloneRef(b))
 			}
 			if tp.Default != nil {
-				children = append(children, node.CloneRef(tp.Default))
+				*children = append(*children, node.CloneRef(tp.Default))
 			}
 		}
 		if built.Receiver != nil && built.Receiver.Type != nil {
-			children = append(children, node.CloneRef(built.Receiver.Type))
+			*children = append(*children, node.CloneRef(built.Receiver.Type))
 		}
 		for _, p := range built.Params {
 			if p.Type != nil {
-				children = append(children, node.CloneRef(p.Type))
+				*children = append(*children, node.CloneRef(p.Type))
 			}
 		}
 		for _, r := range built.Returns {
 			if r.Type != nil {
-				children = append(children, node.CloneRef(r.Type))
+				*children = append(*children, node.CloneRef(r.Type))
 			}
 		}
 	}
-	return calls, children
+	return calls
 }
 
-// callSignatures returns the call signatures of an object type as written.
+// callSignatures returns the call signatures of an object type in the
+// layout of [lowering.spelling].
 func (l *lowering) callSignatures(body treesitter.Node) []string {
 	var calls []string
 	for m := range body.NamedChildren() {
 		if m.Kind() == l.v.callSignature {
-			calls = append(calls, m.Compact())
+			calls = append(calls, l.spelling(m))
 		}
 	}
 	return calls

@@ -16,19 +16,11 @@ import (
 
 // The literals that the allocation checks and the benchmarks decode.
 const (
-	plainString   = `"plain"`
 	escapedString = `"a\nb"`
 	decimalNumber = "1.5"
 	spacedNumber  = "1_000"
 	decimalBigInt = "42n"
 	hexBigInt     = "0xFFn"
-)
-
-// The characters of the escape cases. smile is beyond the basic plane,
-// and lineSeparator ends a line of TypeScript.
-const (
-	smile         = "\U0001F600"
-	lineSeparator = "\U00002028"
 )
 
 // bigHex is the digits of a hexadecimal number beyond the largest

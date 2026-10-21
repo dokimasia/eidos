@@ -462,14 +462,14 @@ func TestMember(t *testing.T) {
 				"a construct signature without a type has no result")
 		})
 
-		t.Run("stamps an interface's call signatures as written", func(t *testing.T) {
+		t.Run("stamps an interface's call signatures in the layout of a spelled type", func(t *testing.T) {
 			t.Parallel()
 
-			gb, _ := parsedSource(t, "export interface I {\n  (a: string): number;\n}\n")
+			gb, _ := parsedSource(t, "export interface I {\n  (a:string):number;\n}\n")
 			assert.Length(t, gb.StampRecords(), 1, "one stamp")
 			s := gb.StampRecords()[0].Stamp
 			assert.Equal(t, s.Key, typescript.CallSignatureKey, "under the call signature key")
-			assert.Equal(t, s.Value, any([]string{"(a:string):number"}), "the signature as written")
+			assert.Equal(t, s.Value, any([]string{"(a: string): number"}), "the signature with the spaces of a type")
 		})
 	})
 
@@ -480,7 +480,7 @@ func TestMember(t *testing.T) {
 			t.Parallel()
 
 			gb, _ := parsedSource(t, "export type F = { (a: string): number };\n")
-			assert.Equal(t, gb.StampRecords()[0].Stamp.Value, any([]string{"(a:string):number"}),
+			assert.Equal(t, gb.StampRecords()[0].Stamp.Value, any([]string{"(a: string): number"}),
 				"the model has no member for a callable object")
 		})
 	})

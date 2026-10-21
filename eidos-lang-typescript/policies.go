@@ -6,10 +6,11 @@ package typescript
 import "go.dokimi.dev/eidos/sdk/plugin"
 
 // The lowering policies of the TypeScript target. Each policy but [GRPC]
-// chooses between TypeScript's own type and the type that a JSON payload
-// delivers. Config selects a choice for every plan or for one plan, and
-// the param of the policy's name on the typescript directive overrides
-// the choice for one declaration.
+// and [QuoteStyle] chooses between TypeScript's own type and the type that
+// a JSON payload delivers. Config selects a choice for every plan or for
+// one plan. The param of the policy's name on the typescript directive
+// overrides the choice for one declaration, except for [QuoteStyle], which
+// applies to every file of a plan.
 const (
 	// Int64 chooses the spelling of an integer of 64 bits or of the
 	// platform's width: bigint, a decimal string, or number, which
@@ -34,6 +35,17 @@ const (
 	// a protobuf service: none, or Connect-ES, whose code uses the messages
 	// of protobuf-es.
 	GRPC plugin.PolicyKey = "typescript.grpc"
+	// QuoteStyle chooses the quote of each string that the backend writes:
+	// the double quote, which Biome and Prettier write by default, or the
+	// single quote. [AppendQuote] states the strings that take the other
+	// quote.
+	QuoteStyle plugin.PolicyKey = "typescript.quote"
+)
+
+// The choices of [QuoteStyle].
+const (
+	DoubleQuote plugin.Choice = "double"
+	SingleQuote plugin.Choice = "single"
 )
 
 // The choices of [GRPC]. Under [GRPCNone] a reference to a protobuf
@@ -65,18 +77,22 @@ const (
 	bytesDoc     = "the spelling of bytes"
 	durationDoc  = "the spelling of a span of time"
 	grpcDoc      = "the gRPC binding of the code that a plan writes against a protobuf service"
+	quoteDoc     = "the quote of each string that the written files contain"
 )
 
-// Policies returns the specs of the six TypeScript policies. The
+// Policies returns the specs of the seven TypeScript policies. The
 // defaults of four are TypeScript's own types: bigint, undefined, Date and
 // Uint8Array. The default of the duration is string, because TypeScript
 // does not declare a duration type, and the default of the binding of gRPC
-// is none. The backend declares them through the backend kit.
+// is none. The default quote is the double quote, the default of Biome and
+// Prettier. The quote is a policy of the plan, because every file of a
+// plan has one style. The backend declares the policies through the
+// backend kit.
 //
 // # Allocation contract
 //
 // Policies allocates the list of specs and the list of choices of each
-// spec: seven allocations.
+// spec: eight allocations.
 func Policies() []plugin.PolicySpec {
 	return []plugin.PolicySpec{
 		{Key: Int64, Choices: []plugin.Choice{BigInt, String, Number}, Default: BigInt, Doc: int64Doc},
@@ -85,5 +101,9 @@ func Policies() []plugin.PolicySpec {
 		{Key: Bytes, Choices: []plugin.Choice{Uint8Array, String}, Default: Uint8Array, Doc: bytesDoc},
 		{Key: Duration, Choices: []plugin.Choice{String, Number}, Default: String, Doc: durationDoc},
 		{Key: GRPC, Choices: []plugin.Choice{GRPCNone, GRPCConnect}, Default: GRPCNone, Doc: grpcDoc},
+		{
+			Key: QuoteStyle, Choices: []plugin.Choice{DoubleQuote, SingleQuote}, Default: DoubleQuote,
+			Doc: quoteDoc, Plan: true,
+		},
 	}
 }

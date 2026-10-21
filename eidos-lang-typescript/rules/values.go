@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -31,6 +32,21 @@ var (
 	valueKinds    = []symbol.Kind{symbol.KindConstant, symbol.KindVariable}
 	functionKinds = []symbol.Kind{symbol.KindFunction}
 )
+
+// objectName and assignName are the owner and the name of [objectAssign].
+const (
+	objectName = "Object"
+	assignName = "assign"
+)
+
+// objectAssign is the static method assign of the global Object, which
+// copies the properties of its second argument onto its first and returns
+// the first. Its package is the root of the store of the library, because
+// the global scope declares Object.
+var objectAssign = symbol.Identity{
+	Lang: typescript.Lang, Package: plugin.StorePath(typescript.LibraryStore, ""), Owner: objectName,
+	Name: assignName, Kind: symbol.KindMethod,
+}
 
 // The fixed pairs and zeros of the builtin types, and the hint of a
 // string when the caller gives none. A Date and a Uint8Array are values
@@ -73,9 +89,15 @@ const (
 //   - an optional takes the pair of its type;
 //   - a union takes the first two distinct values that its members
 //     derive, in member order;
-//   - a class and an interface take an object literal that sets one
-//     property. The literal is asserted to the type, because it sets no
-//     other property;
+//   - a class takes a construction through its first public constructor
+//     whose required parameters derive, as [Rules.classPair] states. An
+//     abstract class refuses;
+//   - an interface takes an object literal that sets each required
+//     property, and the alternate differs in the first property. An
+//     interface without a required property sets its first property whose
+//     pair derives. An interface with a required method or a required
+//     property that does not derive refuses, because an object literal
+//     without it is no value of the interface;
 //   - an enum takes its first two members with distinct values. Each
 //     value is asserted to the enum's type;
 //   - an alias takes the pair of its target, with the arguments
@@ -84,13 +106,14 @@ const (
 // The key of an object is a string or a number, and the key of a Map is a
 // value of any type that derives a pair. A construction has the type
 // arguments of the reference, so a value has the type of the reference
-// without a contextual type. The property of an object literal is the
-// first required property, or the first property when the type has no
-// required one.
+// without a contextual type. A property of a class or an interface and a
+// parameter of a constructor have the type that the arguments of the
+// reference substitute.
 //
 // The values that an author stated come first for an element, a member,
-// a key of a Map, the value of a key and a property. DeriveSamples reads
-// them through [rules.View.Authored], and derives each value without an
+// a key of a Map, the value of a key, a property and a parameter, which
+// reads the values of the field of its name. DeriveSamples reads them
+// through [rules.View.Authored], and derives each value without an
 // author's statement. A stream, a function type, an intersection and an
 // inline object type refuse with no literal. Every other keyword type,
 // such as never, refuses with no literal too. A named type outside the
@@ -108,7 +131,11 @@ const (
 //   - A construction's pair allocates the reference to its class, the
 //     references to its array and its entry, the list of each composite,
 //     and the list of arguments of each construction.
-//   - An object's pair allocates the member walk and the assertion.
+//   - The pair of a class allocates the member walk, the constructors, the
+//     lists of arguments and of fields, and the call and the object literal
+//     of each half that sets a field.
+//   - The pair of an interface allocates the member walk and the lists of
+//     fields of its two object literals.
 //   - An enum's pair allocates its list of members and the assertion of
 //     each value.
 func (r Rules) DeriveSamples(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
@@ -358,9 +385,10 @@ func (r Rules) declaredPair(ref *node.TypeRef, hint string, v rules.View, depth 
 		return rules.RefusedPair(rules.RefusedUnresolved)
 	}
 	switch d := sym.(type) {
-	case *node.Struct, *node.Interface:
-		decl, _ := sym.(node.Declaration)
-		return r.objectPair(ref, decl, v, depth)
+	case *node.Struct:
+		return r.classPair(ref, d, v, depth)
+	case *node.Interface:
+		return r.interfacePair(ref, d, v, depth)
 	case *node.Enum:
 		t := rules.EmitRef(ref)
 		ms := members(d)
@@ -386,33 +414,199 @@ func (r Rules) declaredPair(ref *node.TypeRef, hint string, v rules.View, depth 
 	}
 }
 
-// objectPair derives the pair of a class or an interface. Each value is
-// an object literal that sets one public instance property, and is
-// asserted to the type. objectPair tries the required properties first
-// and then the optional ones, each in the order of the member walk. The
-// first property whose pair derives sets the pair.
-func (r Rules) objectPair(
-	ref *node.TypeRef, decl node.Declaration, v rules.View, depth int,
-) (rules.Sample, rules.Sample) {
-	set, _ := rules.NewBound(r, v, nil).MembersOf(decl)
-	for _, optional := range [2]bool{false, true} {
+// classPair derives the pair of a class through its first public
+// constructor whose required parameters derive, as [Rules.constructorArgs]
+// and [Rules.unsetFields] state. Each half constructs the class, and sets
+// its fields through Object.assign where it sets any. A class without an
+// argument and without a field to set takes its construction alone, and
+// refuses the alternate, because no second value differs from it.
+//
+// An abstract class refuses with no literal, and so does a class without a
+// public constructor. A class without a constructor whose required
+// parameters derive refuses with the refusal of its first constructor.
+func (r Rules) classPair(ref *node.TypeRef, s *node.Struct, v rules.View, depth int) (rules.Sample, rules.Sample) {
+	if s.Abstract {
+		return rules.RefusedPair(rules.RefusedNoLiteral)
+	}
+	set, _ := rules.NewBound(r, v, nil).MembersOf(s)
+	why := rules.RefusedNoLiteral
+	for i, c := range r.Constructors(s, v) {
+		args, altArgs, refusal := r.constructorArgs(c, set, s, ref, v, depth)
+		if refusal != rules.RefusedNone {
+			if i == 0 {
+				why = refusal
+			}
+			continue
+		}
+		fields, altFields := r.unsetFields(c, set, s, ref, len(args) > 0, v, depth)
+		t := rules.EmitRef(ref)
+		if len(args) == 0 && len(fields) == 0 {
+			return assigned(t, nil, nil), rules.Refused(rules.RefusedNoLiteral)
+		}
+		return assigned(t, args, fields), assigned(t, altArgs, altFields)
+	}
+	return rules.RefusedPair(why)
+}
+
+// constructorArgs returns the arguments of the two constructions of a class
+// through the constructor c: the sample of each required parameter, and
+// the sample of the first parameter of a constructor without a required
+// one where that parameter derives. The alternate passes the alternate
+// value of the first argument. A parameter reads the values that an author
+// stated for the field of its name. constructorArgs returns the refusal of
+// the first required parameter whose pair does not derive.
+func (r Rules) constructorArgs(
+	c rules.Callable, set rules.MemberSet, s *node.Struct, ref *node.TypeRef, v rules.View, depth int,
+) (args, altArgs []emit.Value, why rules.Refusal) {
+	required := slices.ContainsFunc(c.Params, func(p rules.ParamView) bool { return !p.Optional })
+	for _, p := range c.Params {
+		if p.Optional && required || p.Variadic {
+			continue
+		}
+		sample, alternate := r.partPair(fieldID(set, p.Name), rules.Substitute(p.Ref, s.TypeParams, ref.Args),
+			p.Name, v, depth+1)
+		switch {
+		case (!sample.OK() || !alternate.OK()) && required:
+			return nil, nil, rules.FirstRefusal(sample, alternate)
+		case !sample.OK() || !alternate.OK():
+			return nil, nil, rules.RefusedNone
+		case len(altArgs) > 0:
+			alternate = sample
+		case args == nil:
+			args, altArgs = make([]emit.Value, 0, len(c.Params)), make([]emit.Value, 0, len(c.Params))
+		}
+		args = append(args, sample.Value)
+		altArgs = append(altArgs, alternate.Value)
+		if !required {
+			break
+		}
+	}
+	return args, altArgs, rules.RefusedNone
+}
+
+// unsetFields returns the fields that the two halves of the pair of a class
+// set after a construction through the constructor c, in the order of the
+// member walk. A field can be set where it is public, writable, required
+// and of an instance, where a library does not declare it, where c has no
+// parameter of its name, and where its pair derives. Each half sets each
+// such field that has no initializer, because the construction leaves it
+// unset. Where the construction passes no argument, the alternate sets the
+// first field with its alternate value. Where the construction passes no
+// argument and does not set a field, each half sets the first such field
+// with an initializer, with its own value. argued reports whether the
+// construction passes an argument.
+func (r Rules) unsetFields(
+	c rules.Callable, set rules.MemberSet, s *node.Struct, ref *node.TypeRef, argued bool, v rules.View, depth int,
+) (fields, altFields []emit.ValueField) {
+	for _, initialized := range [2]bool{false, true} {
 		for _, m := range set.Members {
 			f, isField := m.Symbol.(*node.Field)
-			if !isField || f.Type == nil || f.Name == "" || f.Optional != optional ||
-				f.Level == symbol.LevelType || f.Visibility != symbol.VisibilityPublic {
+			if !isField || (f.Value != "") != initialized || f.Name == "" || f.Type == nil || f.Optional ||
+				f.Computed || f.Hard || f.Level == symbol.LevelType || f.Visibility != symbol.VisibilityPublic ||
+				f.Mutability == symbol.MutabilityImmutable || typescript.Library(m.Owner.Package) ||
+				slices.ContainsFunc(c.Params, func(p rules.ParamView) bool { return p.Name == f.Name }) {
 
 				continue
 			}
-			sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1)
-			if !sample.OK() || !alternate.OK() {
+			sample, alternate := r.partPair(f.ID, rules.Substitute(f.Type, s.TypeParams, ref.Args), f.Name, v,
+				depth+1)
+			switch {
+			case !sample.OK() || !alternate.OK():
+				continue
+			case argued || len(altFields) > 0:
+				alternate = sample
+			}
+			if fields == nil {
+				fields = make([]emit.ValueField, 0, len(set.Members))
+				altFields = make([]emit.ValueField, 0, len(set.Members))
+			}
+			fields = append(fields, emit.NamedField(f.Name, sample.Value))
+			altFields = append(altFields, emit.NamedField(f.Name, alternate.Value))
+			if initialized {
+				return fields, altFields
+			}
+		}
+		if argued || len(fields) > 0 {
+			return fields, altFields
+		}
+	}
+	return fields, altFields
+}
+
+// interfacePair derives the pair of an interface: an object literal that
+// sets each required property from the pair of its type. The alternate
+// sets the first property with its alternate value. An interface without a
+// required property sets its first property whose pair derives. An
+// interface with a required method refuses with no literal, because an
+// object literal of its properties does not implement the method. A
+// required property whose pair does not derive refuses with its refusal.
+func (r Rules) interfacePair(
+	ref *node.TypeRef, d *node.Interface, v rules.View, depth int,
+) (rules.Sample, rules.Sample) {
+	set, _ := rules.NewBound(r, v, nil).MembersOf(d)
+	if slices.ContainsFunc(set.Members, func(m rules.Member) bool {
+		method, isMethod := m.Symbol.(*node.Method)
+		return isMethod && !method.Optional
+	}) {
+
+		return rules.RefusedPair(rules.RefusedNoLiteral)
+	}
+	t := rules.EmitRef(ref)
+	for _, optional := range [2]bool{false, true} {
+		var samples, alternates []emit.ValueField
+		for _, m := range set.Members {
+			f, isField := m.Symbol.(*node.Field)
+			if !isField || f.Name == "" || f.Type == nil || f.Computed || f.Optional != optional ||
+				f.Level == symbol.LevelType {
+
 				continue
 			}
-			t := rules.EmitRef(ref)
-			return rules.Of(emit.Conversion(t, emit.Composite(t, emit.NamedField(f.Name, sample.Value)))),
-				rules.Of(emit.Conversion(t, emit.Composite(t, emit.NamedField(f.Name, alternate.Value))))
+			sample, alternate := r.partPair(f.ID, rules.Substitute(f.Type, d.TypeParams, ref.Args), f.Name, v,
+				depth+1)
+			switch {
+			case (!sample.OK() || !alternate.OK()) && !optional:
+				return rules.RefusedPair(rules.FirstRefusal(sample, alternate))
+			case !sample.OK() || !alternate.OK():
+				continue
+			case len(alternates) > 0:
+				alternate = sample
+			case samples == nil:
+				samples = make([]emit.ValueField, 0, len(set.Members))
+				alternates = make([]emit.ValueField, 0, len(set.Members))
+			}
+			samples = append(samples, emit.NamedField(f.Name, sample.Value))
+			alternates = append(alternates, emit.NamedField(f.Name, alternate.Value))
+			if optional {
+				break
+			}
+		}
+		if len(samples) > 0 {
+			return rules.Of(emit.Composite(t, samples...)), rules.Of(emit.Composite(t, alternates...))
 		}
 	}
 	return rules.RefusedPair(rules.RefusedNoLiteral)
+}
+
+// assigned returns the construction of the class t from args, as the
+// sample of a class. Where fields is not empty, it returns the call of
+// Object.assign that sets the fields on the construction.
+func assigned(t *emit.TypeRef, args []emit.Value, fields []emit.ValueField) rules.Sample {
+	construction := emit.Construction(t, args...)
+	if len(fields) == 0 {
+		return rules.Of(construction)
+	}
+	return rules.Of(emit.Call(objectAssign, construction, emit.Composite(t, fields...)))
+}
+
+// fieldID returns the identity of the field of a name among the members of
+// a set, and the zero identity where no field has the name.
+func fieldID(set rules.MemberSet, name string) symbol.Identity {
+	for _, m := range set.Members {
+		if f, isField := m.Symbol.(*node.Field); isField && f.Name == name {
+			return f.ID
+		}
+	}
+	return symbol.Identity{}
 }
 
 // ZeroValue returns the zero value of a type in TypeScript:

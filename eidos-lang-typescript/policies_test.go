@@ -59,6 +59,10 @@ func TestPolicies(t *testing.T) {
 				name: "returns grpc with none as its default", key: typescript.GRPC,
 				spelling: "typescript.grpc", choices: []plugin.Choice{"none", "connect-es"}, def: "none",
 			},
+			{
+				name: "returns quote with double as its default", key: typescript.QuoteStyle,
+				spelling: "typescript.quote", choices: []plugin.Choice{"double", "single"}, def: "double",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -77,10 +81,23 @@ func TestPolicies(t *testing.T) {
 			})
 		}
 
-		t.Run("returns six policies", func(t *testing.T) {
+		t.Run("returns seven policies", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Length(t, typescript.Policies(), 6, "int64, absent, timestamp, bytes, duration and grpc")
+			assert.Length(t, typescript.Policies(), 7, "int64, absent, timestamp, bytes, duration, grpc and quote")
+		})
+
+		t.Run("returns quote as the one policy of a plan", func(t *testing.T) {
+			t.Parallel()
+
+			var plan []plugin.PolicyKey
+			for _, s := range typescript.Policies() {
+				if s.Plan {
+					plan = append(plan, s.Key)
+				}
+			}
+			assert.Equal(t, plan, []plugin.PolicyKey{typescript.QuoteStyle},
+				"the quote applies to every file of a plan, and the directive has no param for it")
 		})
 	})
 }

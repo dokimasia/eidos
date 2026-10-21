@@ -25,11 +25,11 @@ func TestTyperef(t *testing.T) {
 	t.Run("typeRef", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("spells a type without the whitespace between its tokens", func(t *testing.T) {
+		t.Run("spells a type without the whitespace of its source", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, targetOf(t, "keyof   Record< string ,  number >").Spelling, "keyof Record<string,number>",
-				"one space remains between two identifier tokens")
+			assert.Equal(t, targetOf(t, "keyof   Record< string ,  number >").Spelling, "keyof Record<string, number>",
+				"the spelling has the spaces of its layout alone")
 		})
 
 		t.Run("keeps a generic's bare name in the spelling and its arguments in Args", func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestTyperef(t *testing.T) {
 		t.Run("spells a constructor type with its new", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, targetOf(t, "new (a: string) => Imported").Spelling, "new(a:string)=>Imported",
+			assert.Equal(t, targetOf(t, "new (a: string) => Imported").Spelling, "new (a: string) => Imported",
 				"the spelling tells it from a function type")
 		})
 

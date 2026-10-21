@@ -41,6 +41,15 @@ const (
 // declares.
 const cloneName = "structuredClone"
 
+// The members that the cases call through their owners: assign of the
+// global Object, and now of the class Clock of the module time.
+const (
+	objectName = "Object"
+	assignName = "assign"
+	clockName  = "Clock"
+	nowName    = "now"
+)
+
 // The allocations of a value.
 const (
 	// literalAllocs is an integer literal, which TypeScript writes as its
@@ -80,16 +89,20 @@ func TestValue(t *testing.T) {
 		}{
 			{name: "writes an integer as its digits", give: emit.Literal(emit.LiteralInt, "42"), want: "42"},
 			{name: "writes the absent value as null", give: emit.Literal(emit.LiteralNil, ""), want: "null"},
-			{name: "writes a string in single quotes", give: emit.Literal(emit.LiteralString, "hi"), want: `'hi'`},
+			{name: "writes a string in double quotes", give: emit.Literal(emit.LiteralString, "hi"), want: `"hi"`},
 			{
 				name: "writes a string escaped in TypeScript's grammar",
 				give: emit.Literal(emit.LiteralString, "it's\a \\ "+lineSeparator+"\U0001F600"),
-				want: `'it\'s` + `\` + `u0007 \\ ` + `\` + `u2028` + "\U0001F600'",
+				want: `"it's` + `\` + `u0007 \\ ` + `\` + `u2028` + "\U0001F600\"",
 			},
 			{
 				name: "writes control characters under their named escapes",
 				give: emit.Literal(emit.LiteralString, "\b\f\n\r\t\v\x7f"+string(rune(0x2029))),
-				want: `'\b\f\n\r\t\v` + `\` + `u007f` + `\` + `u2029'`,
+				want: `"\b\f\n\r\t\v` + `\` + `u007f` + `\` + `u2029"`,
+			},
+			{
+				name: "writes a string with more double quotes than single quotes in single quotes",
+				give: emit.Literal(emit.LiteralString, `say "hi"`), want: `'say "hi"'`,
 			},
 			{
 				name: "writes a conversion as an assertion",
@@ -101,19 +114,24 @@ func TestValue(t *testing.T) {
 				name: "writes a record as an object literal",
 				give: emit.Composite(valueRef(rowName, storePath, rowName),
 					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
-				want: "{id: 1}",
+				want: "{ id: 1 }",
+			},
+			{
+				name: "writes a record without entries as two braces",
+				give: emit.Composite(valueRef(rowName, storePath, rowName)),
+				want: "{}",
 			},
 			{
 				name: "writes a declared type named Array as an object literal",
 				give: emit.Composite(valueRef(arrayType, storePath, arrayType),
 					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
-				want: "{id: 1}",
+				want: "{ id: 1 }",
 			},
 			{
 				name: "writes a map with a computed key",
 				give: emit.Composite(&emit.TypeRef{Spelling: "Record<string, number>", Form: symbol.FormMap},
 					emit.KeyedEntry(emit.Literal(emit.LiteralString, "k"), emit.Literal(emit.LiteralInt, "2"))),
-				want: `{['k']: 2}`,
+				want: `{ ["k"]: 2 }`,
 			},
 			{
 				name: "writes a list as an array literal",
@@ -126,7 +144,7 @@ func TestValue(t *testing.T) {
 				give: emit.Composite(&emit.TypeRef{Spelling: "[string, number]", Form: symbol.FormTuple},
 					emit.Element(emit.Literal(emit.LiteralString, "a")),
 					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
-				want: "['a', 2]",
+				want: `["a", 2]`,
 			},
 			{
 				name: "writes an Array as an array literal",
@@ -167,7 +185,7 @@ func TestValue(t *testing.T) {
 				give: emit.Construction(&emit.TypeRef{Spelling: setType, Args: []*emit.TypeRef{{Spelling: "string"}}},
 					emit.Composite(&emit.TypeRef{Spelling: "string[]", Form: symbol.FormList},
 						emit.Element(emit.Literal(emit.LiteralString, "a")))),
-				want: "new Set<string>(['a'])",
+				want: `new Set<string>(["a"])`,
 			},
 			{
 				name: "writes a construction without arguments",
@@ -223,7 +241,7 @@ func TestValue(t *testing.T) {
 					Elems: []*emit.TypeRef{valueRef(rowName, storePath, rowName)},
 				}, emit.Composite(valueRef(rowName, storePath, rowName),
 					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1")))),
-				want: "() => ({id: 1})",
+				want: "() => ({ id: 1 })",
 			},
 			{
 				name: "writes the results of a function of two results as a tuple",
@@ -231,7 +249,7 @@ func TestValue(t *testing.T) {
 					Spelling: "() => [number, string]", Form: symbol.FormFunc,
 					Elems: []*emit.TypeRef{{Spelling: "number"}, {Spelling: "string"}},
 				}, emit.Literal(emit.LiteralInt, "0"), emit.Literal(emit.LiteralString, "a")),
-				want: "() => [0, 'a']",
+				want: `() => [0, "a"]`,
 			},
 			{
 				name:    "returns a value error for a function of a type that is not a function type",
@@ -279,6 +297,18 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsSpecifier, Name: weightName, TypeOnly: true}},
 				"a type-only import")
 		})
+
+		t.Run("returns an error for a construction of a library class that a declaration of the file hides",
+			func(t *testing.T) {
+				t.Parallel()
+
+				set := &render.ImportSet{}
+				set.Reserve(setType)
+				_, err := backend.Value(emit.Construction(valueRef(setType, libraryPackage, setType)), set)
+				assert.HasError(t, err, "the class of the file hides the class of the library")
+				assert.Contains(t, err.Error(), "hides the global type "+setType,
+					"the refusal contains the hidden class")
+			})
 
 		t.Run("imports the class of a construction as a value", func(t *testing.T) {
 			t.Parallel()
@@ -344,6 +374,51 @@ func TestValue(t *testing.T) {
 			assert.Contains(t, err.Error(), "hides the global "+cloneName, "the refusal contains the hidden name")
 		})
 
+		t.Run("calls a member of a library global through its owner", func(t *testing.T) {
+			t.Parallel()
+
+			assign := symbol.Identity{
+				Lang: typescript.Lang, Package: libraryPackage, Owner: objectName, Name: assignName,
+				Kind: symbol.KindMethod,
+			}
+			got, set, err := returned(t, emit.Call(assign, emit.Construction(valueRef(weightName, unitsModule,
+				weightName)), emit.Composite(valueRef(weightName, unitsModule, weightName),
+				emit.NamedField("id", emit.Literal(emit.LiteralInt, "1")))))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, "Object.assign(new Weight(), { id: 1 })", "the call names the owner and the member")
+			assert.Equal(t, backend.Imports(set), "import { Weight } from \"./units\";\n\n",
+				"the file imports the class as a value and nothing of the library")
+		})
+
+		t.Run("returns a value error for a library member whose owner a declaration of the file hides",
+			func(t *testing.T) {
+				t.Parallel()
+
+				set := &render.ImportSet{}
+				set.Reserve(objectName)
+				_, err := backend.Value(emit.Call(symbol.Identity{
+					Lang: typescript.Lang, Package: libraryPackage, Owner: objectName, Name: assignName,
+					Kind: symbol.KindMethod,
+				}), set)
+				refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
+				assert.Equal(t, refused.Lang, string(typescript.Lang), "naming the target")
+				assert.Contains(t, err.Error(), "hides the global "+objectName, "the refusal contains the hidden owner")
+			})
+
+		t.Run("calls a static member of another module through the name that its owner's import binds",
+			func(t *testing.T) {
+				t.Parallel()
+
+				got, set, err := returned(t, emit.Call(symbol.Identity{
+					Lang: typescript.Lang, Package: timeModule, Owner: clockName, Name: nowName,
+					Kind: symbol.KindMethod,
+				}))
+				assert.NoError(t, err, "the value spells")
+				assert.Equal(t, got, clockName+"."+nowName+"()", "the call names the owner and the member")
+				assert.Equal(t, set.Entries(), []render.Entry{{Path: timeSpecifier, Name: clockName}},
+					"the file imports the owner")
+			})
+
 		t.Run("renames a callee another import binds", func(t *testing.T) {
 			t.Parallel()
 
@@ -390,6 +465,14 @@ func TestValue(t *testing.T) {
 			_, err := backend.Value(emit.Address(emit.Literal(emit.LiteralInt, "1")), &render.ImportSet{})
 			refused := assert.ErrorAs[*render.ValueError](t, err, "the render reports the value's own code")
 			assert.Equal(t, refused.Lang, string(typescript.Lang), "naming the target")
+		})
+
+		t.Run("writes a string in the single quote of the policy", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.Value(emit.Literal(emit.LiteralString, "hi"), singleQuoted(t))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, `'hi'`, "the quote that the policy selects")
 		})
 	})
 }

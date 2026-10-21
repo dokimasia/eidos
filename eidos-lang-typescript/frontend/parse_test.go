@@ -75,12 +75,12 @@ const (
 )
 
 // parseAllocs is the budget of one parse of the canonical corpus of
-// 200,000 declarations in 10,000 files. One run counted 1,840,010
+// 200,000 declarations in 10,000 files. One run counted 1,710,009
 // allocations: the nodes, the texts, the stamps and the type references of
 // the lowering, the source and the sink of each unit, and one tree handle
 // for each file. Tree-sitter builds its trees in C memory, which the count
 // does not see. The budget is about 5% above the count.
-const parseAllocs = 1_930_000
+const parseAllocs = 1_800_000
 
 // treeReader is the partition's recorded door over a test tree.
 type treeReader struct {
