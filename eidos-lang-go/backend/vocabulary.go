@@ -150,10 +150,10 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // type parameter or a declaration of the package of the file. Otherwise
 // it qualifies the name with the bound name of the package. The package
 // is the one that [spellref.PackageOf] returns for Go: the package of the
-// target where the target is a Go declaration, and the package that the
-// reference records otherwise. A translated reference records the package
-// of the file that declares its referent. An argument list is in the
-// brackets of Go.
+// target where the target is a Go declaration and the reference is not
+// emitted, and the package that the reference records otherwise. A
+// translated or an emitted reference records the package of the file that
+// declares its referent. An argument list is in the brackets of Go.
 //
 // A structural reference keeps its written spelling where every child
 // keeps its written spelling, so a function type keeps its parameter
