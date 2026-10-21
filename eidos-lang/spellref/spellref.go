@@ -373,19 +373,21 @@ func TypeArgs(list any, opener, closer string, spell func(*emit.TypeRef) (string
 
 // PackageOf returns the package of a named reference for a backend of
 // the language lang. It returns the target's package where the target is
-// a declaration of lang, and the package that the reference records
-// otherwise. A reference without a target records the package of its
-// source. A translated reference has a target in another language, and
-// the layout records the package of the file that declares its referent.
-// A reference to a type parameter has no package, because no package
-// exports a type parameter. PackageOf returns the empty package for it,
-// so the backend writes it without an import. PackageOf allocates
-// nothing.
+// a declaration of lang and the reference is not emitted. It returns the
+// package that the reference records otherwise. A reference without a
+// target records the package of its source. A translated reference has a
+// target in another language, and the layout records the package of the
+// file that declares its referent. The layout records the same package
+// for an emitted reference. Such a reference has [emit.TypeRef.Emitted]
+// set, and its target can be in any language. A reference to a type
+// parameter has no package, because no package exports a type parameter.
+// PackageOf returns the empty package for it, so the backend writes it
+// without an import. PackageOf allocates nothing.
 func PackageOf(t *emit.TypeRef, lang symbol.Lang) string {
 	if t.Target.Kind == symbol.KindTypeParam {
 		return ""
 	}
-	if !t.Target.IsZero() && t.Target.Lang == lang {
+	if !t.Emitted && t.Target.Lang == lang {
 		return t.Target.Package
 	}
 	return t.Package

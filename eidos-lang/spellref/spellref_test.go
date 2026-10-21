@@ -379,6 +379,17 @@ func TestSpellRef(t *testing.T) {
 				"the layout records the package of the file that declares a translated reference's referent")
 		})
 
+		t.Run("returns the recorded package of an emitted reference to a target of the language", func(t *testing.T) {
+			t.Parallel()
+
+			ref := &emit.TypeRef{
+				Spelling: rowName, Package: modulePkg, Emitted: true,
+				Target: symbol.Identity{Lang: lang, Package: targetPkg, Name: rowName},
+			}
+			assert.Equal(t, spellref.PackageOf(ref, lang), modulePkg,
+				"the layout records the package of the file that declares the referent")
+		})
+
 		t.Run("returns no package for a reference to a type parameter", func(t *testing.T) {
 			t.Parallel()
 
