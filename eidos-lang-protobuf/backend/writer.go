@@ -49,7 +49,9 @@ var errNoType = errors.New(refusalPrefix + "the declaration states no type")
 //   - A reference to a well-known type is written as it is, and imports
 //     the file that declares the type.
 //   - A reference to a declaration of protobuf is written as its source
-//     writes it, and imports the file that its package names.
+//     writes it, and imports the file that its package names. The next
+//     rule applies instead where the reference has [emit.TypeRef.Emitted]
+//     set.
 //   - Any other reference into a file of the plan imports that file. It is
 //     qualified with the package clause of that file, where the file has a
 //     clause and the clause differs from the clause of the file under
@@ -162,7 +164,7 @@ func (w Writer) named(t *emit.TypeRef) (string, error) {
 		return t.Spelling, nil
 	}
 	w.set.Add(file)
-	if t.Target.Lang == protobuf.Lang {
+	if t.Target.Lang == protobuf.Lang && !t.Emitted {
 		return t.Spelling, nil
 	}
 	referent, held := w.set.Referent(file)

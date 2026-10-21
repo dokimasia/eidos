@@ -83,6 +83,22 @@ func TestWriter(t *testing.T) {
 				want: "other.User", wantImports: []string{otherPath},
 			},
 			{
+				name: "returns an emitted reference to a protobuf declaration under the clause of the file of its referent",
+				give: &emit.TypeRef{
+					Spelling: "User",
+					Package:  otherPath,
+					Target: symbol.Identity{
+						Lang:    protobuf.Lang,
+						Package: otherClause,
+						Name:    "User",
+						Kind:    symbol.KindStruct,
+					},
+					Emitted: true,
+				},
+				want:        otherClause + ".User",
+				wantImports: []string{otherPath},
+			},
+			{
 				name: "returns a reference into a file of another package under the clause of that file",
 				give: &emit.TypeRef{Spelling: "User", Package: otherPath, Target: sourceUser},
 				want: otherClause + ".User", wantImports: []string{otherPath},
