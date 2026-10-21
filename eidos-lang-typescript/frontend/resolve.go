@@ -21,9 +21,13 @@ const globalThisName = "globalThis"
 // file whose parse recorded no scope resolves nothing.
 //
 // A bare name probes the enclosing namespaces innermost first and then
-// the package of the file, one tier each, then the module that an import
-// binds it from, and then each package of the global scope: the global
-// package of the workspace and the package of the library. A qualified
+// the package of the file, one tier each. A name that a named or a
+// default import binds then probes the module of the import, and a name
+// that a namespace import binds probes no further tier. An import hides
+// the global scope from the name that it binds, also where the load does
+// not contain the module. Any other bare name probes each package of the
+// global scope last: the global package of the workspace and the package
+// of the library. A qualified
 // name probes the module that a namespace import binds its first name to,
 // a namespace that a named import binds, or a namespace of each enclosing
 // package and of each package of the global scope. A name that opens with
@@ -67,8 +71,11 @@ func (s *scope) candidates(spelling string, followed map[string]bool) plugin.Can
 		for _, pkg := range chain {
 			tiers = append(tiers, []symbol.Identity{{Lang: Lang, Package: pkg, Name: name}})
 		}
-		if b, bound := m.imports[name]; bound && b.name != "" {
-			tiers = append(tiers, m.from(b.specifier, "", b.name)...)
+		if b, bound := m.imports[name]; bound {
+			if b.name != "" {
+				tiers = append(tiers, m.from(b.specifier, "", b.name)...)
+			}
+			return tiers
 		}
 		for _, global := range m.globals {
 			if !slices.Contains(chain, global) {

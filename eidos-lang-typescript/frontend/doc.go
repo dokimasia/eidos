@@ -150,10 +150,12 @@
 // # Resolution and re-exports
 //
 // Resolve returns tiers in the scope order of TypeScript: the enclosing
-// namespaces innermost first, the package of the module, the module that
-// an import binds the name from, the global package, and the package of
-// the library of the file. A member of a library resolves global names in
-// its library alone, and globalThis.X probes the global tiers alone.
+// namespaces innermost first and the package of the module. A name that an
+// import binds then probes the module of the import, and the import hides
+// the global scope. Any other name then probes the global package and the
+// package of the library of the file. A member of a library resolves
+// global names in its library alone, and globalThis.X probes the global
+// tiers alone.
 //
 // A relative specifier refers to its file before the index of the
 // directory, an emitted JavaScript extension refers to the source file, a

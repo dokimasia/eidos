@@ -277,9 +277,8 @@ func sharedOf(tb testing.TB, tree fstest.MapFS) []string {
 	return units[at][0].Shared
 }
 
-// importTiers parses src/a.ts in a tree and returns the packages the
-// tiers for its imported X name, without its own package's tier and the
-// global package's.
+// importTiers parses src/a.ts in a tree and returns the packages of the
+// tiers for its imported X name, without the tier of its own package.
 func importTiers(tb testing.TB, tree fstest.MapFS) [][]string {
 	tb.Helper()
 
@@ -293,7 +292,7 @@ func importTiers(tb testing.TB, tree fstest.MapFS) [][]string {
 	}
 	tiers := resolved(scope, probeName)
 	out := make([][]string, 0, len(tiers))
-	for _, tier := range tiers[1 : len(tiers)-1] {
+	for _, tier := range tiers[1:] {
 		out = append(out, packagesOf(tier))
 	}
 	return out

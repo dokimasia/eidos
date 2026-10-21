@@ -15,10 +15,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The names the resolution cases probe.
+// The names the resolution cases probe. Set is a global of the library,
+// which an import of another module hides.
 const (
 	probeName = "X"
 	userName  = "User"
+	setName   = "Set"
 )
 
 // Resolution follows TypeScript's scope order through the bindings the
@@ -57,7 +59,6 @@ func TestResolve(t *testing.T) {
 				{id(aPackage, userName)},
 				{id("src/models", userName)},
 				{id("src/models/index", userName)},
-				{id("", userName)},
 			}, "TypeScript tries the file before the directory")
 		})
 
@@ -191,6 +192,32 @@ func TestResolve(t *testing.T) {
 				gb, _ := parsedWithLibrary(t, fstest.MapFS{aFile: {Data: []byte("export {};\n")}})
 				scope := scopeOfFile(t, gb, fileIn(t, gb, aPackage))
 				assert.Equal(t, resolved(scope, tt.giveName), tt.want, "the tiers of the spelling")
+			})
+		}
+
+		imported := []struct {
+			name    string
+			giveSrc string
+			want    plugin.Candidates
+		}{
+			{
+				name:    "probes no global tier for a bare name that a named import binds",
+				giveSrc: "import { Set } from 'immutable';\nexport {};\n",
+				want:    plugin.Candidates{{id(aPackage, setName)}, {id("immutable", setName)}},
+			},
+			{
+				name:    "probes no global tier for a bare name that a namespace import binds",
+				giveSrc: "import * as Set from 'immutable';\nexport {};\n",
+				want:    plugin.Candidates{{id(aPackage, setName)}},
+			},
+		}
+		for _, tt := range imported {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, _ := parsedWithLibrary(t, fstest.MapFS{aFile: {Data: []byte(tt.giveSrc)}})
+				scope := scopeOfFile(t, gb, fileIn(t, gb, aPackage))
+				assert.Equal(t, resolved(scope, setName), tt.want, "the import hides the Set of the library")
 			})
 		}
 

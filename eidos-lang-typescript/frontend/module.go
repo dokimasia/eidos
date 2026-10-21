@@ -37,10 +37,10 @@ type module struct {
 	pkg string
 
 	// globals are the packages of the global scope of the file, which a
-	// bare name probes after its imports. A source file has the global
-	// package of the workspace, and then the package of its library where
-	// the load provides the library. A file of the library has the package
-	// of its library alone.
+	// bare name that no import binds probes last. A source file has the
+	// global package of the workspace, and then the package of its library
+	// where the load provides the library. A file of the library has the
+	// package of its library alone.
 	globals []string
 
 	// imports maps each local name an import binds onto its binding,
