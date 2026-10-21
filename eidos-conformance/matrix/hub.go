@@ -199,17 +199,20 @@ var probes = []probe{
 
 // policyProbes maps each lowering policy of a target to the shape whose
 // spelling the policy decides. The hub's section contains the spelling
-// of the shape under each choice of the policy. The version of Python
-// decides the syntax of the written files and no spelling of a type, so
-// its rows contain one spelling, the optional of text.
+// of the shape under each choice of the policy. The version of Python, the
+// quote of TypeScript and the width of Go decide the syntax of the written
+// files and no spelling of a type, so their rows contain one spelling, the
+// optional of text.
 var policyProbes = map[plugin.PolicyKey]rules.TypeShape{
 	golang.GRPC:             protoMessage,
+	golang.Width:            optional,
 	typescript.GRPC:         protoMessage,
 	typescript.Int64:        wideInt,
 	typescript.Absent:       optional,
 	typescript.Timestamp:    timestamp,
 	typescript.Bytes:        octets,
 	typescript.Duration:     duration,
+	typescript.QuoteStyle:   optional,
 	protobuf.Int32Encoding:  narrowInt,
 	protobuf.Int64Encoding:  wideInt,
 	protobuf.Uint32Encoding: narrowUint,

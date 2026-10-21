@@ -15,10 +15,14 @@ import (
 // Store serves sessions.
 type StoreConnect interface {
 	Get(ctx context.Context, request *svc.GetRequest) (*svc.Session, error)
-	Watch(ctx context.Context, request *svc.GetRequest, stream svcconnect.StoreWatchServerStream) error
+	Watch(
+		ctx context.Context,
+		request *svc.GetRequest,
+		stream svcconnect.StoreWatchServerStream,
+	) error
 	Upload(ctx context.Context, stream svcconnect.StoreUploadServerStream) (*svc.Summary, error)
 	Chat(ctx context.Context, stream svcconnect.StoreChatServerStream) error
 	Ping(ctx context.Context, request *emptypb.Empty) (*emptypb.Empty, error)
 }
 
-// acme:provenance sha256:734a713580c566ff20a53567e1a74c0dbc9c11014ce2d0aeb3302e6cf21f3d76
+// acme:provenance sha256:c8a1b16b6b40de520ca89828514a557ce7a5940ba3b6b7f7b1087cd9a5afe116

@@ -58,7 +58,7 @@ export interface Span {
 
 export interface Movie {
   title: string;
-  'year-of': bigint;
+  "year-of": bigint;
 }
 
 export enum Shade {
@@ -132,4 +132,4 @@ export interface Order {
   channel: string;
 }
 
-// acme:provenance sha256:5ac055092ad15f4e61a03b424c1d4b39dbe77afe9494feccd6d5c9e90aafd1b8
+// acme:provenance sha256:318f397132ae4ecd84a7c2b2038efe01216a2ebd9f803d420799572f1c11dd6e

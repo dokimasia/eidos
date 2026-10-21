@@ -96,8 +96,7 @@ type QueryResolver interface {
 }
 
 // A result of a search.
-type SearchResult interface {
-}
+type SearchResult interface{}
 
 // A location of a resource.
 type URL string
@@ -110,4 +109,4 @@ type Vendor struct {
 	Products []Product
 }
 
-// acme:provenance sha256:7e7d285379154d6191a997b6789a57ad6669d5d3c51b6da8d31a53804cb601ad
+// acme:provenance sha256:431c92da48717b56f171a31c57cb376cdc6681b1a9b5c6443704eec79f48afa3

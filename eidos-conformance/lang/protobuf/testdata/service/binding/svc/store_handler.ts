@@ -2,9 +2,9 @@
 // acme:plugin connectesgen
 // acme:source svc/store.proto
 
-import type { Empty } from '@bufbuild/protobuf/wkt';
-import type { HandlerContext } from '@connectrpc/connect';
-import type { Chunk, Event, GetRequest, Session, Summary } from './store_pb';
+import type { Empty } from "@bufbuild/protobuf/wkt";
+import type { HandlerContext } from "@connectrpc/connect";
+import type { Chunk, Event, GetRequest, Session, Summary } from "./store_pb";
 
 /**
  * Store serves sessions.
@@ -17,4 +17,4 @@ export interface StoreHandler {
   ping(request: Empty, context: HandlerContext): Promise<Empty>;
 }
 
-// acme:provenance sha256:994dd0dd1e593014911c0796e550d05f97fc44c02bb8c7eaec20acdd7436dc9a
+// acme:provenance sha256:48c6012c356ce75cdc61bd1a42025276625f4e8d15403ad4f8cb90354271da36

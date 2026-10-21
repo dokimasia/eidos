@@ -27,12 +27,12 @@ export enum SessionState {
 }
 
 export interface SessionCredentialToken {
-  kind: 'token';
+  kind: "token";
   token: string;
 }
 
 export interface SessionCredentialKey {
-  kind: 'key';
+  kind: "key";
   key: Uint8Array;
 }
 
@@ -65,4 +65,4 @@ export interface StoreClient {
   ping(request: Record<string, never>): Promise<Record<string, never>>;
 }
 
-// acme:provenance sha256:faf2a12b7f6b96a8b843afc16cd40c85a32f5df0eebe00fc0fbc1a1337285110
+// acme:provenance sha256:f071273bffd03a23974549b99798c2d0ca01b76f3b383ee07cc6c55d9875ae9f

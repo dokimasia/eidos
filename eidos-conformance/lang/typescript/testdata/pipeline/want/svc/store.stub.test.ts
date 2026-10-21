@@ -2,7 +2,7 @@
 // acme:plugin stubgen
 // acme:source svc/store.ts
 
-import type { Session, Store } from './store';
+import type { Session, Store } from "./store";
 
 export class StoreStub implements Store {
   private readonly next: Store;
@@ -17,4 +17,4 @@ export class StoreStub implements Store {
   }
 }
 
-// acme:provenance sha256:ac80496571161592b4adcc259f394f26bd2685b7b1532346e62adab19fe12ee2
+// acme:provenance sha256:aa1c7b4e4361d04851d1b91179dc8f53d9b03cabcf3ca579f054a465db106d52

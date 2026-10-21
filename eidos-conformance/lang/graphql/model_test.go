@@ -33,7 +33,7 @@ const (
 	stringEnumType = "type Availability string\n"
 	stringValue    = "const AvailabilityInStock Availability = \"IN_STOCK\"\n"
 	scalarType     = "type URL string\n"
-	unionInterface = "type SearchResult interface {\n"
+	unionInterface = "type SearchResult interface{}\n"
 )
 
 // TestModel checks that the plan go-model writes a Go model of the schema of

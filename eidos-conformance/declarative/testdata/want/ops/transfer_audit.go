@@ -4,9 +4,9 @@
 
 package ops
 
-func TransferAudit(from string, to string, cents int64) {
+func TransferAudit(from, to string, cents int64) {
 	record("Transfer", "warn", from, to, cents)
 	Transfer(from, to, cents)
 }
 
-// acme:provenance sha256:c13e2d882ab6ebdc1443cf53365cc01f2c1a75843ea315b730387f257f9f5570
+// acme:provenance sha256:6d73624d2444958c35f098dd674d455ea479e1346c491bcdb862488e0299ebda
