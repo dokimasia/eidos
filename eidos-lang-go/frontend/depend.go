@@ -64,6 +64,11 @@ const (
 //   - a module or the standard library lacks the package directory;
 //   - the load does not provide the store, which turns its source off.
 //
+// The round passes over a need whose package directory contains an output
+// of the round, because the brand writes the package. The directory is
+// below the workspace module that declares the need, or below the
+// workspace directory that replaces its module.
+//
 // The import "C" refers to the preamble of cgo and to no package, so the
 // round passes over it. These are errors that name the go command that
 // settles them:
@@ -89,14 +94,14 @@ func (*goFrontend) dependencies(
 			continue
 		}
 		unit, reason, err := b.place(r, need.Path)
-		if err != nil {
+		switch {
+		case err != nil:
 			return nil, err
-		}
-		if len(unit) == 0 {
+		case len(unit) > 0:
+			out = append(out, unit)
+		case !b.generated(need.Path, round.Outputs):
 			round.Unplace(need.Path, reason)
-			continue
 		}
-		out = append(out, unit)
 	}
 	return out, nil
 }
@@ -107,7 +112,7 @@ func (b *buildList) place(r plugin.StoreReader, importPath string) ([]plugin.Sou
 	if golang.Standard(importPath) {
 		return packageUnit(r, plugin.StorePath(GoRootStore, importPath), nil)
 	}
-	if b.workspaceModule(importPath) {
+	if _, declared := b.workspaceModule(importPath); declared {
 		return nil, "a workspace module declares it, and the selection claims no file of its package", nil
 	}
 	mod, s, selected := b.moduleOf(importPath)

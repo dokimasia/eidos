@@ -12,6 +12,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -70,6 +71,30 @@ const (
 // goModField ends the version field of the go.sum line that hashes a
 // module's go.mod file alone.
 const goModField = "/go.mod"
+
+// The outputs of the brand in the workspace: a package of the workspace
+// module whose one file is an output, a file in the package directory of
+// the replaced library, and an output in a directory that no need names.
+const (
+	stubPackage    = appModule + "/stub"
+	stubOutput     = "stub/stub.go"
+	replacedOutput = "lib/pkg/pkg.go"
+	otherOutput    = "other/other.go"
+)
+
+// The nested workspace module: its go.mod in a directory whose path the
+// module path does not end with, a package of the module, and an output
+// in the directory of that package.
+const (
+	toolsGoMod   = "build/tools/go.mod"
+	toolsModule  = appModule + "/tools"
+	toolsPackage = toolsModule + "/gen"
+	toolsOutput  = "build/tools/gen/gen.go"
+)
+
+// workspaceReason is the reason of an import of a workspace module that
+// the round places nowhere.
+const workspaceReason = "a workspace module declares it, and the selection claims no file of its package"
 
 // storeTree is a test workspace with named stores beside it.
 type storeTree struct {
@@ -152,8 +177,7 @@ func TestDepend(t *testing.T) {
 		}{
 			{
 				name: "reports an import of a workspace module placed nowhere", tree: depWorkspace(),
-				stores: depStores(), need: appModule + "/other",
-				want: "a workspace module declares it, and the selection claims no file of its package",
+				stores: depStores(), need: appModule + "/other", want: workspaceReason,
 			},
 			{
 				name: "reports an import no required module provides placed nowhere", tree: depWorkspace(),
@@ -195,6 +219,56 @@ func TestDepend(t *testing.T) {
 					[]plugin.Unplaced{{Path: tt.need, Reason: tt.want}}, "the round reports the need and why")
 			})
 		}
+
+		generated := []struct {
+			name   string
+			tree   func() fstest.MapFS
+			need   string
+			output string
+		}{
+			{
+				name: "passes over an import of a workspace package whose directory has an output",
+				tree: depWorkspace, need: stubPackage, output: stubOutput,
+			},
+			{
+				name: "passes over an import of a module that a workspace directory with an output replaces",
+				tree: replacedWorkspace, need: libPackage, output: replacedOutput,
+			},
+			{
+				name: "passes over an import of a nested module's package whose directory has an output",
+				tree: func() fstest.MapFS {
+					tree := depWorkspace()
+					tree[toolsGoMod] = &fstest.MapFile{Data: []byte("module " + toolsModule + "\n")}
+					return tree
+				},
+				need: toolsPackage, output: toolsOutput,
+			},
+		}
+		for _, tt := range generated {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				tree := tt.tree()
+				round := firstRound(tree, tt.need)
+				round.Outputs = []string{tt.output}
+				units, err := depend(t, round, tree, depStores())
+				assert.NoError(t, err, "the round places what it can")
+				expect.Empty(t, units, "no unit declares the package")
+				expect.Empty(t, round.Unplaced(), "the brand writes the package, so the round reports nothing")
+			})
+		}
+
+		t.Run("reports an import of a workspace package placed nowhere when its directory has no output",
+			func(t *testing.T) {
+				t.Parallel()
+
+				round := firstRound(depWorkspace(), stubPackage)
+				round.Outputs = []string{otherOutput}
+				_, err := depend(t, round, depWorkspace(), depStores())
+				assert.NoError(t, err, "the round places what it can")
+				assert.Equal(t, round.Unplaced(), []plugin.Unplaced{{Path: stubPackage, Reason: workspaceReason}},
+					"the output is in another directory")
+			})
 	})
 
 	t.Run("place", func(t *testing.T) {
@@ -578,6 +652,15 @@ func reportedRound(
 ) ([][]plugin.SourceRef, *plugin.DependencyRound, error) {
 	tb.Helper()
 
+	round := firstRound(tree, needs...)
+	units, err := depend(tb, round, tree, stores)
+	return units, round, err
+}
+
+// firstRound returns the first dependency round over a workspace for the
+// needs given, with every go.mod of the workspace as the round's shared
+// inputs.
+func firstRound(tree fstest.MapFS, needs ...string) *plugin.DependencyRound {
 	var goMods []string
 	for p := range tree {
 		if path.Base(p) == appGoMod {
@@ -589,12 +672,21 @@ func reportedRound(
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})
 	}
+	return round
+}
+
+// depend runs the Go frontend's dependency round over a workspace and its
+// stores, under the test's context.
+func depend(
+	tb testing.TB, round *plugin.DependencyRound, tree fstest.MapFS, stores map[string]fs.FS,
+) ([][]plugin.SourceRef, error) {
+	tb.Helper()
+
 	dependent, is := frontend.New(nil).(plugin.Dependent)
 	if !is {
 		panic("the Go frontend is in the dependent role")
 	}
-	units, err := dependent.Dependencies(tb.Context(), round, roundReader{storeTree{tree, stores}})
-	return units, round, err
+	return dependent.Dependencies(tb.Context(), round, roundReader{storeTree{tree, stores}})
 }
 
 // unplacedBy runs a round that the case states succeeds and returns

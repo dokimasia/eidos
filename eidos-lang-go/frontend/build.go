@@ -28,14 +28,14 @@ const sumFile = "go.sum"
 // with once it is joined and cleaned.
 const parentDir = ".."
 
-// buildList is what a dependency round's go.mod files select: the
-// go.mod files themselves, parsed, the module paths they declare, the
-// selection of every module they require, and the tree hashes their
-// go.sum files record.
+// buildList is the build list that the go.mod files of a dependency round
+// select. It has the parsed go.mod files, the workspace module that each
+// declares, the selection of every module that they require, and the tree
+// hashes that their go.sum files record.
 type buildList struct {
 	goMods    []string
 	files     map[string]*modfile.File
-	workspace []string
+	workspace []moduleRoot
 	selected  map[string]selection
 	sums      map[module.Version]string
 }
@@ -81,7 +81,7 @@ func readBuild(r plugin.FileReader, goMods []string) (*buildList, error) {
 		}
 		b.files[goMod] = f
 		if f.Module != nil {
-			b.workspace = append(b.workspace, f.Module.Mod.Path)
+			b.workspace = append(b.workspace, moduleRoot{dir: path.Dir(goMod), module: f.Module.Mod.Path})
 		}
 		for _, req := range f.Require {
 			prior, met := b.selected[req.Mod.Path]
@@ -132,10 +132,35 @@ func selectionOf(goMod string, f *modfile.File, mod module.Version) selection {
 	return s
 }
 
-// workspaceModule reports whether a workspace go.mod declares the
-// module an import path is in.
-func (b *buildList) workspaceModule(importPath string) bool {
-	return slices.ContainsFunc(b.workspace, func(mod string) bool { return within(importPath, mod) })
+// workspaceModule returns the workspace module whose path is the longest
+// prefix of an import path, and false where no workspace go.mod declares
+// a module that the import path is in.
+func (b *buildList) workspaceModule(importPath string) (moduleRoot, bool) {
+	var best moduleRoot
+	for _, root := range b.workspace {
+		if within(importPath, root.module) && len(root.module) > len(best.module) {
+			best = root
+		}
+	}
+	return best, best.module != ""
+}
+
+// generated reports whether an output of a round is in the workspace
+// directory of the package of an import path. The directory is below the
+// workspace module whose path is the longest prefix of the import path,
+// or below the directory that replaces the selected module of the import
+// path.
+func (b *buildList) generated(importPath string, outputs []string) bool {
+	root, declared := b.workspaceModule(importPath)
+	if !declared {
+		mod, s, selected := b.moduleOf(importPath)
+		if !selected || s.dir == "" {
+			return false
+		}
+		root = moduleRoot{dir: path.Join(path.Dir(s.goMod), filepath.ToSlash(s.dir)), module: mod}
+	}
+	dir := path.Join(root.dir, strings.TrimPrefix(strings.TrimPrefix(importPath, root.module), "/"))
+	return slices.ContainsFunc(outputs, func(o string) bool { return path.Dir(o) == dir })
 }
 
 // moduleOf returns the selected module whose path is the longest
