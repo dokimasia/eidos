@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang
 
+## 0.2.1
+
+### Patch Changes
+
+- e64dff0: Return the package that an emitted reference records from `spellref.PackageOf`.
+- Updated dependencies [b9677b7, e14100f, 575bf2a, 9621f52, 61f41a7, 7494b32]
+  - go.dokimi.dev/eidos/core@0.4.0
+  - go.dokimi.dev/eidos/sdk@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
