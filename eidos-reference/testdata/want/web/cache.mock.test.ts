@@ -2,18 +2,18 @@
 // reference:plugin mockgen
 // reference:source web/cache.ts
 
-import type { Cache } from './cache';
-import type { Product } from './store';
+import type { Cache } from "./cache";
+import type { Product } from "./store";
 
 /** CacheMock is a mock of Cache. Each method calls its function field. */
 export class CacheMock<T extends Product> implements Cache<T> {
   /** getFunc is the function that get calls. */
-  getFunc?: (key: string) => T|undefined;
+  getFunc?: (key: string) => T | undefined;
   /** putFunc is the function that put calls. */
   putFunc?: (key: string, p: T) => void;
 
   /** get calls getFunc. */
-  get(key: string): T|undefined {
+  get(key: string): T | undefined {
     return this.getFunc!(key);
   }
 
@@ -23,4 +23,4 @@ export class CacheMock<T extends Product> implements Cache<T> {
   }
 }
 
-// reference:provenance sha256:454804709ff7863aa347795126c9c1cb4a03019cb643dc8d669a4417706e4bc0
+// reference:provenance sha256:b3c8adf6528f1c9b3322ea1b4362f27c6868061c5a2ec14435d371a759166032

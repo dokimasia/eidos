@@ -2,10 +2,10 @@
 // reference:plugin stubgen
 // reference:source web/store.ts
 
-import type { Store } from './store';
-import { StoreStub } from './store.stub';
+import type { Store } from "./store";
+import { StoreStub } from "./store.stub";
 
 /** tsc checks that a StoreStub is a Store. */
 export const checkStoreStub: Store = new StoreStub();
 
-// reference:provenance sha256:0feea02633ea1224630c6bc3b60aa5965d1476ac2384d7d964b941d220fa82ec
+// reference:provenance sha256:b7336ab55e333ca29586ce1439770f4b84a097efd2c77471f972a672fc8030c2

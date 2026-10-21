@@ -24,8 +24,7 @@ type ProductRepository interface {
 }
 
 // ProductRepo implements ProductRepository with zero values.
-type ProductRepo struct {
-}
+type ProductRepo struct{}
 
 // Get implements ProductRepository with zero values.
 func (p *ProductRepo) Get(ctx context.Context, id string) (*Product, error) {
@@ -55,4 +54,4 @@ func (p *ProductRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// reference:provenance sha256:714437dd994a4e8af03803e883f1644c83aac05723fde4e7e73aca04b56ba1ef
+// reference:provenance sha256:b65fe3510ca83f7a570e5acd309f6efa71117f8c2f8c84cd47502fc216536163

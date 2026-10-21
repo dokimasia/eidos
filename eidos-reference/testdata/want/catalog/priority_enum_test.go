@@ -57,13 +57,16 @@ func TestPriorityEnum(t *testing.T) {
 		}
 	})
 
-	t.Run("ParsePriority returns ErrUnknownPriority for a text without a variant", func(t *testing.T) {
-		t.Parallel()
+	t.Run(
+		"ParsePriority returns ErrUnknownPriority for a text without a variant",
+		func(t *testing.T) {
+			t.Parallel()
 
-		if _, err := ParsePriority("?????"); !errors.Is(err, ErrUnknownPriority) {
-			t.Errorf("ParsePriority returns %v instead of ErrUnknownPriority", err)
-		}
-	})
+			if _, err := ParsePriority("?????"); !errors.Is(err, ErrUnknownPriority) {
+				t.Errorf("ParsePriority returns %v instead of ErrUnknownPriority", err)
+			}
+		},
+	)
 
 	t.Run("IsValid reports true for each variant", func(t *testing.T) {
 		t.Parallel()
@@ -99,4 +102,4 @@ func TestPriorityEnum(t *testing.T) {
 	})
 }
 
-// reference:provenance sha256:7daa7b137d6af6e43cbfdba064b331a9d287e021b178b64b0d1d395768a55939
+// reference:provenance sha256:20b1bbd2cdfa219d65f44a455c39291f3ede67aa85ae0ee595191ac19d88fc07

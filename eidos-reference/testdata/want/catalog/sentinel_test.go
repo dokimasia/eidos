@@ -54,7 +54,12 @@ func TestCatalogErrors(t *testing.T) {
 
 		for _, e := range assigned {
 			if !strings.HasPrefix(e.err.Error(), "catalog: ") {
-				t.Errorf("the message %q of %s does not start with %q", e.err.Error(), e.name, "catalog: ")
+				t.Errorf(
+					"the message %q of %s does not start with %q",
+					e.err.Error(),
+					e.name,
+					"catalog: ",
+				)
 			}
 		}
 	})
@@ -115,4 +120,4 @@ func TestCatalogErrors(t *testing.T) {
 	})
 }
 
-// reference:provenance sha256:59395cb678a5cde6ccdd92edbec009428e22d1ae518376f3e05c04346cc03845
+// reference:provenance sha256:176a1409f8db7896370097da4ed31af01e41ae51dacaaa84f1c7dbb049012d28

@@ -2,10 +2,10 @@
 // reference:plugin stubgen
 // reference:source web/orders.ts
 
-import type { Orders } from './orders';
-import { OrdersStub } from './orders.stub';
+import type { Orders } from "./orders";
+import { OrdersStub } from "./orders.stub";
 
 /** tsc checks that a OrdersStub is a Orders. */
 export const checkOrdersStub: Orders = new OrdersStub();
 
-// reference:provenance sha256:425114466ee53285b154656dbd7896141664c4670ce1bdd9ef67b2e5a06fe7ad
+// reference:provenance sha256:cbbbeac048960aee034c9c6dfc65864575ef2cb5523ed550cc52078705143160

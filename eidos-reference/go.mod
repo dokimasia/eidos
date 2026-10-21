@@ -17,7 +17,10 @@ require (
 )
 
 require (
+	github.com/dave/dst v0.28.0 // indirect
 	github.com/dokimasia/tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a // indirect
+	github.com/golangci/golines v0.16.0 // indirect
+	github.com/ldez/structtags v0.6.1 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
@@ -25,7 +28,10 @@ require (
 	go.stealthscale.io/cli v0.4.0 // indirect
 	go.stealthscale.io/cli/yaml v0.1.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
+	mvdan.cc/gofumpt v0.12.0 // indirect
 )
 
 replace go.dokimi.dev/eidos/cli => ../eidos-cli

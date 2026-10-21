@@ -2,7 +2,7 @@
 // reference:plugin mockgen
 // reference:source web/store.ts
 
-import type { Product, Store } from './store';
+import type { Product, Store } from "./store";
 
 /** StoreMock is a mock of Store. Each method calls its function field. */
 export class StoreMock implements Store {
@@ -22,4 +22,4 @@ export class StoreMock implements Store {
   }
 }
 
-// reference:provenance sha256:9a31b20ac64ae2ddc7a4fb8fba699c10d57c9943b943aee67171d804541b8c7a
+// reference:provenance sha256:6599def0c143d98119b4b579f09aa46bda8c73c7824e5ea41f3789cd4fe6f696

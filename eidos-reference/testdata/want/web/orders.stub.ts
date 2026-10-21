@@ -2,18 +2,18 @@
 // reference:plugin stubgen
 // reference:source web/orders.ts
 
-import type { Orders } from './orders';
-import type { Product } from './store';
+import type { Orders } from "./orders";
+import type { Product } from "./store";
 
 /** OrdersStub is a stub of Orders. Each method records its arguments and calls its function field. */
 export class OrdersStub implements Orders {
   /** countFunc is the function that count calls. */
-  countFunc?: (filter: {product:Product;limit:number}) => number;
+  countFunc?: (filter: { product: Product; limit: number }) => number;
   /** countCalls contains the arguments of each call of count, in order. */
   countCalls: OrdersCountCall[] = [];
 
   /** count records its arguments and calls countFunc. */
-  count(filter: {product:Product;limit:number}): number {
+  count(filter: { product: Product; limit: number }): number {
     this.countCalls.push({ filter: filter });
     return this.countFunc!(filter);
   }
@@ -21,7 +21,7 @@ export class OrdersStub implements Orders {
 
 /** OrdersCountCall contains the arguments of one call of OrdersStub.count. */
 export interface OrdersCountCall {
-  filter: {product:Product;limit:number};
+  filter: { product: Product; limit: number };
 }
 
-// reference:provenance sha256:fa4f7f602765759e8bd22ada8b158e6a842cabbff0e76fdee5b99c0c48317fe9
+// reference:provenance sha256:ad8ae2ea73b6a772a3e8879adcfcb0133128370a4b247df1a06e2ae67edd0093

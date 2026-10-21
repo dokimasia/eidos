@@ -17,7 +17,8 @@ type LimitsBuilder struct {
 func (l *LimitsBuilder) WithRetry(v struct {
 	Wait time.Duration
 	Max  int
-}) *LimitsBuilder {
+},
+) *LimitsBuilder {
 	l.value.Retry = v
 	return l
 }
@@ -44,4 +45,4 @@ func NewLimitsFrom(v Limits) *LimitsBuilder {
 	return &LimitsBuilder{value: v}
 }
 
-// reference:provenance sha256:d01699db12a8bfab97893beb349ebc075a2405a32498bee14fc1b82fc00bd6b3
+// reference:provenance sha256:97d839a715adad8a2ed1ef7a9612428e8ecb035b8114708829f3e1aa129cf2ce

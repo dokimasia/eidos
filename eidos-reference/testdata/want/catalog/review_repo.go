@@ -23,8 +23,7 @@ type ReviewRepository interface {
 }
 
 // ReviewRepo implements ReviewRepository with zero values.
-type ReviewRepo struct {
-}
+type ReviewRepo struct{}
 
 // Get implements ReviewRepository with zero values.
 func (r *ReviewRepo) Get(ctx context.Context, id string) (*Review, error) {
@@ -50,4 +49,4 @@ func (r *ReviewRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// reference:provenance sha256:f60543dca2b1e96a8aa53a0e9350ab685259309b5402e445e184523a8b3907df
+// reference:provenance sha256:4e17b8c0829926f531f113a87fb171761ea4df1e4a5476372dc1d39cfd934917

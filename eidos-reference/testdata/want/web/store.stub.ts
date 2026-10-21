@@ -2,7 +2,7 @@
 // reference:plugin stubgen
 // reference:source web/store.ts
 
-import type { Product, Store } from './store';
+import type { Product, Store } from "./store";
 
 /** StoreStub is a stub of Store. Each method records its arguments and calls its function field. */
 export class StoreStub implements Store {
@@ -38,4 +38,4 @@ export interface StorePutCall {
   p: Product;
 }
 
-// reference:provenance sha256:86e6b19d6390e6fcf9bccde55b0f3396709ee10608ee27e4bec9afc1b2704366
+// reference:provenance sha256:e71a798b58185b453821ee93c4058fa9b21ecea751f697e801ba393a764688fd

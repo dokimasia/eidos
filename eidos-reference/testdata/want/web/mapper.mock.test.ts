@@ -2,17 +2,17 @@
 // reference:plugin mockgen
 // reference:source web/mapper.ts
 
-import type { Mapper } from './mapper';
+import type { Mapper } from "./mapper";
 
 /** MapperMock is a mock of Mapper. Each method calls its function field. */
 export class MapperMock<T> implements Mapper<T> {
   /** mapFunc is the function that map calls. */
-  mapFunc?: <U>(v: T, f: (t:T)=>U) => U;
+  mapFunc?: <U>(v: T, f: (t: T) => U) => U;
 
   /** map calls mapFunc. */
-  map<U>(v: T, f: (t:T)=>U): U {
+  map<U>(v: T, f: (t: T) => U): U {
     return this.mapFunc!(v, f);
   }
 }
 
-// reference:provenance sha256:dc6b54eee54c1c09e423c1b6de8d512fffcf2b2891c35007ae4978bc532452d1
+// reference:provenance sha256:95d827663393ec1fee9ffa95df8461ae8d552d84b5387a37f1acb60e279d6a5c

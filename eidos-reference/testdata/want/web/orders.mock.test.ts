@@ -2,18 +2,18 @@
 // reference:plugin mockgen
 // reference:source web/orders.ts
 
-import type { Orders } from './orders';
-import type { Product } from './store';
+import type { Orders } from "./orders";
+import type { Product } from "./store";
 
 /** OrdersMock is a mock of Orders. Each method calls its function field. */
 export class OrdersMock implements Orders {
   /** countFunc is the function that count calls. */
-  countFunc?: (filter: {product:Product;limit:number}) => number;
+  countFunc?: (filter: { product: Product; limit: number }) => number;
 
   /** count calls countFunc. */
-  count(filter: {product:Product;limit:number}): number {
+  count(filter: { product: Product; limit: number }): number {
     return this.countFunc!(filter);
   }
 }
 
-// reference:provenance sha256:0140e6d99bac72c38b8b6e16d495c7f18032d32db606f8f800aa11ca85bc3586
+// reference:provenance sha256:313862fd9673c8d0590c098f3f98a3d71ca885f572047edb1578dadaaf14c8ec

@@ -78,7 +78,7 @@ func (a *AddressBuilder) WithNotes(v map[string]string) *AddressBuilder {
 }
 
 // WithNotesEntry sets the value of the key k of Notes to v.
-func (a *AddressBuilder) WithNotesEntry(k string, v string) *AddressBuilder {
+func (a *AddressBuilder) WithNotesEntry(k, v string) *AddressBuilder {
 	if a.value.Notes == nil {
 		a.value.Notes = make(map[string]string)
 	}
@@ -135,4 +135,4 @@ func NewAddressFrom(v Address) *AddressBuilder {
 	return &AddressBuilder{value: v}
 }
 
-// reference:provenance sha256:a21f86d862c4b310a90658cdf4dd7e2c84ec664192aaa23afbb66c473300cf6e
+// reference:provenance sha256:8b9606f58c8c124dd195157627f1b7c9b5ca9ae429075e03fd4bcf22d605ca99

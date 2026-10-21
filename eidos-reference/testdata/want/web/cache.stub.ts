@@ -2,13 +2,13 @@
 // reference:plugin stubgen
 // reference:source web/cache.ts
 
-import type { Cache } from './cache';
-import type { Product } from './store';
+import type { Cache } from "./cache";
+import type { Product } from "./store";
 
 /** CacheStub is a stub of Cache. Each method records its arguments and calls its function field. */
 export class CacheStub<T extends Product> implements Cache<T> {
   /** getFunc is the function that get calls. */
-  getFunc?: (key: string) => T|undefined;
+  getFunc?: (key: string) => T | undefined;
   /** getCalls contains the arguments of each call of get, in order. */
   getCalls: CacheGetCall[] = [];
   /** putFunc is the function that put calls. */
@@ -17,7 +17,7 @@ export class CacheStub<T extends Product> implements Cache<T> {
   putCalls: CachePutCall<T>[] = [];
 
   /** get records its arguments and calls getFunc. */
-  get(key: string): T|undefined {
+  get(key: string): T | undefined {
     this.getCalls.push({ key: key });
     return this.getFunc!(key);
   }
@@ -40,4 +40,4 @@ export interface CachePutCall<T extends Product> {
   p: T;
 }
 
-// reference:provenance sha256:e6ba225c3308476525b7622613eb9a9477230bb09252e83c90bcf65f8489ddb3
+// reference:provenance sha256:9972251509e77a677f7bb4e829bf47032bb919aae470038c6fe2c7c84b76a344
