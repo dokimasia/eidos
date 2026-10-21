@@ -223,6 +223,14 @@ The rounds repeat while a loaded unit has a use that no round passed. A
 one-file tree that references `Map` loads 402 declarations of the library
 in 5 rounds, and one that references `HTMLElement` loads 43,231 in 15.
 
+The Go frontend records a use for each declaration outside the package
+of a file that a named type of a declaration or an argument of a
+directive can resolve to. Its dependency round places the package of
+each use. A package that only a function body or a value refers to does
+not load. A one-file tree that reads `runtime.GOOS` in a value loads no
+package of the standard library. The rules write the value with a
+stand-in for `runtime`.
+
 The TypeScript and Python frontends mark an overload signature with
 `Overload`, and the callable of its name without the mark is the
 implementation. The render writes the declarations of a TypeScript file
@@ -237,6 +245,23 @@ type. tsc refuses a variance annotation on every other declaration, so
 the lowering leaves out the variance of the type parameters of a
 function, a method and every other alias. TypeScript infers the variance
 of a generic type from its structure.
+
+The TypeScript frontend spells a type from its tokens with the spaces
+that Biome and Prettier write on one line, so a reformatted signature
+keeps one spelling. The backend writes an object literal with a space
+inside its braces. It writes each string in the quote that the plan
+policy `typescript.quote` selects: `double`, the default of both
+formatters, or `single`. A generated file whose lines have at most 80
+columns is a fixed point of either formatter in the style of the policy.
+
+The Go backend formats each file with gofumpt v0.12.0 and its three
+extra rules, and then with golines v0.16.0 at the width that the plan
+policy `golang.width` selects: `80`, `100`, `120` or `none`. The
+default is `100`, the default width of golines and of golangci-lint. A
+generated file is then a fixed point of gofmt, of `gofmt -s`, of
+gofumpt and of golines at that width or a wider one. The backend
+refuses to format a file while the environment sets
+`GOFUMPT_SPLIT_LONG_LINES=on`, because gofumpt then splits long lines.
 
 The rules of `eidos-lang-rust` project a crate without a load of the
 standard library. A type of the standard library that a signature names

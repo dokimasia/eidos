@@ -113,3 +113,7 @@ way.
 | [0092](0092-a-handler-reads-the-instances-of-its-directives.md) | A handler reads the instances of the directives of its plugin on its subject | Accepted |
 | [0093](0093-a-handler-enumerates-the-subjects-of-a-key.md) | A handler enumerates the subjects of a key under a membership edge | Accepted |
 | [0094](0094-a-carrier-line-contains-one-directive-for-each-mark.md) | A carrier line contains one directive for each mark | Accepted |
+| [0095](0095-a-typescript-sample-constructs-its-class.md) | A TypeScript sample constructs its class and sets every required property of its interface | Accepted |
+| [0096](0096-a-typescript-file-has-the-spaces-and-quotes-of-its-formatters.md) | A TypeScript file has the spaces and the quotes of Biome and Prettier | Accepted |
+| [0097](0097-a-go-file-has-the-format-of-gofumpt-and-golines.md) | A Go file has the format of gofumpt and golines | Accepted |
+| [0098](0098-the-go-frontend-loads-the-packages-that-a-load-uses.md) | The Go frontend loads the packages that a load uses | Accepted |

@@ -421,7 +421,8 @@ flow runs the same way in every satellite:
    backend qualifies a reference by the package clause of its file.
    The set has the lowering policy of the plan, through `SetPolicy`, so
    the Python backend writes the syntax of the version of Python that
-   the policy selects. `Enter` names the declaration under render, and
+   the policy selects, and the TypeScript backend writes each string in
+   the quote that the policy selects. `Enter` names the declaration under render, and
    `Pending` reports a name that it or a later declaration of the file
    takes, so the Python backend quotes a reference to a declaration that
    has not rendered yet. While the pass spells a body, `Body` returns its
@@ -430,7 +431,9 @@ flow runs the same way in every satellite:
 6. **Finalise** through the language formatter. A format failure is
    a positioned Error carrying the file it could not format, and the
    pass continues with the remaining files. The sink never receives
-   an unformatted file.
+   an unformatted file. A language whose format depends on the plan
+   declares `FinaliseUnder`, which receives the policy of the plan, so
+   the Go backend wraps its lines at the width of `golang.width`.
 7. **Stamp** the generated-file header and the provenance trailer
    ([17-output-and-determinism.md](17-output-and-determinism.md)).
 8. **Write** through the plan's staged sink, at the file's routed
