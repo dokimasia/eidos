@@ -79,6 +79,13 @@ and classified, never excluded
 ([11-languages.md](11-languages.md)). Only the loop back to itself
 is closed.
 
+A hand-written file can still import a package of the outputs. The
+test of a consumer imports the package of a generated stub this way.
+Each dependency round of a frontend receives the outputs that the
+frontend's selection claims, so that the frontend does not report an
+import of a package of the brand's outputs as unplaced. The import
+keeps its spelling.
+
 ## The runtime: Workspace and Run
 
 The frame above is the semantics. This is the machine. One split
