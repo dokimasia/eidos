@@ -87,6 +87,18 @@ const (
 	lateEntry = "META-INF/versions/21/" + lateNeed + "/Late.class"
 )
 
+// The outputs of the brand in the workspace that the placement reports
+// read: a class in the package of appNeed below a source root, the same
+// class at the root of the workspace, the class in a directory whose last
+// names end with the package path inside a name, and the need of a static
+// import from the class.
+const (
+	appOutput     = "src/test/java/com/acme/app/AppStub.java"
+	rootOutput    = "com/acme/app/AppStub.java"
+	partialOutput = "src/test/java/xcom/acme/app/AppStub.java"
+	stubNeed      = appNeed + "/AppStub"
+)
+
 // The reasons with which a round reports a need as placed nowhere, with
 // the JDK store provided and without it.
 const (
@@ -505,12 +517,13 @@ func TestDepend(t *testing.T) {
 
 		lateJAR := jarOf(t, multiRelease, map[string][]byte{lateEntry: nil})
 		unplaced := []struct {
-			name   string
-			opts   *frontend.Options
-			stores map[string]fs.FS
-			number int
-			need   string
-			want   []plugin.Unplaced
+			name    string
+			opts    *frontend.Options
+			stores  map[string]fs.FS
+			number  int
+			need    string
+			outputs []string
+			want    []plugin.Unplaced
 		}{
 			{
 				name:   "reports a need as placed nowhere where neither ct.sym nor a classpath library has its package",
@@ -550,12 +563,31 @@ func TestDepend(t *testing.T) {
 				stores: libStores(t, lateJAR), number: 1, need: lateNeed,
 				want: []plugin.Unplaced{{Path: lateNeed, Reason: noPackageReason}},
 			},
+			{
+				name:   "reports nothing for a need of a package whose directory below a source root has an output",
+				stores: jdkStores(), number: 2, need: appNeed, outputs: []string{appOutput},
+			},
+			{
+				name:   "reports nothing for a need of a package whose directory at the root has an output",
+				stores: jdkStores(), number: 2, need: appNeed, outputs: []string{rootOutput},
+			},
+			{
+				name:   "reports nothing for a need of a class in a package whose directory has an output",
+				stores: jdkStores(), number: 2, need: stubNeed, outputs: []string{appOutput},
+			},
+			{
+				name:   "reports a need as placed nowhere where its package ends an output directory inside a name",
+				stores: jdkStores(), number: 2, need: appNeed, outputs: []string{partialOutput},
+				want: []plugin.Unplaced{{Path: appNeed, Reason: noPackageReason}},
+			},
 		}
 		for _, tt := range unplaced {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				round := &plugin.DependencyRound{Number: tt.number, Needs: []plugin.Need{{Path: tt.need}}}
+				round := &plugin.DependencyRound{
+					Number: tt.number, Needs: []plugin.Need{{Path: tt.need}}, Outputs: tt.outputs,
+				}
 				dependent, _ := frontend.New(tt.opts).(plugin.Dependent)
 				_, err := dependent.Dependencies(t.Context(), round,
 					roundReader{storeTree{fstest.MapFS{}, tt.stores}})

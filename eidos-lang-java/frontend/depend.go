@@ -128,7 +128,11 @@ func packageIn[V any](packages map[string]V, need string) string {
 // The round reports a need as placed nowhere where neither ct.sym nor a
 // JAR of the classpath has its package. The first round reads the packages
 // of the JARs that it returns. The needs of a later round are packages
-// that no loaded JAR declares.
+// that no loaded JAR declares. The round does not report a need whose
+// package directory contains an output of the round, because the brand
+// writes the package. The round does not know the source root of an
+// output, so the package path is the directory of the output or an end of
+// it after a slash.
 func (f *javaFrontend) dependencies(
 	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
@@ -165,11 +169,27 @@ func (f *javaFrontend) dependencies(
 		reason = "the load provides no " + JDKStore + " store, and no classpath library has its package"
 	}
 	for _, n := range round.Needs {
-		if packageIn(jdk, n.Path) == "" && packageIn(classpath, n.Path) == "" {
+		if packageIn(jdk, n.Path) == "" && packageIn(classpath, n.Path) == "" && !generated(round.Outputs, n.Path) {
 			round.Unplace(n.Path, reason)
 		}
 	}
 	return out, nil
+}
+
+// generated reports whether an output of a round is in the directory of
+// the package of a need. An output is in that directory where the need, or
+// the need without some of its last names as [packageIn] reads it, is the
+// directory of the output or ends that directory after a slash.
+func generated(outputs []string, need string) bool {
+	return slices.ContainsFunc(outputs, func(o string) bool {
+		dir := path.Dir(o)
+		for p := need; p != "."; p = path.Dir(p) {
+			if dir == p || strings.HasSuffix(dir, binarySlash+p) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // library returns the unit of one library of the classpath and the bytes
