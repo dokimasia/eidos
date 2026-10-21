@@ -333,7 +333,7 @@ type Refuser = core.Refuser
 // for concurrent use: its fields are fixed at [New], and every
 // render call has frames of its own. Within one call, files
 // render in parallel on up to GOMAXPROCS workers. The language's
-// Scaffold, Value, Imports, Finalise and Cluster, every helper in its
+// Scaffold, Value, Imports, formatter and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
 // trees run on those workers concurrently, so each must be safe
 // for concurrent use. Naming and Split run where the plan's layout
@@ -350,7 +350,8 @@ type Pass = core.Pass
 //     not parse;
 //   - a builtin name the shared vocabulary claims;
 //   - a Cluster without group templates;
-//   - a missing naming, scaffold, import renderer or formatter.
+//   - a missing naming, scaffold, import renderer or formatter;
+//   - both Finalise and FinaliseUnder.
 //
 // The kit converts these to panics at its own Build, because there
 // they are declaration defects.
