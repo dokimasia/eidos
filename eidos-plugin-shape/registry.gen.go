@@ -57,7 +57,9 @@ func AccumulatesOf(m sdk.Matcher) (AccumulatesParams, bool) {
 var accumulatesMixinKey meta.Key[bool] = meta.Named[bool]("shape.accumulates.mixin")
 
 // accumulatesObserveKey is the handle of the key shape.accumulates.observe.
-var accumulatesObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.accumulates.observe")
+var accumulatesObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.accumulates.observe",
+)
 
 // Aggregator is the shape aggregator. The callable takes no input, and returns
 // one value computed over its whole collection, with or without an error.
@@ -89,7 +91,9 @@ func AggregatorOf(m sdk.Matcher) (AggregatorParams, bool) {
 var aggregatorShapeKey meta.Key[bool] = meta.Named[bool]("shape.aggregator.shape")
 
 // aggregatorValueKey is the handle of the key shape.aggregator.value.
-var aggregatorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.aggregator.value")
+var aggregatorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.aggregator.value",
+)
 
 // AnsweringWriter is the shape answering-writer. The callable takes one value,
 // persists it, and returns a value of the same declared type beside its error,
@@ -132,11 +136,15 @@ var answeringWriterShapeKey meta.Key[bool] = meta.Named[bool]("shape.answering-w
 
 // answeringWriterValueKey is the handle of the key
 // shape.answering-writer.value.
-var answeringWriterValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.answering-writer.value")
+var answeringWriterValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.answering-writer.value",
+)
 
 // answeringWriterStoredKey is the handle of the key
 // shape.answering-writer.stored.
-var answeringWriterStoredKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.answering-writer.stored")
+var answeringWriterStoredKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.answering-writer.stored",
+)
 
 // Appender is the contract appender. The callable's effect is purely additive.
 // It appends, and it neither overwrites nor deletes.
@@ -178,8 +186,7 @@ var appenderIDKey meta.Key[string] = meta.Named[string]("shape.appender.id")
 const Associative Mixin = "associative"
 
 // AssociativeParams are the params of the mixin associative.
-type AssociativeParams struct {
-}
+type AssociativeParams struct{}
 
 // AssociativeOf returns the params of the mixin associative on the subject of
 // m, and false where the subject does not have the mixin. It records each read
@@ -264,10 +271,14 @@ func BatchReaderOf(m sdk.Matcher) (BatchReaderParams, bool) {
 var batchReaderShapeKey meta.Key[bool] = meta.Named[bool]("shape.batch-reader.shape")
 
 // batchReaderKeyKey is the handle of the key shape.batch-reader.key.
-var batchReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.batch-reader.key")
+var batchReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.batch-reader.key",
+)
 
 // batchReaderValueKey is the handle of the key shape.batch-reader.value.
-var batchReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.batch-reader.value")
+var batchReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.batch-reader.value",
+)
 
 // BatchWriter is the contract batch-writer. The writer takes a batch of
 // records, and treats a partial failure of the batch by the mode that the mode
@@ -328,7 +339,9 @@ var batchWriterIDKey meta.Key[string] = meta.Named[string]("shape.batch-writer.i
 var batchWriterModeKey meta.Key[string] = meta.Named[string]("shape.batch-writer.mode")
 
 // batchWriterRefusedKey is the handle of the key shape.batch-writer.refused.
-var batchWriterRefusedKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.batch-writer.refused")
+var batchWriterRefusedKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.batch-writer.refused",
+)
 
 // Bounded is the mixin bounded. The callable's use of a resource, such as
 // memory, the depth of a queue or a fan-out, remains between a declared floor
@@ -416,8 +429,7 @@ var cacheIDKey meta.Key[string] = meta.Named[string]("shape.cache.id")
 const Cacheable Mixin = "cacheable"
 
 // CacheableParams are the params of the mixin cacheable.
-type CacheableParams struct {
-}
+type CacheableParams struct{}
 
 // CacheableOf returns the params of the mixin cacheable on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -605,8 +617,7 @@ var circuitBreakerIDKey meta.Key[string] = meta.Named[string]("shape.circuit-bre
 const Closer Shape = "closer"
 
 // CloserParams are the params of the shape closer.
-type CloserParams struct {
-}
+type CloserParams struct{}
 
 // CloserOf returns the params of the shape closer on the subject of m, and
 // false where the subject does not have the shape. It records each read in the
@@ -676,8 +687,7 @@ var codecFidelityKey meta.Key[string] = meta.Named[string]("shape.codec.fidelity
 const Commutative Mixin = "commutative"
 
 // CommutativeParams are the params of the mixin commutative.
-type CommutativeParams struct {
-}
+type CommutativeParams struct{}
 
 // CommutativeOf returns the params of the mixin commutative on the subject of
 // m, and false where the subject does not have the mixin. It records each read
@@ -731,11 +741,15 @@ func CompositeWriterOf(m sdk.Matcher) (CompositeWriterParams, bool) {
 var compositeWriterShapeKey meta.Key[bool] = meta.Named[bool]("shape.composite-writer.shape")
 
 // compositeWriterKeyKey is the handle of the key shape.composite-writer.key.
-var compositeWriterKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.composite-writer.key")
+var compositeWriterKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.composite-writer.key",
+)
 
 // compositeWriterValueKey is the handle of the key
 // shape.composite-writer.value.
-var compositeWriterValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.composite-writer.value")
+var compositeWriterValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.composite-writer.value",
+)
 
 // Computation is the shape computation. The callable returns one value
 // computed from its inputs, and takes no context and returns no error.
@@ -767,15 +781,16 @@ func ComputationOf(m sdk.Matcher) (ComputationParams, bool) {
 var computationShapeKey meta.Key[bool] = meta.Named[bool]("shape.computation.shape")
 
 // computationValueKey is the handle of the key shape.computation.value.
-var computationValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.computation.value")
+var computationValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.computation.value",
+)
 
 // Concurrent is the mixin concurrent. The callable is safe to call from many
 // threads of execution at once, without synchronization by the caller.
 const Concurrent Mixin = "concurrent"
 
 // ConcurrentParams are the params of the mixin concurrent.
-type ConcurrentParams struct {
-}
+type ConcurrentParams struct{}
 
 // ConcurrentOf returns the params of the mixin concurrent on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -797,8 +812,7 @@ var concurrentMixinKey meta.Key[bool] = meta.Named[bool]("shape.concurrent.mixin
 const ConcurrentReaders Mixin = "concurrent-readers"
 
 // ConcurrentReadersParams are the params of the mixin concurrent-readers.
-type ConcurrentReadersParams struct {
-}
+type ConcurrentReadersParams struct{}
 
 // ConcurrentReadersOf returns the params of the mixin concurrent-readers on
 // the subject of m, and false where the subject does not have the mixin. It
@@ -886,10 +900,14 @@ func CrdtMergeOf(m sdk.Matcher) (CrdtMergeParams, bool) {
 var crdtMergeMixinKey meta.Key[bool] = meta.Named[bool]("shape.crdt-merge.mixin")
 
 // crdtMergeWriteKey is the handle of the key shape.crdt-merge.write.
-var crdtMergeWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.crdt-merge.write")
+var crdtMergeWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.crdt-merge.write",
+)
 
 // crdtMergeReadKey is the handle of the key shape.crdt-merge.read.
-var crdtMergeReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.crdt-merge.read")
+var crdtMergeReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.crdt-merge.read",
+)
 
 // Cursor is the contract cursor. A next callable reads the next element of a
 // cursor, and a close callable releases it. Either the two are callables of
@@ -957,21 +975,26 @@ var cursorRoleKey meta.Key[string] = meta.Named[string]("shape.cursor.role")
 var cursorIDKey meta.Key[string] = meta.Named[string]("shape.cursor.id")
 
 // cursorSentinelKey is the handle of the key shape.cursor.sentinel.
-var cursorSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.cursor.sentinel")
+var cursorSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.cursor.sentinel",
+)
 
 // cursorNextMethodKey is the handle of the key shape.cursor.next-method.
-var cursorNextMethodKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.cursor.next-method")
+var cursorNextMethodKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.cursor.next-method",
+)
 
 // cursorCloseMethodKey is the handle of the key shape.cursor.close-method.
-var cursorCloseMethodKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.cursor.close-method")
+var cursorCloseMethodKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.cursor.close-method",
+)
 
 // DefaultOnError is the mixin default-on-error. A failed read returns the zero
 // value of its type beside the error, rather than a value that is undefined.
 const DefaultOnError Mixin = "default-on-error"
 
 // DefaultOnErrorParams are the params of the mixin default-on-error.
-type DefaultOnErrorParams struct {
-}
+type DefaultOnErrorParams struct{}
 
 // DefaultOnErrorOf returns the params of the mixin default-on-error on the
 // subject of m, and false where the subject does not have the mixin. It
@@ -1026,11 +1049,15 @@ func DeleteRemovesOf(m sdk.Matcher) (DeleteRemovesParams, bool) {
 var deleteRemovesMixinKey meta.Key[bool] = meta.Named[bool]("shape.delete-removes.mixin")
 
 // deleteRemovesReadKey is the handle of the key shape.delete-removes.read.
-var deleteRemovesReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.delete-removes.read")
+var deleteRemovesReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.delete-removes.read",
+)
 
 // deleteRemovesSentinelKey is the handle of the key
 // shape.delete-removes.sentinel.
-var deleteRemovesSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.delete-removes.sentinel")
+var deleteRemovesSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.delete-removes.sentinel",
+)
 
 // Deleter is the shape deleter. The callable removes the value that its one
 // input identifies, and returns success solely through its error model. Its
@@ -1080,8 +1107,7 @@ var deleterReadsKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("sha
 const Deprecated Mixin = "deprecated"
 
 // DeprecatedParams are the params of the mixin deprecated.
-type DeprecatedParams struct {
-}
+type DeprecatedParams struct{}
 
 // DeprecatedOf returns the params of the mixin deprecated on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -1104,8 +1130,7 @@ var deprecatedMixinKey meta.Key[bool] = meta.Named[bool]("shape.deprecated.mixin
 const Errors Mixin = "errors"
 
 // ErrorsParams are the params of the mixin errors.
-type ErrorsParams struct {
-}
+type ErrorsParams struct{}
 
 // ErrorsOf returns the params of the mixin errors on the subject of m, and
 // false where the subject does not have the mixin. It records each read in the
@@ -1165,13 +1190,19 @@ func EventuallyOf(m sdk.Matcher) (EventuallyParams, bool) {
 var eventuallyMixinKey meta.Key[bool] = meta.Named[bool]("shape.eventually.mixin")
 
 // eventuallyObserveKey is the handle of the key shape.eventually.observe.
-var eventuallyObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.eventually.observe")
+var eventuallyObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.eventually.observe",
+)
 
 // eventuallySettleKey is the handle of the key shape.eventually.settle.
-var eventuallySettleKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.eventually.settle")
+var eventuallySettleKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.eventually.settle",
+)
 
 // eventuallySyncKey is the handle of the key shape.eventually.sync.
-var eventuallySyncKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.eventually.sync")
+var eventuallySyncKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.eventually.sync",
+)
 
 // Hooks is the mixin hooks. The callable runs the hooks that a caller
 // registers before and after its work, and a check exercises them.
@@ -1210,8 +1241,7 @@ var hooksRegisterKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("sh
 const Idempotent Mixin = "idempotent"
 
 // IdempotentParams are the params of the mixin idempotent.
-type IdempotentParams struct {
-}
+type IdempotentParams struct{}
 
 // IdempotentOf returns the params of the mixin idempotent on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -1271,7 +1301,9 @@ var ifAbsentRoleKey meta.Key[string] = meta.Named[string]("shape.if-absent.role"
 var ifAbsentIDKey meta.Key[string] = meta.Named[string]("shape.if-absent.id")
 
 // ifAbsentConflictKey is the handle of the key shape.if-absent.conflict.
-var ifAbsentConflictKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.if-absent.conflict")
+var ifAbsentConflictKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.if-absent.conflict",
+)
 
 // IfMatch is the contract if-match. The writer succeeds only where the
 // existing record matches a predicate. The pred param states the predicate as
@@ -1404,18 +1436,21 @@ func InjectionSafeOf(m sdk.Matcher) (InjectionSafeParams, bool) {
 var injectionSafeMixinKey meta.Key[bool] = meta.Named[bool]("shape.injection-safe.mixin")
 
 // injectionSafeReadKey is the handle of the key shape.injection-safe.read.
-var injectionSafeReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.injection-safe.read")
+var injectionSafeReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.injection-safe.read",
+)
 
 // injectionSafeUnsafeKey is the handle of the key shape.injection-safe.unsafe.
-var injectionSafeUnsafeKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.injection-safe.unsafe")
+var injectionSafeUnsafeKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.injection-safe.unsafe",
+)
 
 // IntegrationOnly is the mixin integration-only. A check of the callable runs
 // against the integration target, and never against a double of the target.
 const IntegrationOnly Mixin = "integration-only"
 
 // IntegrationOnlyParams are the params of the mixin integration-only.
-type IntegrationOnlyParams struct {
-}
+type IntegrationOnlyParams struct{}
 
 // IntegrationOnlyOf returns the params of the mixin integration-only on the
 // subject of m, and false where the subject does not have the mixin. It
@@ -1516,7 +1551,9 @@ var leakFreeMixinKey meta.Key[bool] = meta.Named[bool]("shape.leak-free.mixin")
 var leakFreeOpenKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.leak-free.open")
 
 // leakFreeCloseKey is the handle of the key shape.leak-free.close.
-var leakFreeCloseKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.leak-free.close")
+var leakFreeCloseKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.leak-free.close",
+)
 
 // Lease is the contract lease. An acquire callable takes a lease and a release
 // callable returns it, and every acquire is balanced by exactly one release. A
@@ -1584,8 +1621,7 @@ var leaseTimeoutKey meta.Key[string] = meta.Named[string]("shape.lease.timeout")
 const Lifecycle Shape = "lifecycle"
 
 // LifecycleParams are the params of the shape lifecycle.
-type LifecycleParams struct {
-}
+type LifecycleParams struct{}
 
 // LifecycleOf returns the params of the shape lifecycle on the subject of m,
 // and false where the subject does not have the shape. It records each read in
@@ -1638,15 +1674,21 @@ func LifecycleAfterCloseOf(m sdk.Matcher) (LifecycleAfterCloseParams, bool) {
 
 // lifecycleAfterCloseMixinKey is the handle of the key
 // shape.lifecycle-after-close.mixin.
-var lifecycleAfterCloseMixinKey meta.Key[bool] = meta.Named[bool]("shape.lifecycle-after-close.mixin")
+var lifecycleAfterCloseMixinKey meta.Key[bool] = meta.Named[bool](
+	"shape.lifecycle-after-close.mixin",
+)
 
 // lifecycleAfterCloseCloseKey is the handle of the key
 // shape.lifecycle-after-close.close.
-var lifecycleAfterCloseCloseKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.lifecycle-after-close.close")
+var lifecycleAfterCloseCloseKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.lifecycle-after-close.close",
+)
 
 // lifecycleAfterCloseSentinelKey is the handle of the key
 // shape.lifecycle-after-close.sentinel.
-var lifecycleAfterCloseSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.lifecycle-after-close.sentinel")
+var lifecycleAfterCloseSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.lifecycle-after-close.sentinel",
+)
 
 // Lookup is the shape lookup. The callable takes one key, and returns the
 // key's value, a second value that describes the first, and a truth value that
@@ -1706,8 +1748,7 @@ var lookupMetaKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape
 const Monotonic Mixin = "monotonic"
 
 // MonotonicParams are the params of the mixin monotonic.
-type MonotonicParams struct {
-}
+type MonotonicParams struct{}
 
 // MonotonicOf returns the params of the mixin monotonic on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -1755,7 +1796,9 @@ var monotonicReadsMixinKey meta.Key[bool] = meta.Named[bool]("shape.monotonic-re
 
 // monotonicReadsVersionKey is the handle of the key
 // shape.monotonic-reads.version.
-var monotonicReadsVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.monotonic-reads.version")
+var monotonicReadsVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.monotonic-reads.version",
+)
 
 // MonotonicWrites is the mixin monotonic-writes. The writes of one client
 // apply in the order in which the client issued them.
@@ -1790,7 +1833,9 @@ var monotonicWritesMixinKey meta.Key[bool] = meta.Named[bool]("shape.monotonic-w
 
 // monotonicWritesVersionKey is the handle of the key
 // shape.monotonic-writes.version.
-var monotonicWritesVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.monotonic-writes.version")
+var monotonicWritesVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.monotonic-writes.version",
+)
 
 // MultiAggregator is the shape multi-aggregator. The callable takes no input,
 // and returns two or more values computed over its whole collection beside its
@@ -1825,7 +1870,9 @@ var multiAggregatorShapeKey meta.Key[bool] = meta.Named[bool]("shape.multi-aggre
 
 // multiAggregatorValueKey is the handle of the key
 // shape.multi-aggregator.value.
-var multiAggregatorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.multi-aggregator.value")
+var multiAggregatorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.multi-aggregator.value",
+)
 
 // MultiArgWriter is the shape multi-arg-writer. The callable takes three or
 // more inputs, persists one record built from them, and returns only its
@@ -1833,8 +1880,7 @@ var multiAggregatorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identi
 const MultiArgWriter Shape = "multi-arg-writer"
 
 // MultiArgWriterParams are the params of the shape multi-arg-writer.
-type MultiArgWriterParams struct {
-}
+type MultiArgWriterParams struct{}
 
 // MultiArgWriterOf returns the params of the shape multi-arg-writer on the
 // subject of m, and false where the subject does not have the shape. It
@@ -1888,10 +1934,14 @@ func MultiReaderOf(m sdk.Matcher) (MultiReaderParams, bool) {
 var multiReaderShapeKey meta.Key[bool] = meta.Named[bool]("shape.multi-reader.shape")
 
 // multiReaderKeyKey is the handle of the key shape.multi-reader.key.
-var multiReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.multi-reader.key")
+var multiReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.multi-reader.key",
+)
 
 // multiReaderValueKey is the handle of the key shape.multi-reader.value.
-var multiReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.multi-reader.value")
+var multiReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.multi-reader.value",
+)
 
 // Mutator is the shape mutator. The callable takes one input and returns
 // nothing. It changes the state that the input refers to, or the state of its
@@ -1931,8 +1981,7 @@ var mutatorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("sha
 const NilSafe Mixin = "nil-safe"
 
 // NilSafeParams are the params of the mixin nil-safe.
-type NilSafeParams struct {
-}
+type NilSafeParams struct{}
 
 // NilSafeOf returns the params of the mixin nil-safe on the subject of m, and
 // false where the subject does not have the mixin. It records each read in the
@@ -1953,8 +2002,7 @@ var nilSafeMixinKey meta.Key[bool] = meta.Named[bool]("shape.nil-safe.mixin")
 const NoDuplicates Mixin = "no-duplicates"
 
 // NoDuplicatesParams are the params of the mixin no-duplicates.
-type NoDuplicatesParams struct {
-}
+type NoDuplicatesParams struct{}
 
 // NoDuplicatesOf returns the params of the mixin no-duplicates on the subject
 // of m, and false where the subject does not have the mixin. It records each
@@ -2001,7 +2049,9 @@ func NotFoundOf(m sdk.Matcher) (NotFoundParams, bool) {
 var notFoundMixinKey meta.Key[bool] = meta.Named[bool]("shape.not-found.mixin")
 
 // notFoundSentinelKey is the handle of the key shape.not-found.sentinel.
-var notFoundSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.not-found.sentinel")
+var notFoundSentinelKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.not-found.sentinel",
+)
 
 // OrderAfter is the mixin order-after. The callable's effect is observable
 // only after the sibling that the fn param refers to has run. A call before it
@@ -2044,7 +2094,9 @@ var orderAfterMixinKey meta.Key[bool] = meta.Named[bool]("shape.order-after.mixi
 var orderAfterFnKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.order-after.fn")
 
 // orderAfterUnreadyKey is the handle of the key shape.order-after.unready.
-var orderAfterUnreadyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.order-after.unready")
+var orderAfterUnreadyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.order-after.unready",
+)
 
 // Outbox is the contract outbox. A local append records a message, and the
 // subscribe callable delivers each appended message at least once.
@@ -2090,8 +2142,7 @@ var outboxIDKey meta.Key[string] = meta.Named[string]("shape.outbox.id")
 const OverMatch Mixin = "over-match"
 
 // OverMatchParams are the params of the mixin over-match.
-type OverMatchParams struct {
-}
+type OverMatchParams struct{}
 
 // OverMatchOf returns the params of the mixin over-match on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -2151,7 +2202,9 @@ var paginationRoleKey meta.Key[string] = meta.Named[string]("shape.pagination.ro
 var paginationIDKey meta.Key[string] = meta.Named[string]("shape.pagination.id")
 
 // paginationCursorKey is the handle of the key shape.pagination.cursor.
-var paginationCursorKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.pagination.cursor")
+var paginationCursorKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.pagination.cursor",
+)
 
 // Partition is the mixin partition. The callable observes a partition
 // boundary, such as a tenant or a shard, and never serves data of another
@@ -2202,8 +2255,7 @@ var partitionAxisKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("sh
 const Permutation Mixin = "permutation"
 
 // PermutationParams are the params of the mixin permutation.
-type PermutationParams struct {
-}
+type PermutationParams struct{}
 
 // PermutationOf returns the params of the mixin permutation on the subject of
 // m, and false where the subject does not have the mixin. It records each read
@@ -2287,7 +2339,9 @@ func PointInTimeOf(m sdk.Matcher) (PointInTimeParams, bool) {
 var pointInTimeMixinKey meta.Key[bool] = meta.Named[bool]("shape.point-in-time.mixin")
 
 // pointInTimeWriteKey is the handle of the key shape.point-in-time.write.
-var pointInTimeWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.point-in-time.write")
+var pointInTimeWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.point-in-time.write",
+)
 
 // PointerReader is the shape pointer-reader. The callable takes one key, and
 // returns the key's value as a value that can be absent, without an error.
@@ -2326,18 +2380,21 @@ func PointerReaderOf(m sdk.Matcher) (PointerReaderParams, bool) {
 var pointerReaderShapeKey meta.Key[bool] = meta.Named[bool]("shape.pointer-reader.shape")
 
 // pointerReaderKeyKey is the handle of the key shape.pointer-reader.key.
-var pointerReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.pointer-reader.key")
+var pointerReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.pointer-reader.key",
+)
 
 // pointerReaderValueKey is the handle of the key shape.pointer-reader.value.
-var pointerReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.pointer-reader.value")
+var pointerReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.pointer-reader.value",
+)
 
 // PoisonAccessor is the shape poison-accessor. The callable takes nothing and
 // returns only an error, which reports a sticky failure state of its receiver.
 const PoisonAccessor Shape = "poison-accessor"
 
 // PoisonAccessorParams are the params of the shape poison-accessor.
-type PoisonAccessorParams struct {
-}
+type PoisonAccessorParams struct{}
 
 // PoisonAccessorOf returns the params of the shape poison-accessor on the
 // subject of m, and false where the subject does not have the shape. It
@@ -2384,7 +2441,9 @@ func PoisonableOf(m sdk.Matcher) (PoisonableParams, bool) {
 var poisonableMixinKey meta.Key[bool] = meta.Named[bool]("shape.poisonable.mixin")
 
 // poisonableInduceKey is the handle of the key shape.poisonable.induce.
-var poisonableInduceKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.poisonable.induce")
+var poisonableInduceKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.poisonable.induce",
+)
 
 // Pool is the contract pool. A get callable takes an object from the pool and
 // a put callable returns it, and every get is balanced by one put. The
@@ -2458,7 +2517,9 @@ func PredicateOf(m sdk.Matcher) (PredicateParams, bool) {
 var predicateShapeKey meta.Key[bool] = meta.Named[bool]("shape.predicate.shape")
 
 // predicateValueKey is the handle of the key shape.predicate.value.
-var predicateValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.predicate.value")
+var predicateValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.predicate.value",
+)
 
 // Publisher is the contract publisher. A publish callable emits events, and
 // the subscribe callable delivers them by the guarantee that the mode param
@@ -2519,8 +2580,7 @@ var publisherModeKey meta.Key[string] = meta.Named[string]("shape.publisher.mode
 const Pure Mixin = "pure"
 
 // PureParams are the params of the mixin pure.
-type PureParams struct {
-}
+type PureParams struct{}
 
 // PureOf returns the params of the mixin pure on the subject of m, and false
 // where the subject does not have the mixin. It records each read in the
@@ -2597,7 +2657,9 @@ var rateLimitIDKey meta.Key[string] = meta.Named[string]("shape.rate-limit.id")
 var rateLimitBurstKey meta.Key[string] = meta.Named[string]("shape.rate-limit.burst")
 
 // rateLimitLimitedKey is the handle of the key shape.rate-limit.limited.
-var rateLimitLimitedKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.rate-limit.limited")
+var rateLimitLimitedKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.rate-limit.limited",
+)
 
 // rateLimitRateKey is the handle of the key shape.rate-limit.rate.
 var rateLimitRateKey meta.Key[string] = meta.Named[string]("shape.rate-limit.rate")
@@ -2635,7 +2697,9 @@ var readAfterWriteMixinKey meta.Key[bool] = meta.Named[bool]("shape.read-after-w
 
 // readAfterWriteWriteKey is the handle of the key
 // shape.read-after-write.write.
-var readAfterWriteWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.read-after-write.write")
+var readAfterWriteWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.read-after-write.write",
+)
 
 // ReadYourWrites is the mixin read-your-writes. A read by a client never
 // returns a value older than the client's own last write.
@@ -2670,7 +2734,9 @@ var readYourWritesMixinKey meta.Key[bool] = meta.Named[bool]("shape.read-your-wr
 
 // readYourWritesVersionKey is the handle of the key
 // shape.read-your-writes.version.
-var readYourWritesVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.read-your-writes.version")
+var readYourWritesVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.read-your-writes.version",
+)
 
 // Reader is the shape reader. The callable takes one key, and returns the
 // key's value beside its error. The key is a single value, and no list, map,
@@ -2752,10 +2818,14 @@ func ReaderNoErrorOf(m sdk.Matcher) (ReaderNoErrorParams, bool) {
 var readerNoErrorShapeKey meta.Key[bool] = meta.Named[bool]("shape.reader-no-error.shape")
 
 // readerNoErrorKeyKey is the handle of the key shape.reader-no-error.key.
-var readerNoErrorKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.reader-no-error.key")
+var readerNoErrorKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.reader-no-error.key",
+)
 
 // readerNoErrorValueKey is the handle of the key shape.reader-no-error.value.
-var readerNoErrorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.reader-no-error.value")
+var readerNoErrorValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.reader-no-error.value",
+)
 
 // ReaderWithBool is the shape reader-with-bool. The callable takes one key,
 // and returns the key's value and a truth value that reports whether the key
@@ -2796,11 +2866,15 @@ func ReaderWithBoolOf(m sdk.Matcher) (ReaderWithBoolParams, bool) {
 var readerWithBoolShapeKey meta.Key[bool] = meta.Named[bool]("shape.reader-with-bool.shape")
 
 // readerWithBoolKeyKey is the handle of the key shape.reader-with-bool.key.
-var readerWithBoolKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.reader-with-bool.key")
+var readerWithBoolKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.reader-with-bool.key",
+)
 
 // readerWithBoolValueKey is the handle of the key
 // shape.reader-with-bool.value.
-var readerWithBoolValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.reader-with-bool.value")
+var readerWithBoolValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.reader-with-bool.value",
+)
 
 // RetrySucceeds is the mixin retry-succeeds. A transient failure followed by a
 // retry converges to success. Of the number of attempts that the attempts
@@ -2946,7 +3020,9 @@ func ScheduledOf(m sdk.Matcher) (ScheduledParams, bool) {
 var scheduledMixinKey meta.Key[bool] = meta.Named[bool]("shape.scheduled.mixin")
 
 // scheduledScheduleKey is the handle of the key shape.scheduled.schedule.
-var scheduledScheduleKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.scheduled.schedule")
+var scheduledScheduleKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.scheduled.schedule",
+)
 
 // scheduledRunsKey is the handle of the key shape.scheduled.runs.
 var scheduledRunsKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.scheduled.runs")
@@ -3027,7 +3103,9 @@ func SerializableOf(m sdk.Matcher) (SerializableParams, bool) {
 var serializableMixinKey meta.Key[bool] = meta.Named[bool]("shape.serializable.mixin")
 
 // serializableReadKey is the handle of the key shape.serializable.read.
-var serializableReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.serializable.read")
+var serializableReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.serializable.read",
+)
 
 // SideEffect is the mixin side-effect. The callable has an observable effect
 // beyond its return value.
@@ -3059,7 +3137,9 @@ func SideEffectOf(m sdk.Matcher) (SideEffectParams, bool) {
 var sideEffectMixinKey meta.Key[bool] = meta.Named[bool]("shape.side-effect.mixin")
 
 // sideEffectObserveKey is the handle of the key shape.side-effect.observe.
-var sideEffectObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.side-effect.observe")
+var sideEffectObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.side-effect.observe",
+)
 
 // SingleFlight is the contract single-flight. Concurrent calls with one key
 // share one computation of its result.
@@ -3130,15 +3210,16 @@ var snapshotIsolationMixinKey meta.Key[bool] = meta.Named[bool]("shape.snapshot-
 
 // snapshotIsolationReadKey is the handle of the key
 // shape.snapshot-isolation.read.
-var snapshotIsolationReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.snapshot-isolation.read")
+var snapshotIsolationReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.snapshot-isolation.read",
+)
 
 // StableOrder is the mixin stable-order. Repeated iterations of the callable's
 // result yield the same order, so a check compares the results as sequences.
 const StableOrder Mixin = "stable-order"
 
 // StableOrderParams are the params of the mixin stable-order.
-type StableOrderParams struct {
-}
+type StableOrderParams struct{}
 
 // StableOrderOf returns the params of the mixin stable-order on the subject of
 // m, and false where the subject does not have the mixin. It records each read
@@ -3226,10 +3307,14 @@ var streamConsumerShapeKey meta.Key[bool] = meta.Named[bool]("shape.stream-consu
 
 // streamConsumerStreamKey is the handle of the key
 // shape.stream-consumer.stream.
-var streamConsumerStreamKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.stream-consumer.stream")
+var streamConsumerStreamKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.stream-consumer.stream",
+)
 
 // streamConsumerValueKey is the handle of the key shape.stream-consumer.value.
-var streamConsumerValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.stream-consumer.value")
+var streamConsumerValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.stream-consumer.value",
+)
 
 // StreamReader is the shape stream-reader. The callable returns exactly one
 // stream of values, and takes at most one input, which selects the values of
@@ -3269,10 +3354,14 @@ func StreamReaderOf(m sdk.Matcher) (StreamReaderParams, bool) {
 var streamReaderShapeKey meta.Key[bool] = meta.Named[bool]("shape.stream-reader.shape")
 
 // streamReaderKeyKey is the handle of the key shape.stream-reader.key.
-var streamReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.stream-reader.key")
+var streamReaderKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.stream-reader.key",
+)
 
 // streamReaderValueKey is the handle of the key shape.stream-reader.value.
-var streamReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.stream-reader.value")
+var streamReaderValueKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.stream-reader.value",
+)
 
 // StreamReflectsMutations is the mixin stream-reflects-mutations. A stream
 // that is already iterating observes the mutations that are made to its source
@@ -3312,15 +3401,21 @@ func StreamReflectsMutationsOf(m sdk.Matcher) (StreamReflectsMutationsParams, bo
 
 // streamReflectsMutationsMixinKey is the handle of the key
 // shape.stream-reflects-mutations.mixin.
-var streamReflectsMutationsMixinKey meta.Key[bool] = meta.Named[bool]("shape.stream-reflects-mutations.mixin")
+var streamReflectsMutationsMixinKey meta.Key[bool] = meta.Named[bool](
+	"shape.stream-reflects-mutations.mixin",
+)
 
 // streamReflectsMutationsMutateKey is the handle of the key
 // shape.stream-reflects-mutations.mutate.
-var streamReflectsMutationsMutateKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.stream-reflects-mutations.mutate")
+var streamReflectsMutationsMutateKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.stream-reflects-mutations.mutate",
+)
 
 // streamReflectsMutationsDeleteKey is the handle of the key
 // shape.stream-reflects-mutations.delete.
-var streamReflectsMutationsDeleteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.stream-reflects-mutations.delete")
+var streamReflectsMutationsDeleteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.stream-reflects-mutations.delete",
+)
 
 // TamperEvident is the mixin tamper-evident. A change to data that the
 // callable accepted is detectable, and never silent.
@@ -3359,18 +3454,21 @@ func TamperEvidentOf(m sdk.Matcher) (TamperEvidentParams, bool) {
 var tamperEvidentMixinKey meta.Key[bool] = meta.Named[bool]("shape.tamper-evident.mixin")
 
 // tamperEvidentTamperKey is the handle of the key shape.tamper-evident.tamper.
-var tamperEvidentTamperKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.tamper-evident.tamper")
+var tamperEvidentTamperKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.tamper-evident.tamper",
+)
 
 // tamperEvidentVerifyKey is the handle of the key shape.tamper-evident.verify.
-var tamperEvidentVerifyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.tamper-evident.verify")
+var tamperEvidentVerifyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.tamper-evident.verify",
+)
 
 // TimeAware is the mixin time-aware. The callable's result depends on the
 // current time, so a check controls the clock.
 const TimeAware Mixin = "time-aware"
 
 // TimeAwareParams are the params of the mixin time-aware.
-type TimeAwareParams struct {
-}
+type TimeAwareParams struct{}
 
 // TimeAwareOf returns the params of the mixin time-aware on the subject of m,
 // and false where the subject does not have the mixin. It records each read in
@@ -3521,13 +3619,19 @@ var transactionRoleKey meta.Key[string] = meta.Named[string]("shape.transaction.
 var transactionIDKey meta.Key[string] = meta.Named[string]("shape.transaction.id")
 
 // transactionNotFoundKey is the handle of the key shape.transaction.not-found.
-var transactionNotFoundKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.transaction.not-found")
+var transactionNotFoundKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.transaction.not-found",
+)
 
 // transactionReadKey is the handle of the key shape.transaction.read.
-var transactionReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.transaction.read")
+var transactionReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.transaction.read",
+)
 
 // transactionWriteKey is the handle of the key shape.transaction.write.
-var transactionWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.transaction.write")
+var transactionWriteKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.transaction.write",
+)
 
 // TTL is the mixin ttl. An entry stops being readable once its time to live
 // has passed. The duration param states one lifetime for every entry, and the
@@ -3771,7 +3875,9 @@ var validatesMixinKey meta.Key[bool] = meta.Named[bool]("shape.validates.mixin")
 var validatesFnKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.validates.fn")
 
 // validatesInvalidKey is the handle of the key shape.validates.invalid.
-var validatesInvalidKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.validates.invalid")
+var validatesInvalidKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.validates.invalid",
+)
 
 // VoidLifecycle is the shape void-lifecycle. The callable takes nothing and
 // returns nothing. It moves its receiver to another phase of its lifecycle,
@@ -3779,8 +3885,7 @@ var validatesInvalidKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
 const VoidLifecycle Shape = "void-lifecycle"
 
 // VoidLifecycleParams are the params of the shape void-lifecycle.
-type VoidLifecycleParams struct {
-}
+type VoidLifecycleParams struct{}
 
 // VoidLifecycleOf returns the params of the shape void-lifecycle on the
 // subject of m, and false where the subject does not have the shape. It
@@ -3958,10 +4063,14 @@ var workflowRoleKey meta.Key[string] = meta.Named[string]("shape.workflow.role")
 var workflowIDKey meta.Key[string] = meta.Named[string]("shape.workflow.id")
 
 // workflowObserveKey is the handle of the key shape.workflow.observe.
-var workflowObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.workflow.observe")
+var workflowObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.workflow.observe",
+)
 
 // workflowTransitionsKey is the handle of the key shape.workflow.transitions.
-var workflowTransitionsKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.workflow.transitions")
+var workflowTransitionsKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.workflow.transitions",
+)
 
 // WrappedVia is the mixin wrapped-via. The callable delegates to the sibling
 // that the fn param refers to, and adds a cross-cutting concern, such as
@@ -4081,7 +4190,9 @@ var writesFollowReadsMixinKey meta.Key[bool] = meta.Named[bool]("shape.writes-fo
 
 // writesFollowReadsVersionKey is the handle of the key
 // shape.writes-follow-reads.version.
-var writesFollowReadsVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.writes-follow-reads.version")
+var writesFollowReadsVersionKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.writes-follow-reads.version",
+)
 
 // XSSSafe is the mixin xss-safe. Output that contains untrusted input is
 // escaped for an HTML context before it leaves the callable.
@@ -4113,7 +4224,9 @@ func XSSSafeOf(m sdk.Matcher) (XSSSafeParams, bool) {
 var xssSafeMixinKey meta.Key[bool] = meta.Named[bool]("shape.xss-safe.mixin")
 
 // xssSafeUnsafeKey is the handle of the key shape.xss-safe.unsafe.
-var xssSafeUnsafeKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.xss-safe.unsafe")
+var xssSafeUnsafeKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.xss-safe.unsafe",
+)
 
 // Specs returns the description of every spec of the catalog, in the order of
 // the names of the specs. Each call returns new slices.
@@ -4145,7 +4258,13 @@ func Specs() []Spec {
 			Key:      "shape.aggregator.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: AggregatorValue, Fact: "shape.aggregator.value", From: SourceResult, Index: 0, Doc: "the return of the computed value"},
+				{
+					Key:   AggregatorValue,
+					Fact:  "shape.aggregator.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the computed value",
+				},
 			},
 			YieldsTo: []Shape{StreamReader, Predicate, Computation},
 		},
@@ -4157,8 +4276,20 @@ func Specs() []Spec {
 			Key:      "shape.answering-writer.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: AnsweringWriterValue, Fact: "shape.answering-writer.value", From: SourceInput, Index: 0, Doc: "the parameter whose value the callable persists"},
-				{Key: AnsweringWriterStored, Fact: "shape.answering-writer.stored", From: SourceResult, Index: 0, Doc: "the return of the stored value"},
+				{
+					Key:   AnsweringWriterValue,
+					Fact:  "shape.answering-writer.value",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter whose value the callable persists",
+				},
+				{
+					Key:   AnsweringWriterStored,
+					Fact:  "shape.answering-writer.stored",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the stored value",
+				},
 			},
 			YieldsTo: []Shape{StreamConsumer},
 		},
@@ -4206,8 +4337,20 @@ func Specs() []Spec {
 			Key:      "shape.batch-reader.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: BatchReaderKey, Fact: "shape.batch-reader.key", From: SourceInput, Index: 0, Doc: "the variadic parameter of the keys"},
-				{Key: BatchReaderValue, Fact: "shape.batch-reader.value", From: SourceResult, Index: 0, Doc: "the return that is the list of values"},
+				{
+					Key:   BatchReaderKey,
+					Fact:  "shape.batch-reader.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the variadic parameter of the keys",
+				},
+				{
+					Key:   BatchReaderValue,
+					Fact:  "shape.batch-reader.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return that is the list of values",
+				},
 			},
 		},
 		{
@@ -4405,8 +4548,20 @@ func Specs() []Spec {
 			Key:      "shape.composite-writer.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: CompositeWriterKey, Fact: "shape.composite-writer.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: CompositeWriterValue, Fact: "shape.composite-writer.value", From: SourceInput, Index: 1, Doc: "the parameter of the stored value"},
+				{
+					Key:   CompositeWriterKey,
+					Fact:  "shape.composite-writer.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   CompositeWriterValue,
+					Fact:  "shape.composite-writer.value",
+					From:  SourceInput,
+					Index: 1,
+					Doc:   "the parameter of the stored value",
+				},
 			},
 		},
 		{
@@ -4417,7 +4572,13 @@ func Specs() []Spec {
 			Key:      "shape.computation.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: ComputationValue, Fact: "shape.computation.value", From: SourceResult, Index: 0, Doc: "the return of the computed value"},
+				{
+					Key:   ComputationValue,
+					Fact:  "shape.computation.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the computed value",
+				},
 			},
 			YieldsTo: []Shape{StreamReader, Predicate},
 		},
@@ -4577,7 +4738,13 @@ func Specs() []Spec {
 				},
 			},
 			Bindings: []Binding{
-				{Key: DeleterKey, Fact: "shape.deleter.key", From: SourceInput, Index: 0, Doc: "the parameter that identifies the removed value"},
+				{
+					Key:   DeleterKey,
+					Fact:  "shape.deleter.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter that identifies the removed value",
+				},
 			},
 		},
 		{
@@ -4877,9 +5044,27 @@ func Specs() []Spec {
 			Key:      "shape.lookup.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: LookupKey, Fact: "shape.lookup.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: LookupValue, Fact: "shape.lookup.value", From: SourceResult, Index: 0, Doc: "the return of the key's value"},
-				{Key: LookupMeta, Fact: "shape.lookup.meta", From: SourceResult, Index: 1, Doc: "the return of the value that describes the key's value"},
+				{
+					Key:   LookupKey,
+					Fact:  "shape.lookup.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   LookupValue,
+					Fact:  "shape.lookup.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the key's value",
+				},
+				{
+					Key:   LookupMeta,
+					Fact:  "shape.lookup.meta",
+					From:  SourceResult,
+					Index: 1,
+					Doc:   "the return of the value that describes the key's value",
+				},
 			},
 		},
 		{
@@ -4933,7 +5118,13 @@ func Specs() []Spec {
 			Key:      "shape.multi-aggregator.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: MultiAggregatorValue, Fact: "shape.multi-aggregator.value", From: SourceResult, Index: 0, Doc: "the return of the first value"},
+				{
+					Key:   MultiAggregatorValue,
+					Fact:  "shape.multi-aggregator.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the first value",
+				},
 			},
 		},
 		{
@@ -4952,8 +5143,20 @@ func Specs() []Spec {
 			Key:      "shape.multi-reader.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: MultiReaderKey, Fact: "shape.multi-reader.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: MultiReaderValue, Fact: "shape.multi-reader.value", From: SourceResult, Index: 0, Doc: "the return of the first value"},
+				{
+					Key:   MultiReaderKey,
+					Fact:  "shape.multi-reader.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   MultiReaderValue,
+					Fact:  "shape.multi-reader.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the first value",
+				},
 			},
 		},
 		{
@@ -4964,7 +5167,13 @@ func Specs() []Spec {
 			Key:      "shape.mutator.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: MutatorValue, Fact: "shape.mutator.value", From: SourceInput, Index: 0, Doc: "the parameter whose state the callable changes"},
+				{
+					Key:   MutatorValue,
+					Fact:  "shape.mutator.value",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter whose state the callable changes",
+				},
 			},
 		},
 		{
@@ -5143,8 +5352,20 @@ func Specs() []Spec {
 			Key:      "shape.pointer-reader.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: PointerReaderKey, Fact: "shape.pointer-reader.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: PointerReaderValue, Fact: "shape.pointer-reader.value", From: SourceResult, Index: 0, Doc: "the return of the value that can be absent"},
+				{
+					Key:   PointerReaderKey,
+					Fact:  "shape.pointer-reader.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   PointerReaderValue,
+					Fact:  "shape.pointer-reader.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the value that can be absent",
+				},
 			},
 			YieldsTo: []Shape{Computation},
 		},
@@ -5196,7 +5417,13 @@ func Specs() []Spec {
 			Key:      "shape.predicate.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: PredicateValue, Fact: "shape.predicate.value", From: SourceResult, Index: 0, Doc: "the return of the truth value"},
+				{
+					Key:   PredicateValue,
+					Fact:  "shape.predicate.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the truth value",
+				},
 			},
 		},
 		{
@@ -5311,8 +5538,20 @@ func Specs() []Spec {
 			Key:      "shape.reader.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: ReaderKey, Fact: "shape.reader.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: ReaderValue, Fact: "shape.reader.value", From: SourceResult, Index: 0, Doc: "the return of the key's value"},
+				{
+					Key:   ReaderKey,
+					Fact:  "shape.reader.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   ReaderValue,
+					Fact:  "shape.reader.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the key's value",
+				},
 			},
 			YieldsTo: []Shape{BatchReader, StreamConsumer, AnsweringWriter},
 		},
@@ -5324,8 +5563,20 @@ func Specs() []Spec {
 			Key:      "shape.reader-no-error.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: ReaderNoErrorKey, Fact: "shape.reader-no-error.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: ReaderNoErrorValue, Fact: "shape.reader-no-error.value", From: SourceResult, Index: 0, Doc: "the return of the key's value"},
+				{
+					Key:   ReaderNoErrorKey,
+					Fact:  "shape.reader-no-error.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   ReaderNoErrorValue,
+					Fact:  "shape.reader-no-error.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the key's value",
+				},
 			},
 			YieldsTo: []Shape{StreamReader, PointerReader, Computation},
 		},
@@ -5337,8 +5588,20 @@ func Specs() []Spec {
 			Key:      "shape.reader-with-bool.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: ReaderWithBoolKey, Fact: "shape.reader-with-bool.key", From: SourceInput, Index: 0, Doc: "the parameter of the key"},
-				{Key: ReaderWithBoolValue, Fact: "shape.reader-with-bool.value", From: SourceResult, Index: 0, Doc: "the return of the key's value"},
+				{
+					Key:   ReaderWithBoolKey,
+					Fact:  "shape.reader-with-bool.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the key",
+				},
+				{
+					Key:   ReaderWithBoolValue,
+					Fact:  "shape.reader-with-bool.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the key's value",
+				},
 			},
 		},
 		{
@@ -5542,8 +5805,20 @@ func Specs() []Spec {
 			Key:      "shape.stream-consumer.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: StreamConsumerStream, Fact: "shape.stream-consumer.stream", From: SourceInput, Index: 0, Doc: "the parameter of the stream"},
-				{Key: StreamConsumerValue, Fact: "shape.stream-consumer.value", From: SourceResult, Index: 0, Doc: "the return of the computed value"},
+				{
+					Key:   StreamConsumerStream,
+					Fact:  "shape.stream-consumer.stream",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter of the stream",
+				},
+				{
+					Key:   StreamConsumerValue,
+					Fact:  "shape.stream-consumer.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return of the computed value",
+				},
 			},
 			YieldsTo: []Shape{BatchReader},
 		},
@@ -5555,8 +5830,20 @@ func Specs() []Spec {
 			Key:      "shape.stream-reader.shape",
 			Detected: true,
 			Bindings: []Binding{
-				{Key: StreamReaderKey, Fact: "shape.stream-reader.key", From: SourceInput, Index: 0, Doc: "the parameter that selects the values"},
-				{Key: StreamReaderValue, Fact: "shape.stream-reader.value", From: SourceResult, Index: 0, Doc: "the return that is the stream"},
+				{
+					Key:   StreamReaderKey,
+					Fact:  "shape.stream-reader.key",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter that selects the values",
+				},
+				{
+					Key:   StreamReaderValue,
+					Fact:  "shape.stream-reader.value",
+					From:  SourceResult,
+					Index: 0,
+					Doc:   "the return that is the stream",
+				},
 			},
 		},
 		{
@@ -5989,7 +6276,13 @@ func Specs() []Spec {
 				},
 			},
 			Bindings: []Binding{
-				{Key: WriterValue, Fact: "shape.writer.value", From: SourceInput, Index: 0, Doc: "the parameter whose value the callable persists"},
+				{
+					Key:   WriterValue,
+					Fact:  "shape.writer.value",
+					From:  SourceInput,
+					Index: 0,
+					Doc:   "the parameter whose value the callable persists",
+				},
 			},
 			YieldsTo: []Shape{Deleter},
 		},
@@ -6033,4 +6326,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:400bec0e68dd3298e93b3624b8f3fa0dc447c4e4d40a2ad3e02d77d0b4209469
+// shapegen:provenance sha256:d40120994f318ad79d266fa3bada0e7e082ce7bddff28b4e4292ec9d9a1044e7
