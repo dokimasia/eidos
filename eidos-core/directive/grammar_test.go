@@ -6,10 +6,13 @@ package directive_test
 import (
 	"cmp"
 	"encoding/binary"
+	"slices"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 	"go.dokimi.dev/assert/prop"
 
 	"go.dokimi.dev/eidos/core/directive"
@@ -29,6 +32,39 @@ const parsesSafely = "Parse must return a prefixed error, or an instance that na
 
 // continued is a payload written over three carrier lines.
 var continued = []string{`index \`, `fields=[a, b, \`, `c] depth=3`}
+
+// The mark that opens a directive in the cases of Cut, as the mark of a
+// carrier opens one. The block also has the payload that the allocation
+// checks and the benchmarks cut, and the offset of the argument depth in
+// the payload that Join folds from continued.
+const (
+	mark          = "+gen:"
+	markedPayload = "index fields=[a, b, c] depth=3 " + mark + "mock"
+	locatedOffset = len("index fields=[a, b, c] ")
+)
+
+// The properties of Cut and Locate that [TestGrammar] states.
+const (
+	cutsAtMarks = "Cut must cut a payload before its first positional argument that opens with the mark, " +
+		"and the part before the cut must parse to the arguments before that argument"
+	locatesBytes = "Locate must map each byte of a joined payload that is not a blank to the same byte of its line"
+)
+
+// opensMark reports whether the rest of a payload opens with the mark, as
+// the owner of a carrier tests the marks of its brand.
+var opensMark = func(rest string) bool { return strings.HasPrefix(rest, mark) }
+
+// The arguments that the payloads of the Cut property draw, and the lines
+// that the Locate property draws. The arguments have a plain value, keyed
+// values, a mark, and marks inside a quoted value, a list and a keyed
+// value. Some lines continue, and some open with blanks.
+var (
+	cutArguments = []string{
+		"plain", "k=v", `k="a b"`, `k="x \" +gen:y"`, "k=[a, +gen:b]", "[c, d]", mark + "mock",
+		`"+gen:quoted"`, "k=+gen:v",
+	}
+	locateLines = []string{`stub \`, `  tag=test \`, "\tx=1", "a b", `c] \`, `\`, "  \\", "end"}
+)
 
 func TestGrammar(t *testing.T) {
 	t.Parallel()
@@ -355,6 +391,145 @@ func TestGrammar(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Cut", func(t *testing.T) {
+		t.Parallel()
+
+		cuts := []struct {
+			name       string
+			give       string
+			wantBefore string
+			wantAfter  string
+		}{
+			{
+				name:       "cuts before the first argument that opens a directive",
+				give:       "stub tag=test +gen:mock",
+				wantBefore: "stub tag=test", wantAfter: "+gen:mock",
+			},
+			{
+				name:       "cuts before the first of two arguments that open a directive",
+				give:       "stub +gen:mock +gen:audit",
+				wantBefore: "stub", wantAfter: "+gen:mock +gen:audit",
+			},
+			{
+				name:       "drops the blanks before the argument",
+				give:       "stub \t +gen:mock",
+				wantBefore: "stub", wantAfter: "+gen:mock",
+			},
+			{
+				name:       "cuts before an argument after a list",
+				give:       "index fields=[a, b] +gen:mock",
+				wantBefore: "index fields=[a, b]", wantAfter: "+gen:mock",
+			},
+			{
+				name:       "cuts before an argument after a quoted value",
+				give:       `doc text="a b" +gen:mock`,
+				wantBefore: `doc text="a b"`, wantAfter: "+gen:mock",
+			},
+			{
+				name:       "cuts before an argument after a stray closing bracket",
+				give:       "stub ] +gen:mock",
+				wantBefore: "stub ]", wantAfter: "+gen:mock",
+			},
+		}
+		for _, tt := range cuts {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				before, after, found := directive.Cut(tt.give, opensMark)
+				assert.True(t, found, "the payload has an argument that opens a directive")
+				expect.Equal(t, before, tt.wantBefore, "the part before the cut ends before the blanks")
+				expect.Equal(t, after, tt.wantAfter, "the part after the cut opens with the argument")
+			})
+		}
+
+		wholes := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for a mark inside a quoted value", give: `doc text="a +gen:mock"`},
+			{name: "reports false for a mark after an escaped quote", give: `doc text="a \" +gen:mock"`},
+			{name: "reports false for a mark inside a list", give: "index fields=[a, +gen:mock]"},
+			{name: "reports false for a keyed value that opens with a mark", give: "stub tag=+gen:mock"},
+			{name: "reports false for a mark inside an unterminated quoted value", give: `doc text="a +gen:mock`},
+			{name: "reports false for a mark that opens the name", give: "+gen:mock"},
+			{name: "reports false for a mark that opens the name after blanks", give: "  +gen:mock"},
+			{name: "reports false for a payload without a mark", give: "stub tag=test"},
+			{name: "reports false for a payload with trailing blanks", give: "stub tag=test  "},
+		}
+		for _, tt := range wholes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				before, after, found := directive.Cut(tt.give, opensMark)
+				assert.False(t, found, "the payload has no argument that opens a directive")
+				expect.Equal(t, before, tt.give, "the part before the cut is the payload")
+				expect.Empty(t, after, "the part after the cut is empty")
+			})
+		}
+
+		t.Run("cuts each drawn payload before its first positional mark", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, cutsAtMarks, cutsBeforeMarks)
+		})
+	})
+
+	t.Run("Locate", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name     string
+			lines    []string
+			offset   int
+			wantLine int
+			wantAt   int
+		}{
+			{
+				name:  "returns the offset in a payload of one line",
+				lines: []string{"stub tag=test"}, offset: 5, wantLine: 0, wantAt: 5,
+			},
+			{
+				name:  "returns the line and the offset of a byte of a continuation line",
+				lines: []string{`stub \`, "tag=test"}, offset: 5, wantLine: 1, wantAt: 0,
+			},
+			{
+				name:  "counts the blanks that the join drops from a continuation line",
+				lines: []string{`stub \`, " \ttag=test"}, offset: 5, wantLine: 1, wantAt: 2,
+			},
+			{
+				name:  "returns a byte of the third of three lines",
+				lines: continued, offset: locatedOffset, wantLine: 2, wantAt: len("c] "),
+			},
+			{
+				name:  "returns the end of the earlier line for the space between two lines",
+				lines: []string{`stub \`, "tag=test"}, offset: 4, wantLine: 0, wantAt: 4,
+			},
+			{
+				name:  "returns the end of the last line for an offset past the payload",
+				lines: []string{"stub"}, offset: 9, wantLine: 0, wantAt: 4,
+			},
+			{
+				name:  "returns the first line for no lines",
+				lines: nil, offset: 3, wantLine: 0, wantAt: 0,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				line, at := directive.Locate(tt.lines, tt.offset)
+				expect.Equal(t, line, tt.wantLine, "the line contains the byte")
+				expect.Equal(t, at, tt.wantAt, "the offset is the byte's in its line")
+			})
+		}
+
+		t.Run("maps each byte of drawn lines that is not a blank to its line", func(t *testing.T) {
+			t.Parallel()
+
+			prop.ForAll(t, locatesBytes, locatesEachByte)
+		})
+	})
 }
 
 // FuzzParse checks [parsesSafely] on payloads nothing in this
@@ -393,11 +568,53 @@ func parsesPositioned(c *prop.Case) {
 	}
 }
 
+// cutsBeforeMarks checks [cutsAtMarks] on a payload of drawn arguments.
+// The parse of the whole payload states where each argument starts, so the
+// check compares the cut with the first positional argument that opens
+// with the mark.
+func cutsBeforeMarks(c *prop.Case) {
+	args := c.Draw(prop.List(prop.SampledFrom(cutArguments...), prop.MaxSize(6)), "arguments")
+	payload := strings.Join(append([]string{"stub"}, args...), " ")
+	whole, err := directive.Parse(payload)
+	assert.NoError(c, err, "a payload of the drawn arguments must parse")
+	before, after, found := directive.Cut(payload, opensMark)
+	at := slices.IndexFunc(whole.Args, func(arg directive.RawArg) bool {
+		return arg.Key == "" && !arg.Value.Quoted && strings.HasPrefix(arg.Value.Text, mark)
+	})
+	if at < 0 {
+		assert.False(c, found, "Cut must not cut a payload without a positional mark")
+		assert.Equal(c, before, payload, "Cut must return the whole payload without a positional mark")
+		return
+	}
+	assert.True(c, found, "Cut must cut a payload with a positional mark")
+	assert.Equal(c, len(payload)-len(after), whole.Args[at].Col, "Cut must cut at the first positional mark")
+	head, err := directive.Parse(before)
+	assert.NoError(c, err, "the part before the cut must parse")
+	assert.Equal(c, head.Args, whole.Args[:at], "the part before the cut must have the arguments before the mark",
+		assert.EquateEmpty())
+}
+
+// locatesEachByte checks [locatesBytes] on drawn lines. A blank of the
+// joined payload can be the space between two lines, so the check reads
+// every other byte.
+func locatesEachByte(c *prop.Case) {
+	lines := c.Draw(prop.List(prop.SampledFrom(locateLines...), prop.MaxSize(6)), "lines")
+	joined := directive.Join(lines)
+	for offset := range len(joined) {
+		if joined[offset] == ' ' || joined[offset] == '\t' {
+			continue
+		}
+		line, at := directive.Locate(lines, offset)
+		assert.Equal(c, lines[line][at], joined[offset], "the byte of the joined payload must be the byte of its line")
+	}
+}
+
 // A name's plugin reads without allocating, Parse allocates the
 // arguments and each list once, and the joined payload of continued
-// lines is one allocation. Each count keeps the first error of its
-// calls, which cmp.Or returns without allocating. The check runs alone,
-// because the count includes every goroutine's allocations.
+// lines is one allocation. Cut and Locate do not allocate. Each count
+// keeps the first error of its calls, which cmp.Or returns without
+// allocating. The check runs alone, because the count includes every
+// goroutine's allocations.
 func TestGrammarAllocs(t *testing.T) {
 	name := directive.Name("mockgen:stub")
 	var plugin string
@@ -434,11 +651,18 @@ func TestGrammarAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { joined = directive.Join(continued[2:]) }, 0,
 		"Join allocates nothing for one line")
 	assert.NotEmpty(t, joined, "Join returns the one line")
+	var found bool
+	assert.MaxAllocs(t, func() { _, _, found = directive.Cut(markedPayload, opensMark) }, 0, "Cut allocates nothing")
+	assert.True(t, found, "Cut finds the mark")
+	var line int
+	assert.MaxAllocs(t, func() { line, _ = directive.Locate(continued, locatedOffset) }, 0, "Locate allocates nothing")
+	assert.Equal(t, line, 2, "Locate returns the third line")
 }
 
 // BenchmarkGrammar measures a name's plugin, parsing, which runs once
-// per carrier line across every loaded file, and the join of continued
-// lines.
+// per carrier across every loaded file, and the join of continued lines.
+// It also measures the cut of a payload before a mark, which runs once
+// per carrier line, and the location of a byte of a joined payload.
 func BenchmarkGrammar(b *testing.B) {
 	b.Run("Name.Plugin", func(b *testing.B) {
 		name := directive.Name("mockgen:stub")
@@ -511,6 +735,26 @@ func BenchmarkGrammar(b *testing.B) {
 			got = directive.Join(continued)
 		}
 		assert.Equal(b, got, "index fields=[a, b, c] depth=3", "Join folds the three lines")
+	})
+
+	b.Run("Cut", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			_, got, _ = directive.Cut(markedPayload, opensMark)
+		}
+		assert.Equal(b, got, mark+"mock", "Cut cuts before the mark")
+	})
+
+	b.Run("Locate", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			_, got = directive.Locate(continued, locatedOffset)
+		}
+		assert.Equal(b, got, len("c] "), "Locate returns the offset of depth in its line")
 	})
 }
 

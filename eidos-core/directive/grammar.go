@@ -56,7 +56,9 @@ func (n Name) Valid() bool {
 }
 
 // The grammar's punctuation. The spellings are defined here once,
-// so the parser and its refusals agree on every byte.
+// so the parser and its refusals agree on every byte. blanks are the
+// bytes that separate a name from its arguments and one argument from
+// the next.
 const (
 	prefixSep = ':'
 	keySep    = '='
@@ -66,6 +68,7 @@ const (
 	quote     = '"'
 	escape    = '\\'
 	joinSep   = " "
+	blanks    = " \t"
 )
 
 // Continuation ends a carrier line whose payload continues on the
@@ -175,12 +178,87 @@ func Join(lines []string) string {
 func folded(i int, line string) string {
 	trimmed, continued := strings.CutSuffix(line, Continuation)
 	if continued {
-		trimmed = strings.TrimRight(trimmed, " \t")
+		trimmed = strings.TrimRight(trimmed, blanks)
 	}
 	if i > 0 {
-		trimmed = strings.TrimLeft(trimmed, " \t")
+		trimmed = strings.TrimLeft(trimmed, blanks)
 	}
 	return trimmed
+}
+
+// Cut cuts a payload before its first argument for which opens reports
+// true. Cut reads the arguments of the payload at the top level of the
+// grammar. A quoted value or a list is one argument. Cut does not look
+// inside it for blanks or for text for which opens reports true. The name
+// of the directive is not an argument, so Cut never cuts before it. opens
+// receives the payload from the first byte of an argument on.
+//
+// Cut returns the payload before the argument without the blanks before
+// it, the payload from the argument on, and true. It returns the payload,
+// the empty string and false where opens reports false for every
+// argument. Cut reads a payload outside the grammar as far as it can.
+// [Parse] refuses such a payload. The owner of a carrier line cuts the
+// line before each mark that opens another directive, so one line can
+// contain more than one directive.
+//
+// # Allocation contract
+//
+// Cut does not allocate. Both parts share the bytes of the payload.
+func Cut(payload string, opens func(rest string) bool) (before, after string, found bool) {
+	quoted, depth := false, 0
+	for i := len(payload) - len(strings.TrimLeft(payload, blanks)); i < len(payload); i++ {
+		c := payload[i]
+		switch {
+		case quoted && c == escape:
+			i++
+		case quoted:
+			quoted = c != quote
+		case c == quote:
+			quoted = true
+		case c == listOpen:
+			depth++
+		case c == listClose:
+			depth = max(depth-1, 0)
+		case depth == 0 && (c == ' ' || c == '\t'):
+			end := i
+			for i < len(payload) && (payload[i] == ' ' || payload[i] == '\t') {
+				i++
+			}
+			if i < len(payload) && opens(payload[i:]) {
+				return payload[:end], payload[i:], true
+			}
+			// The loop reads the first byte of the argument next, so a
+			// quote or a bracket there opens its value.
+			i--
+		}
+	}
+	return payload, "", false
+}
+
+// Locate returns the line of lines that contains the byte at offset of
+// the payload that [Join] folds from lines, and the offset of the byte in
+// that line. An offset at the space that Join writes between two lines
+// returns the end of the earlier line. An offset past the payload returns
+// the end of the last line. Locate returns line 0 and offset 0 for no
+// lines. The owner of a carrier line locates each directive that [Cut]
+// finds in a continued payload at the line where the author wrote it.
+//
+// # Allocation contract
+//
+// Locate does not allocate.
+func Locate(lines []string, offset int) (line, at int) {
+	for i, l := range lines {
+		part := folded(i, l)
+		if offset <= len(part) || i == len(lines)-1 {
+			lead := 0
+			if i > 0 {
+				lead = len(l) - len(strings.TrimLeft(l, blanks))
+			}
+			return i, lead + min(offset, len(part))
+		}
+		offset -= len(part) + len(joinSep)
+	}
+	return 0, 0
 }
 
 // argScratch is how many arguments of one payload, and how many

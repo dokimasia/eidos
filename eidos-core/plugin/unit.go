@@ -10,6 +10,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -159,7 +160,10 @@ type Carrier struct {
 	// Payload.
 	Mark    string
 	Payload string
-	Pos     position.Pos
+	// Pos is the position of the directive. The first directive of a
+	// carrier line is at the line. A later directive is at the line and the
+	// column of its mark.
+	Pos position.Pos
 	// DirectiveShaped is true when the carrier line has the tool-directive
 	// shape. The syntax declares the convention, the marker is directly
 	// before the text, and the text has the form tool:name, as brand: has
@@ -239,6 +243,15 @@ func (u *SourceUnit) Doc(raw string) []string {
 // as the host toolchain requires, so prose after a marker and a space
 // remains prose.
 //
+// A carrier line contains one or more directives. Each later directive
+// opens with a mark of the brand after a blank. Comment cuts the line with
+// [directive.Cut] before each such mark at the top level of the grammar.
+// It returns one carrier for each directive. The first
+// carrier of a line is at the line. A later carrier is at the line of its
+// mark. Its column is the column of at advanced by the bytes before the
+// mark on that line of raw. Comment cuts a continued carrier after it
+// folds the continuation lines.
+//
 // Comment reports an Error under [ContinuedCarrier] for a continued
 // carrier whose own line has the tool-directive shape, and returns no
 // carrier for it, because a formatter may move such a line away from its
@@ -255,6 +268,8 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 		switch {
 		case carried:
 			shaped := u.directiveShaped(line)
+			first := i
+			var span []string
 			if strings.HasSuffix(payload, directive.Continuation) {
 				if shaped {
 					u.Errorf(ContinuedCarrier, lineAt,
@@ -263,7 +278,7 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 						mark+payload, carrierSet+u.brand+carrierClose+payload)
 					continue
 				}
-				span := []string{payload}
+				span = []string{payload}
 				for strings.HasSuffix(span[len(span)-1], directive.Continuation) &&
 					i+1 < len(lines) {
 					i++
@@ -271,8 +286,7 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 				}
 				payload = directive.Join(span)
 			}
-			parts.Carriers = append(parts.Carriers,
-				Carrier{Mark: mark, Payload: payload, Pos: lineAt, DirectiveShaped: shaped})
+			parts.Carriers = u.carriers(parts.Carriers, mark, payload, span, lines[first:i+1], lineAt, shaped)
 		case u.syntax.Directives && line.adjacent &&
 			(directiveLine(line.text) || legacyDirective(line.text)):
 			name, rest, _ := strings.Cut(line.text, " ")
@@ -505,13 +519,54 @@ func (u *SourceUnit) directiveShaped(line commentLine) bool {
 	return u.syntax.Directives && line.adjacent && directiveLine(line.text)
 }
 
+// carriers appends one carrier for each directive of a carrier line to cs.
+// mark opens the line. payload is the text after mark, with the lines of
+// span joined where the carrier continues. span is nil for a carrier of
+// one line. lines are the comment lines of the carrier. at is the position
+// of the first of them.
+//
+// [directive.Cut] finds each later directive at a mark of the brand after a
+// blank. The first carrier is at the position at. A later carrier is at the
+// line of its mark. Its column is the column of at advanced by the bytes
+// before the mark on that line. shaped reports whether the line has the
+// tool-directive shape. Each carrier takes it as its DirectiveShaped.
+func (u *SourceUnit) carriers(
+	cs []Carrier, mark, payload string, span []string, lines []commentLine, at position.Pos, shaped bool,
+) []Carrier {
+	opens := func(rest string) bool {
+		_, _, ok := cutCarrier(rest, u.brand)
+		return ok
+	}
+	lead, joined, pos := len(mark), payload, at
+	for {
+		before, after, found := directive.Cut(payload, opens)
+		cs = append(cs, Carrier{Mark: mark, Payload: before, Pos: pos, DirectiveShaped: shaped})
+		if !found {
+			return cs
+		}
+		line, offset := 0, len(joined)-len(after)
+		if span != nil {
+			line, offset = directive.Locate(span, offset)
+		}
+		if line == 0 {
+			// The first line opens with the mark of the carrier. The payload
+			// starts after the mark.
+			offset += lead
+		}
+		pos = position.Pos{File: at.File, Line: at.Line + line, Col: at.Col + lines[line].offset + offset}
+		mark, payload, _ = cutCarrier(after, u.brand)
+	}
+}
+
 // commentLine is one comment line without its markers. adjacent is true
 // when a line marker directly precedes the text. The directive rule
 // requires that adjacency, and a block form never has it, because the host
-// toolchains read directives only from line comments.
+// toolchains read directives only from line comments. offset is the number
+// of bytes before the text in its line of the raw comment.
 type commentLine struct {
 	text     string
 	adjacent bool
+	offset   int
 }
 
 // commentLines removes the markers of one comment and returns one entry
@@ -520,31 +575,44 @@ type commentLine struct {
 // one space after either. The longest form that matches applies, because
 // the markers of one language can begin with each other, as Rust's //, ///
 // and //! do. The shorter marker would leave the rest of the longer one in
-// the text. commentLines allocates only the returned list.
+// the text. Each entry has the number of bytes before its text in its line
+// of raw. The first line of a block counts the opener. commentLines
+// allocates only the returned list.
 func commentLines(raw string, syntax CommentSyntax) []commentLine {
 	if b, enclosed := enclosingBlock(raw, syntax.Blocks); enclosed {
 		body := strings.TrimSuffix(strings.TrimPrefix(raw, b.Open), b.Close)
 		out := make([]commentLine, 0, strings.Count(body, "\n")+1)
+		offset := len(b.Open)
 		for line := range strings.SplitSeq(body, "\n") {
 			trimmed := strings.TrimSpace(line)
+			offset += len(line) - len(strings.TrimLeftFunc(line, unicode.IsSpace))
 			if b.Gutter != "" {
-				trimmed = strings.TrimPrefix(trimmed, b.Gutter)
-				trimmed = strings.TrimPrefix(trimmed, " ")
+				if rest, cut := strings.CutPrefix(trimmed, b.Gutter); cut {
+					offset, trimmed = offset+len(b.Gutter), rest
+				}
+				if rest, cut := strings.CutPrefix(trimmed, " "); cut {
+					offset, trimmed = offset+1, rest
+				}
 			}
-			out = append(out, commentLine{text: trimmed})
+			out = append(out, commentLine{text: trimmed, offset: offset})
+			offset = 0
 		}
 		return out
 	}
 	out := make([]commentLine, 0, strings.Count(raw, "\n")+1)
 	for line := range strings.SplitSeq(raw, "\n") {
 		trimmed := strings.TrimSpace(line)
+		offset := len(line) - len(strings.TrimLeftFunc(line, unicode.IsSpace))
 		adjacent := false
 		if marker := longestPrefix(trimmed, syntax.Line); marker != "" {
 			rest := trimmed[len(marker):]
 			adjacent = rest != "" && rest[0] != ' ' && rest[0] != '\t'
-			trimmed = strings.TrimPrefix(rest, " ")
+			offset, trimmed = offset+len(marker), rest
+			if spaced, cut := strings.CutPrefix(rest, " "); cut {
+				offset, trimmed = offset+1, spaced
+			}
 		}
-		out = append(out, commentLine{text: trimmed, adjacent: adjacent})
+		out = append(out, commentLine{text: trimmed, adjacent: adjacent, offset: offset})
 	}
 	return out
 }

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"iter"
 	"strconv"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -107,12 +108,29 @@ const (
 // continuedAt is the line at which the comments of the refusal cases open.
 var continuedAt = position.Pos{File: "svc/store/row.go", Line: 4}
 
+// The lines with more than one directive. The first is a payload of two
+// directives after their marks. The second is a continuation line with a
+// later directive after a marker and three spaces, and the third is a line
+// of a block with two directives after its gutter.
+const (
+	severalPayload    = setMark + tablePayload + " " + setMark + indexPayload
+	continuedMarkLine = "//   " + setMark + indexPayload
+	gutterLine        = " * " + severalPayload
+)
+
+// columnAt is the position at which the comments of the column cases
+// open. It has a column, so the cases count the column of a later
+// directive from it.
+var columnAt = position.Pos{File: "svc/store/row.go", Line: 4, Col: 2}
+
 // The comments that the allocation checks and the benchmarks split. The
 // first has three lines of documentation, and the second has documentation
-// above a carrier.
+// above a carrier. The third has documentation above a carrier line of two
+// directives.
 const (
 	docComment     = "// Row is one row.\n// It has fields.\n// It has a key."
 	carrierComment = "// Row is one row.\n//fixture:table name=rows"
+	severalComment = "// Row is one row.\n//fixture:table name=rows " + setMark + indexPayload
 )
 
 // The allocation counts of the methods of the source unit.
@@ -131,6 +149,10 @@ const (
 	// carrierCommentAllocs is the count for a comment with a carrier.
 	// Comment allocates what commentAllocs counts and the list of carriers.
 	carrierCommentAllocs = commentAllocs + 1
+	// severalCarriersAllocs is the count for a comment with a carrier line
+	// of two directives. Comment allocates what carrierCommentAllocs counts
+	// and one growth of the list of carriers.
+	severalCarriersAllocs = carrierCommentAllocs + 1
 	// docAllocs is the count for the documentation of a comment. Doc
 	// allocates the list of its lines and the list of its documentation.
 	docAllocs = 2
@@ -665,6 +687,136 @@ func TestSourceUnit(t *testing.T) {
 			parts := u.Comment("/**\n * Row is one record.\n */", continuedAt)
 			assert.Equal(t, parts.Docs, []string{"Row is one record."}, "the doc block's gutter is removed")
 		})
+
+		t.Run("returns one carrier for each directive of a carrier line", func(t *testing.T) {
+			t.Parallel()
+
+			parts := comment(t, "// "+severalPayload)
+			assert.Length(t, parts.Carriers, 2, "each directive of the line is a carrier")
+			expect.Equal(t, parts.Carriers[0].Payload, tablePayload, "the first payload ends before the second mark")
+			expect.Equal(t, parts.Carriers[1].Payload, indexPayload, "the second payload follows its mark")
+		})
+
+		t.Run("returns each directive of a line with the polarity of its mark", func(t *testing.T) {
+			t.Parallel()
+
+			parts := comment(t, "// "+setMark+tablePayload+" "+negatedMark+indexPayload)
+			assert.Length(t, parts.Carriers, 2, "each directive of the line is a carrier")
+			expect.False(t, parts.Carriers[0].Negated(), "the first directive is set")
+			expect.True(t, parts.Carriers[1].Negated(), "the second directive is negated")
+		})
+
+		t.Run("returns a later directive that the bare brand mark opens", func(t *testing.T) {
+			t.Parallel()
+
+			parts := comment(t, "// "+bareMark+tablePayload+" "+bareMark+indexPayload)
+			assert.Length(t, parts.Carriers, 2, "each directive of the line is a carrier")
+			expect.Equal(t, parts.Carriers[1].Mark, bareMark, "the later directive has its mark as written")
+			expect.Equal(t, parts.Carriers[1].Payload, indexPayload, "the later payload follows its mark")
+		})
+
+		kept := []struct {
+			name    string
+			payload string
+		}{
+			{
+				name:    "keeps a mark inside a quoted value in its directive",
+				payload: `table doc="see ` + setMark + `index" name=rows`,
+			},
+			{
+				name:    "keeps a mark inside a list in its directive",
+				payload: "table keys=[name, " + setMark + "index]",
+			},
+			{
+				name:    "keeps a mark without a letter after it in its directive",
+				payload: tablePayload + " " + setMark + "1",
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				parts := comment(t, "// "+setMark+tt.payload)
+				assert.Length(t, parts.Carriers, 1, "the line has one directive")
+				assert.Equal(t, parts.Carriers[0].Payload, tt.payload, "the mark is part of the payload")
+			})
+		}
+
+		t.Run("gives each directive of a line the shape of the line", func(t *testing.T) {
+			t.Parallel()
+
+			parts := comment(t, "//"+bareMark+tablePayload+" "+setMark+indexPayload)
+			assert.Length(t, parts.Carriers, 2, "each directive of the line is a carrier")
+			expect.True(t, parts.Carriers[0].DirectiveShaped, "the first directive has the shape of the line")
+			expect.True(t, parts.Carriers[1].DirectiveShaped, "the later directive has the shape of the line")
+		})
+
+		columns := []struct {
+			name string
+			raw  string
+		}{
+			{
+				name: "returns a later directive after a spaced marker at the column of its mark",
+				raw:  "// " + severalPayload,
+			},
+			{
+				name: "returns a later directive after an adjacent marker at the column of its mark",
+				raw:  "//" + severalPayload,
+			},
+			{
+				name: "returns a later directive of an indented line at the column of its mark",
+				raw:  "\t// " + severalPayload,
+			},
+			{
+				name: "returns a later directive of the first line of a block at the column of its mark",
+				raw:  "/** " + severalPayload + " */",
+			},
+		}
+		for _, tt := range columns {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				parts := unitOf(t, unitTree()).Comment(tt.raw, columnAt)
+				assert.Length(t, parts.Carriers, 2, "each directive of the line is a carrier")
+				expect.Equal(t, parts.Carriers[0].Pos, columnAt, "the first directive is at the line")
+				expect.Equal(t, parts.Carriers[1].Pos, position.Pos{
+					File: columnAt.File,
+					Line: columnAt.Line,
+					Col:  columnAt.Col + strings.LastIndex(tt.raw, setMark),
+				}, "the column of the later directive counts the bytes before its mark from the column of the comment")
+			})
+		}
+
+		later := []struct {
+			name string
+			raw  string
+			line string
+		}{
+			{
+				name: "returns a later directive of a continuation line at the line of its mark",
+				raw:  "// " + setMark + tablePayload + " \\\n" + continuedMarkLine,
+				line: continuedMarkLine,
+			},
+			{
+				name: "returns a later directive of a later line of a block at the line of its mark",
+				raw:  "/**\n" + gutterLine + "\n */",
+				line: gutterLine,
+			},
+		}
+		for _, tt := range later {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				parts := unitOf(t, unitTree()).Comment(tt.raw, columnAt)
+				assert.Length(t, parts.Carriers, 2, "each directive of the comment is a carrier")
+				expect.Equal(t, parts.Carriers[1].Payload, indexPayload, "the later payload follows its mark")
+				expect.Equal(t, parts.Carriers[1].Pos, position.Pos{
+					File: columnAt.File,
+					Line: columnAt.Line + 1,
+					Col:  columnAt.Col + strings.LastIndex(tt.line, setMark),
+				}, "the later directive is at the line and the column of its mark")
+			})
+		}
 	})
 
 	t.Run("Negated", func(t *testing.T) {
@@ -1474,6 +1626,9 @@ func TestSourceUnitAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { parts = u.Comment(carrierComment, commentAt) }, carrierCommentAllocs,
 		"Comment allocates the list of carriers beside the documentation")
 	assert.Length(t, parts.Carriers, 1, "Comment returns the carrier")
+	assert.MaxAllocs(t, func() { parts = u.Comment(severalComment, commentAt) }, severalCarriersAllocs,
+		"Comment allocates one growth of the list of carriers for the second directive of a line")
+	assert.Length(t, parts.Carriers, 2, "Comment returns both directives of the line")
 
 	var lines []string
 	assert.MaxAllocs(
@@ -1612,6 +1767,10 @@ func BenchmarkSourceUnit(b *testing.B) {
 	}{
 		{name: "three lines of documentation", raw: docComment, allocs: commentAllocs},
 		{name: "documentation above a carrier", raw: carrierComment, allocs: carrierCommentAllocs},
+		{
+			name: "documentation above a carrier line of two directives", raw: severalComment,
+			allocs: severalCarriersAllocs,
+		},
 	}
 	b.Run("Comment", func(b *testing.B) {
 		for _, tt := range comments {
