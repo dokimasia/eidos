@@ -43,12 +43,12 @@ const BuildAnnotation = "go:build"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.9.0"
+const Version = "0.10.0"
 
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds: bump it with any change to
 // the graph a parse produces.
-const FrontendVersion = "0.8.0"
+const FrontendVersion = "0.9.0"
 
 // Syntax returns Go's comment forms, declared once and shared: the
 // frontend strips comments with them, and the output contract

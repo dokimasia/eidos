@@ -106,26 +106,33 @@
 // cache and the standard library where the go command finds them, and
 // a round reads the build list from the workspace's go.mod files: each
 // required module at the highest version any of them requires, after
-// the replace directives of the go.mod that requires that version. A
-// need places in the standard library when its first element has no
+// the replace directives of the go.mod that requires that version.
+//
+// A unit uses each declaration outside its package that a named type of
+// its declarations or an argument of its directives can resolve to, the
+// candidates that the bindings of the file return. A round places the
+// package of each use. An import that no declaration and no directive
+// names places nothing, so a package that only a function body or a value
+// names does not load, and the rules give a reference into it a stand-in.
+// A package places in the standard library when its first element has no
 // dot, and otherwise in the module cache at the selected version, its
-// hash record checked against go.sum, or in a workspace module's
-// vendor tree when the cache lacks the version and the tree passes the
-// go command's consistency checks. A dependency unit is one package
+// hash record checked against go.sum, or in a workspace module's vendor
+// tree when the cache lacks the version and the tree passes the go
+// command's consistency checks. A dependency unit is one package
 // directory without its tests, parsed signature-only, and loads under
 // the import path the go command gives it: a replacement's tree under
 // the original module path, and a vendored copy under its path under
 // vendor/. A standard library file imports the modules the standard
 // library vendors under vendor/.
 //
-// A need the build places nowhere, such as an import of a workspace
-// module or an import no required module provides, yields no unit, and
-// the round reports it with the reason. The import "C" names cgo's
-// preamble and no package, so the round passes over it.
+// A used import that the build places nowhere, such as an import of a
+// workspace module or an import no required module provides, yields no
+// unit, and the round reports it with the reason. The import "C" names
+// cgo's preamble and no package, so the round passes over it.
 //
-// A signature-only file records only the imports its retained
-// declarations name, so the next round follows what exported
-// signatures reference and not what function bodies call.
+// A signature-only file records only the imports whose packages it uses,
+// so the next round follows what exported signatures reference and not
+// what function bodies call.
 //
 // # Stamps
 //

@@ -16,6 +16,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The dependency fixture: a workspace module that requires one module
@@ -142,11 +143,56 @@ func TestDepend(t *testing.T) {
 
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
 			assert.HonoursCancellation(t, func(ctx context.Context) error {
-				_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{
-					Number: 1, Needs: []plugin.Need{{Path: libPackage}}, Shared: []string{appGoMod},
-				}, roundReader{storeTree{depWorkspace(), depStores()}})
+				_, err := dependent.Dependencies(ctx, firstRound(depWorkspace(), libPackage),
+					roundReader{storeTree{depWorkspace(), depStores()}})
 				return err
 			}, "a done context places nothing")
+		})
+
+		t.Run("places nothing for a need without a use", func(t *testing.T) {
+			t.Parallel()
+
+			round := firstRound(depWorkspace(), libPackage, unrequiredPackage)
+			round.Uses = nil
+			units, err := depend(t, round, depWorkspace(), depStores())
+			assert.NoError(t, err, "the round places what it can")
+			expect.Empty(t, units, "no declaration names the packages")
+			expect.Empty(t, round.Unplaced(), "the round reports no need that no declaration names")
+		})
+
+		t.Run("places the package of a use that is no need of the round", func(t *testing.T) {
+			t.Parallel()
+
+			round := firstRound(depWorkspace(), libPackage)
+			round.Needs = nil
+			units, err := depend(t, round, depWorkspace(), depStores())
+			assert.NoError(t, err, "the round places the use")
+			want := [][]plugin.SourceRef{{{Path: cached(libDir + "/pkg.go"), Shared: []string{appGoMod}}}}
+			assert.Equal(t, units, want, "a dependency unit of an earlier round names the package")
+		})
+
+		t.Run("reports nothing for a use that places nowhere and is no need of the round", func(t *testing.T) {
+			t.Parallel()
+
+			round := firstRound(depWorkspace(), unrequiredPackage)
+			round.Needs = nil
+			units, err := depend(t, round, depWorkspace(), depStores())
+			assert.NoError(t, err, "the round places what it can")
+			expect.Empty(t, units, "no required module provides the package")
+			expect.Empty(t, round.Unplaced(), "the load reports a need alone")
+		})
+
+		t.Run("places the package of two uses once", func(t *testing.T) {
+			t.Parallel()
+
+			round := firstRound(depWorkspace(), libPackage)
+			round.Uses = []symbol.Identity{
+				{Lang: frontend.Lang, Package: libPackage, Name: firstName},
+				{Lang: frontend.Lang, Package: libPackage, Name: lastName},
+			}
+			units, err := depend(t, round, depWorkspace(), depStores())
+			assert.NoError(t, err, "the round places the uses")
+			assert.Length(t, units, 1, "one unit declares both names")
 		})
 
 		t.Run("reports nothing for the needs it places", func(t *testing.T) {
@@ -659,7 +705,8 @@ func reportedRound(
 
 // firstRound returns the first dependency round over a workspace for the
 // needs given, with every go.mod of the workspace as the round's shared
-// inputs.
+// inputs. Each need has a use of its package, as a declaration of the
+// workspace that names the package records it.
 func firstRound(tree fstest.MapFS, needs ...string) *plugin.DependencyRound {
 	var goMods []string
 	for p := range tree {
@@ -671,6 +718,7 @@ func firstRound(tree fstest.MapFS, needs ...string) *plugin.DependencyRound {
 	round := &plugin.DependencyRound{Number: 1, Shared: goMods}
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})
+		round.Uses = append(round.Uses, symbol.Identity{Lang: frontend.Lang, Package: need})
 	}
 	return round
 }

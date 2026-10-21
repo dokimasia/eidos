@@ -9,13 +9,16 @@
 // template vocabulary in [Funcs], the filename and name spelling of
 // the spell package, the enum and throw lowering [Lower], the
 // statement printer [Scaffold], the import-block renderer
-// [Imports], and go/format as the finalising step.
+// [Imports], and [Format], which runs gofumpt and golines, as the
+// finalising step.
 //
 // # Dependency position
 //
 // lang/go/backend imports the sdk's backend, emit, plugin, render
 // and symbol facades, the module root for the language identity,
 // lang/go/spell for filename and name spelling, the lowering,
-// naming, scaffold, spellref and textfmt helpers of eidos-lang, and
-// the Go stdlib, go/format and go/scanner among it.
+// naming, scaffold, spellref and textfmt helpers of eidos-lang, the
+// format package of mvdan.cc/gofumpt, the shorten package of
+// github.com/golangci/golines, and the Go stdlib, go/scanner among
+// it.
 package backend

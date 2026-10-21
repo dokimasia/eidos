@@ -7,9 +7,11 @@ import (
 	"go/format"
 	"testing"
 
+	"github.com/golangci/golines/shorten"
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"
+	gofumpt "mvdan.cc/gofumpt/format"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
@@ -47,19 +49,30 @@ const (
 // svcPackage is the package of the units that the cases render.
 var svcPackage = symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbol.KindPackage}
 
+// projectVersion is the version of Go of a project that formats the
+// rendered files with gofumpt. projectWidth and projectTab are the width at
+// which its golines wraps them and the columns of a tab, the defaults of
+// golines.
+const (
+	projectVersion = "go1.27"
+	projectWidth   = 100
+	projectTab     = 4
+)
+
 // These constants are the allocations of a build and of the scaled
 // corpus.
 const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
-	// template and the seven kind templates, and the spec of the policy of
-	// the binding of gRPC.
-	newAllocs = 1_613
+	// template and the seven kind templates, and the specs of the policies of
+	// the binding of gRPC and of the width of a line.
+	newAllocs = 1_614
 	// renderAllocs is one render of the scaled corpus of 200,000
-	// declarations: text/template's reflective calls, about half of its
-	// allocations, go/format's parse and print of every file, about four
-	// in ten, and the vocabulary's spellings. One run counted 19,385,404,
-	// and the budget is a round number about 5% above it.
-	renderAllocs = 20_400_000
+	// declarations: gofumpt's parse, rules and print of every file, about
+	// half of its allocations, text/template's reflective calls, about four
+	// in ten, and the vocabulary's spellings. No line of the corpus passes
+	// 100 columns, so golines does not run. One run counted 22,829,729, and
+	// the budget is a round number about 5% above it.
+	renderAllocs = 24_000_000
 	// settleAllocs is one settle of the scaled corpus of 200,000
 	// declarations: the lowering of sums, enums and receivers, the
 	// respelling of every name, and the reindex. One run counted
@@ -135,6 +148,44 @@ func TestNew(t *testing.T) {
 				formatted, err := format.Source(out)
 				assert.NoError(t, err, "gofmt reads the stamped file")
 				expect.Equal(t, string(formatted), string(out), "gofmt writes the same bytes as the stamp")
+			}
+		})
+
+		t.Run("returns a backend whose stamped files gofumpt leaves unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			c, err := output.NewContract(contractBrand, golang.Syntax())
+			assert.NoError(t, err, "the module contract composes")
+			files := backendtest.RenderSettled(t, setup)
+			assert.NotEmpty(t, files, "the fixture renders files")
+			for _, f := range files {
+				out, err := c.Stamp(f)
+				assert.NoError(t, err, "the file stamps")
+				formatted, err := gofumpt.Source(out, gofumpt.Options{
+					LangVersion: projectVersion,
+					Extra:       gofumpt.Extra{GroupParams: true, ClotheReturns: true, BalanceCalls: true},
+				})
+				assert.NoError(t, err, "gofumpt reads the stamped file")
+				expect.Equal(t, string(formatted), string(out), "gofumpt writes the same bytes as the stamp")
+			}
+		})
+
+		t.Run("returns a backend whose stamped files golines leaves unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			c, err := output.NewContract(contractBrand, golang.Syntax())
+			assert.NoError(t, err, "the module contract composes")
+			files := backendtest.RenderSettled(t, setup)
+			assert.NotEmpty(t, files, "the fixture renders files")
+			lines := shorten.NewShortener(&shorten.Config{
+				MaxLen: projectWidth, TabLen: projectTab, ChainSplitDots: true,
+			})
+			for _, f := range files {
+				out, err := c.Stamp(f)
+				assert.NoError(t, err, "the file stamps")
+				formatted, err := lines.Process(out)
+				assert.NoError(t, err, "golines reads the stamped file")
+				expect.Equal(t, string(formatted), string(out), "golines writes the same bytes as the stamp")
 			}
 		})
 
@@ -252,11 +303,11 @@ func TestNewAllocs(t *testing.T) {
 
 // BenchmarkNew measures the build of the backend, and the composed
 // backend's settle and render of the suite's scaled corpus: the real
-// templates and gofmt per file. The settle leaves the corpus build out
+// templates and the format of each file. The settle leaves the corpus build out
 // of its count. Only -bench checks the two corpus ceilings. No count of
 // [assert.MaxAllocs] leaves the corpus build out, as the settle's count
-// does, and one render takes about 0.4 s on four cores, so an
-// allocation check's 101 calls would take 40 s.
+// does, and one render takes about 0.75 s on four cores, so an
+// allocation check's 101 calls would take 75 s.
 func BenchmarkNew(b *testing.B) {
 	benchCalls(b, append(newCalls(),
 		allocCall{name: "New", caseName: "the render of the scaled corpus", bench: func(b *testing.B) {

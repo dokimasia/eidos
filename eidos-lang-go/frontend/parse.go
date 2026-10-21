@@ -216,7 +216,7 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		}
 		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: built.String(), Pos: file.Pos})
 		if u.Depth() == plugin.DepthSignatures {
-			pruneImports(file)
+			pruneImports(file, nil)
 		}
 		return nil
 	}
@@ -227,12 +227,17 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	if len(pkg.Doc) == 0 {
 		pkg.Doc = parts.Docs
 	}
+	attached := len(gb.Attachments())
 	u.AttachCarriers(pkg, parts.Carriers, BadCarrier)
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
 	if u.Depth() == plugin.DepthSignatures {
-		pruneImports(file)
+		used := map[string]bool{}
+		recordUses(u, l, pkgPath, file, gb.Attachments()[attached:], used)
+		pruneImports(file, used)
+	} else {
+		recordUses(u, l, pkgPath, file, gb.Attachments()[attached:], nil)
 	}
 	batch := st.batch(pkgPath, pkgName)
 	batch.parsed = append(batch.parsed, parsed)

@@ -48,14 +48,17 @@ const (
 )
 
 // dependencies is the dependency round of the Go frontend. It reads the
-// build list from the go.mod files of the round and places each need in
-// the standard library, in the module cache at the selected version, or
-// in the vendor tree of a workspace module where the cache lacks that
-// version. Each placed need is one unit: the .go files of the package
-// directory without its tests.
+// build list from the go.mod files of the round and places the package of
+// each use of the round once: in the standard library, in the module cache
+// at the selected version, or in the vendor tree of a workspace module
+// where the cache lacks that version. Each placed package is one unit: the
+// .go files of the package directory without its tests. A need without a
+// use places nothing, because no declaration and no directive of the load
+// names its package.
 //
-// A need that the build places nowhere yields no unit, and the round
-// reports it with one of these reasons:
+// A package that the build places nowhere yields no unit. Where the
+// package is a need of the round, the round reports it with one of these
+// reasons:
 //
 //   - a workspace module declares it, and its packages load from the
 //     selection alone;
@@ -70,8 +73,8 @@ const (
 // workspace directory that replaces its module.
 //
 // The import "C" refers to the preamble of cgo and to no package, so the
-// round passes over it. These are errors that name the go command that
-// settles them:
+// round passes over a use in it. These are errors that name the go command
+// that settles them:
 //
 //   - a module whose hash no go.sum file records;
 //   - a module whose cached hash differs from the hash of go.sum;
@@ -85,22 +88,28 @@ func (*goFrontend) dependencies(
 	if err != nil {
 		return nil, err
 	}
-	var out [][]plugin.SourceRef
+	needs := make(map[string]bool, len(round.Needs))
 	for _, need := range round.Needs {
+		needs[need.Path] = true
+	}
+	placed := map[string]bool{cgoImport: true}
+	var out [][]plugin.SourceRef
+	for _, use := range round.Uses {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if need.Path == cgoImport {
+		if placed[use.Package] {
 			continue
 		}
-		unit, reason, err := b.place(r, need.Path)
+		placed[use.Package] = true
+		unit, reason, err := b.place(r, use.Package)
 		switch {
 		case err != nil:
 			return nil, err
 		case len(unit) > 0:
 			out = append(out, unit)
-		case !b.generated(need.Path, round.Outputs):
-			round.Unplace(need.Path, reason)
+		case needs[use.Package] && !b.generated(use.Package, round.Outputs):
+			round.Unplace(use.Package, reason)
 		}
 	}
 	return out, nil

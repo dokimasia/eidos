@@ -4,8 +4,6 @@
 package backend
 
 import (
-	"go/format"
-
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/spell"
 	"go.dokimi.dev/eidos/sdk/backend"
@@ -17,12 +15,12 @@ import (
 // binder of gRPC is [spell.Handler] with [spell.Home]. Its split is
 // [spell.Split], which writes the declarations of an external family that
 // test their package from inside into an internal test file. Rendered files
-// finalise through go/format, so a file that does not parse is withheld
-// and reported instead of written, and the bytes that remain are the
-// bytes gofmt leaves.
+// finalise through [Format] at the width of the plan, so a file that does
+// not parse is withheld and reported instead of written, and the bytes that
+// remain are the bytes that gofmt, gofumpt and golines leave.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the seven kind templates: 1,613 allocations.
+// and the seven kind templates: 1,614 allocations.
 func New() backend.Backend {
 	return backend.New(golang.Name, golang.Target, golang.Syntax()).
 		Version(golang.Version).
@@ -42,6 +40,6 @@ func New() backend.Backend {
 		Value(Value).
 		Imports(Imports).
 		TemplateImport(TemplateImport).
-		Finalise(format.Source).
+		FinaliseUnder(Format).
 		Build()
 }
