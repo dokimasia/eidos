@@ -762,6 +762,19 @@ func TestRecords(t *testing.T) {
 				}
 			})
 
+			t.Run("returns every record that enumerated the subjects of a key", func(t *testing.T) {
+				t.Parallel()
+
+				set := store.NewReadSet()
+				set.RecordKey(edgeKey)
+				recorded := recordedPhases(t, ledger.NewMem(), emptyFacts(), nil, func(r *state.Recorder) {
+					r.Lane("").Check(checkID, set, nil)
+				})
+				refs, err := recorded.Phases(t.Context()).Readers(state.KeyEdge(edgeKey))
+				assert.NoError(t, err, "the readers table reads")
+				assert.Equal(t, refs, []state.RecordRef{state.CheckRef(checkID)}, "the check enumerated the key")
+			})
+
 			t.Run("returns every record that reported a finding for the findings edge", func(t *testing.T) {
 				t.Parallel()
 

@@ -24,6 +24,7 @@ const (
 	edgePackage     = 'p'
 	edgeKind        = 'k'
 	edgeDirective   = 'r'
+	edgeKey         = 'y'
 	edgeFact        = 'f'
 	edgeFindings    = 'x'
 	edgeExport      = 'e'
@@ -97,6 +98,15 @@ func KindEdge(k symbol.Kind) EdgeHash {
 func DirectiveEdge(n directive.Name) EdgeHash {
 	var spelling [spellingCap]byte
 	return hashOf(wire.AppendText(append(spelling[:0], edgeDirective), string(n)))
+}
+
+// KeyEdge returns the hash of the membership edge on a key: what an
+// enumeration of the subjects of the key records. It is dirty where a
+// subject gains or loses the key. It allocates nothing for a name that
+// fits in 250 bytes.
+func KeyEdge(key meta.KeyName) EdgeHash {
+	var spelling [spellingCap]byte
+	return hashOf(wire.AppendText(append(spelling[:0], edgeKey), string(key)))
 }
 
 // FactEdge returns the hash of the fact edge at (subject, key): what a
@@ -217,6 +227,9 @@ func appendEdges(dst []EdgeHash, s *store.ReadSet) []EdgeHash {
 	}
 	for n := range s.Directives() {
 		dst = append(dst, DirectiveEdge(n))
+	}
+	for key := range s.Keys() {
+		dst = append(dst, KeyEdge(key))
 	}
 	for subject, key := range s.Facts() {
 		dst = append(dst, FactEdge(subject, key))

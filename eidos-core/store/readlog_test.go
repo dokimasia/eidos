@@ -25,7 +25,7 @@ const (
 	roleKey       meta.KeyName   = "t.role"
 )
 
-// grains is every enumeration of a read set, the five grains in one
+// grains is every enumeration of a read set, the six grains in one
 // value a case compares.
 type grains struct {
 	identities []symbol.Identity
@@ -33,6 +33,7 @@ type grains struct {
 	kinds      []symbol.Kind
 	facts      []meta.FactRef
 	directives []directive.Name
+	keys       []meta.KeyName
 }
 
 // The log keeps what each invocation read while the dispatcher reuses
@@ -191,7 +192,7 @@ func TestReadLogAllocs(t *testing.T) {
 	assert.Equal(t, fresh.Len(), 1, "Load records the entry's one edge")
 }
 
-// BenchmarkReadLog measures a set of five edges, one of each grain,
+// BenchmarkReadLog measures a set of six edges, one of each grain,
 // entering the log, loading back into one set, and leaving the log at a
 // reset. Each measured call works within storage an earlier entry grew,
 // the way a dispatcher reuses its log.
@@ -256,6 +257,7 @@ func everyGrain(tb assert.TB) *store.ReadSet {
 	for range r.ByDirective(logDirective) { // ranging is what records the edges
 	}
 	reads.RecordFact(decl.ID, logKey)
+	reads.RecordKey(logKey)
 	return reads
 }
 
@@ -291,6 +293,8 @@ func pastFourEdges(tb assert.TB) *store.ReadSet {
 	reads.RecordFact(omega.ID, logKey)
 	reads.RecordFact(alpha.ID, roleKey)
 	reads.RecordFact(alpha.ID, logKey)
+	reads.RecordKey(roleKey)
+	reads.RecordKey(logKey)
 	return reads
 }
 
@@ -301,6 +305,7 @@ func grainsOf(s *store.ReadSet) grains {
 		packages:   slices.Collect(s.Packages()),
 		kinds:      slices.Collect(s.Kinds()),
 		directives: slices.Collect(s.Directives()),
+		keys:       slices.Collect(s.Keys()),
 	}
 	for id, key := range s.Facts() {
 		g.facts = append(g.facts, meta.FactRef{Subject: id, Key: key})

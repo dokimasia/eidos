@@ -29,7 +29,8 @@ import (
 // what the plugin declares, and nothing where the plugin declares nothing.
 //
 // [plugin.DirectiveProvider] returns the schema of each [Directive]
-// wrapper. A typed build sets an empty Kinds of a schema to the kinds of
+// wrapper in the order of the declaration, a wrapper around no rules
+// included. A typed build sets an empty Kinds of a schema to the kinds of
 // the rules under the wrapper, in the order of [symbol.Kind]. For an
 // override schema, it also adds the kinds of the rules of the plugin that
 // no directive gates. An [OnGraph] rule has no subject, so it adds no
@@ -44,7 +45,10 @@ import (
 // at the first build in any test, before a run exists. The workspace
 // returns the faults of a composition as errors. The defects are:
 //
-//   - an empty name, no rules, and a wrapper around no rules
+//   - an empty name, no rules, and a [Where] or [Gated] wrapper around no
+//     rules
+//   - a [Directive] wrapper around no rules whose schema states no Kinds
+//     and does not override
 //   - a duplicate output tag, an empty output word, a zero cardinality,
 //     and a family template that is not a slash-separated path inside a
 //     tree
@@ -312,10 +316,13 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 	}
 	pres := resolvePresentation(name, b.defaults, b.layers)
 
-	var rules []flatRule
-	flatten(name, b.rules, nil, nil, "", &rules)
+	var (
+		rules    []flatRule
+		wrappers []*directive.Schema
+	)
+	flatten(name, b.rules, nil, nil, "", &rules, &wrappers)
 
-	schemas := collectSchemas(name, rules)
+	schemas := collectSchemas(name, wrappers, rules)
 	base = &built{
 		name:     b.name,
 		version:  b.version,
@@ -344,14 +351,16 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 }
 
 // flatten lowers the rule tree to its leaves. It collects the gates of the
-// wrappers on the way down, and panics on a wrapper that gates nothing. A
-// gate on a directive lowers to the canonical spelling of the directive,
-// once for each rule, so the dispatch compares names and builds none. A
-// schema without a plugin lowers to a copy with the name of the plugin,
-// which the rules under its wrapper share.
+// wrappers on the way down, and panics on a [Where] or a [Gated] wrapper
+// around no rules. A gate on a directive lowers to the canonical spelling of
+// the directive, once for each rule, so the dispatch compares names and
+// builds none. A schema without a plugin lowers to a copy with the name of
+// the plugin, which the rules under its wrapper share. flatten appends the
+// schema of each [Directive] wrapper to wrappers in the order of the
+// declaration, a wrapper around no rules included.
 func flatten(
 	name string, rules []Rule, preds []Pred, schema *directive.Schema,
-	gate directive.Name, out *[]flatRule,
+	gate directive.Name, out *[]flatRule, wrappers *[]*directive.Schema,
 ) {
 	for _, r := range rules {
 		held := preds
@@ -375,13 +384,14 @@ func flatten(
 					sch = &owned
 				}
 				on = sch.Canonical()
+				*wrappers = append(*wrappers, sch)
 			}
 		}
 		if r.leaf == nil {
-			if len(r.children) == 0 {
+			if len(r.children) == 0 && r.schema == nil {
 				panic("eidos: " + name + " declares a wrapper around no rules")
 			}
-			flatten(name, r.children, held, sch, on, out)
+			flatten(name, r.children, held, sch, on, out, wrappers)
 			continue
 		}
 		for _, p := range held {
@@ -460,26 +470,28 @@ func kernelDirective(name directive.Name) bool {
 	})
 }
 
-// collectSchemas returns the schemas of the wrappers, one for each name,
-// with the kinds that [kinded] sets. The rules under one wrapper share its
-// schema. collectSchemas panics on a name that two wrappers declare,
-// because one wrapper gates every rule of a directive.
-func collectSchemas(name string, rules []flatRule) []directive.Schema {
-	byName := map[directive.Name]*directive.Schema{}
-	var out []directive.Schema
-	for _, fr := range rules {
-		if fr.schema == nil {
-			continue
+// collectSchemas returns the schemas of the wrappers in the order of the
+// declaration, with the kinds that [kinded] sets. The rules under one
+// wrapper share its schema. collectSchemas panics on a name that two
+// wrappers declare, because one wrapper gates every rule of a directive. It
+// also panics on a wrapper around no rules whose schema states no kinds and
+// does not override, because no rule gives the kinds of the declarations
+// that an instance may be written on.
+func collectSchemas(name string, wrappers []*directive.Schema, rules []flatRule) []directive.Schema {
+	declared := map[directive.Name]struct{}{}
+	out := make([]directive.Schema, 0, len(wrappers))
+	for _, w := range wrappers {
+		canonical := w.Canonical()
+		if _, taken := declared[canonical]; taken {
+			panic("eidos: " + name + " declares directive " +
+				string(canonical) + " in two wrappers; one wrapper gates them all")
 		}
-		if held, taken := byName[fr.gate]; taken {
-			if held != fr.schema {
-				panic("eidos: " + name + " declares directive " +
-					string(fr.gate) + " in two wrappers; one wrapper gates them all")
-			}
-			continue
+		declared[canonical] = struct{}{}
+		gates := slices.ContainsFunc(rules, func(fr flatRule) bool { return fr.schema == w })
+		if !gates && len(w.Kinds) == 0 && !w.Overrides {
+			panic("eidos: " + name + " declares directive " + string(canonical) + " around no rules and without kinds")
 		}
-		byName[fr.gate] = fr.schema
-		out = append(out, kinded(name, fr.schema, rules))
+		out = append(out, kinded(name, w, rules))
 	}
 	return out
 }

@@ -32,6 +32,17 @@ func (n Name) Plugin() string {
 	return plugin
 }
 
+// Bare returns the spelling without its plugin prefix: the part after the
+// colon of a prefixed spelling, and the spelling itself for a bare one.
+// Bare does not allocate, because the part shares the bytes of the name.
+func (n Name) Bare() Name {
+	_, bare, prefixed := strings.Cut(string(n), string(prefixSep))
+	if !prefixed {
+		return n
+	}
+	return Name(bare)
+}
+
 // Valid reports whether the name is one identifier of the grammar, or
 // the identifier of a plugin, a colon and an identifier. An identifier
 // is a letter followed by letters, digits, hyphens and underscores.

@@ -194,7 +194,7 @@ func TestReader(t *testing.T) {
 			slices.SortFunc(ids, symbol.Identity.Compare)
 			assert.Equal(t, slices.Collect(reads.Identities()), ids,
 				"the loaded declaration and the enumerated one")
-			assert.Equal(t, reads.Len(), 6, "beside the loaded package, kind, directive and fact edges")
+			assert.Equal(t, reads.Len(), 7, "beside the loaded package, kind, directive, fact and key edges")
 		})
 	})
 

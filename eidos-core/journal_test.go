@@ -53,11 +53,13 @@ type journaled struct {
 	plugin.Invocation
 	// read reports whether the invocation passed a read set.
 	read bool
-	// identities, packages and facts are the declaration edges, the
-	// package edges and the fact edges of the set.
+	// identities, packages, facts and keys are the declaration edges, the
+	// package edges, the fact edges and the membership edges on a key of the
+	// set.
 	identities []symbol.Identity
 	packages   []symbol.Identity
 	facts      []meta.FactRef
+	keys       []meta.KeyName
 }
 
 // evaluation is the matches of one candidate that a recorder received.
@@ -91,6 +93,7 @@ func (r *recorder) Invoked(inv plugin.Invocation) {
 		for id, key := range inv.Reads.Facts() {
 			j.facts = append(j.facts, meta.FactRef{Subject: id, Key: key})
 		}
+		j.keys = slices.Collect(inv.Reads.Keys())
 	}
 	j.Reads = nil
 	r.invoked = append(r.invoked, j)

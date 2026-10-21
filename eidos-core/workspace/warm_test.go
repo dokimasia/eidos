@@ -23,6 +23,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/state"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
@@ -51,6 +52,10 @@ const copierID plugin.ID = "copier"
 // labelerID is the annotator that stamps the width of each struct with its
 // directive, at the directive's authority.
 const labelerID plugin.ID = "labeler"
+
+// subjectListerID is the generator that lists the structs on which the
+// labeler stamped a width.
+const subjectListerID plugin.ID = "subject-lister"
 
 // labelLine is the directive of the labeler on the struct of the line
 // before it.
@@ -248,6 +253,29 @@ func TestWarm(t *testing.T) {
 			assert.NoError(t, err, "the run is clean")
 			expect.Equal(t, generatedBy(report, copierID), 1, "the copier runs on the reader again")
 			expect.Equal(t, report.Stats.Rendered, 1, "the run renders the copier's file")
+		})
+
+		t.Run("runs again a generator invocation that enumerated a key that a subject gained", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys, labeler(t, keys)).Plans(subjectListing(t, keys)))
+			report, err := warmAfter(t, w, warmTree(rowLine, labelLine, colLine, readerLine),
+				warmTree(rowLine, labelLine, colLine, labelLine, readerLine))
+			assert.NoError(t, err, "the run is clean")
+			expect.Equal(t, generatedBy(report, subjectListerID), 1, "the lister runs again for the labeled column")
+		})
+
+		t.Run("runs no generator invocation that enumerated a key whose value alone changed", func(t *testing.T) {
+			t.Parallel()
+
+			keys := &warmKeys{}
+			w := built(t, warmBuilder(t, ledger.NewMem(), keys, labeler(t, keys)).Plans(subjectListing(t, keys)))
+			report, err := warmAfter(t, w, warmTree(rowLine, labelLine, colLine, readerLine),
+				warmTree(widerRow, labelLine, colLine, readerLine))
+			assert.NoError(t, err, "the run is clean")
+			expect.Equal(t, generatedBy(report, subjectListerID), 0,
+				"the label of the row changed its value and not its presence")
 		})
 
 		t.Run("routes a file again after an edit of the out directive on its package", func(t *testing.T) {
@@ -558,6 +586,29 @@ func copying(tb assert.TB, keys *warmKeys) workspace.Plan {
 			return nil
 		}))).Generator()
 	return sealedPlan("copies", copier)
+}
+
+// subjectListing returns the plan of the subject lister. Its graph rule
+// lists the structs on which the labeler stamped a width, without a read of
+// the widths, and writes one declaration for each into a file named after
+// the plan.
+func subjectListing(tb assert.TB, keys *warmKeys) workspace.Plan {
+	tb.Helper()
+
+	lister := eidos.NewPlugin(subjectListerID).
+		Output(plugin.Output{Per: plugin.PerPlan, Word: "list"}).
+		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+			for id := range eidos.Subjects(m, keys.labeled) {
+				e.PlanFile().Append(&emit.Struct{Name: "Listed" + id.Name})
+			}
+			return nil
+		})).Generator()
+	return workspace.Plan{
+		Name:       "lists",
+		Generators: []plugin.Generator{lister},
+		Backend:    fixturePrinter(),
+		Layout:     layout.Config{Dir: planDir},
+	}
 }
 
 // labeler returns the annotator of the label directive. On each struct

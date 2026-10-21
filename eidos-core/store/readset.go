@@ -18,22 +18,24 @@ import (
 // looks up a declaration records.
 const inlineEdges = 4
 
-// grain is the kind of one edge, one of the five a set records.
+// grain is the kind of one edge, one of the six a set records.
 type grain uint8
 
-// The five grains, numbered from one, so the zero edge has none.
+// The six grains, numbered from one, so the zero edge has none.
 const (
 	grainIdentity  grain = 1
 	grainPackage   grain = 2
 	grainKind      grain = 3
 	grainFact      grain = 4
 	grainDirective grain = 5
+	grainKey       grain = 6
 )
 
 // edge is one recorded edge: its grain and the fields the grain uses. A
 // declaration edge and a package edge use id, a membership edge by kind
-// uses kind, a fact edge uses id for the subject and name for the key,
-// and a membership edge by directive uses name for the spelling.
+// uses kind, a fact edge uses id for the subject and name for the key, a
+// membership edge by directive uses name for the spelling, and a
+// membership edge on a key uses name for the key.
 type edge struct {
 	grain grain
 	kind  symbol.Kind
@@ -50,10 +52,11 @@ type factRead struct {
 // ReadSet is what one derived artifact read.
 //
 // Edges deduplicate, so a loop reading one declaration a thousand
-// times records one edge. The set records five grains of the four edge
+// times records one edge. The set records six grains of the four edge
 // kinds: a declaration edge for a targeted read, a package edge for a
 // package taken whole, a membership edge for an enumeration by kind,
-// a membership edge for an enumeration by directive, and a fact edge at
+// a membership edge for an enumeration by directive, a membership edge
+// for an enumeration of the subjects of a key, and a fact edge at
 // (subject, key) for a fact read. ReadSet satisfies [meta.Recorder], so
 // one artifact's declaration reads and fact reads arrive in one set.
 //
@@ -93,6 +96,7 @@ type ReadSet struct {
 	kinds      map[symbol.Kind]struct{}
 	facts      map[factRead]struct{}
 	directives map[directive.Name]struct{}
+	keys       map[meta.KeyName]struct{}
 }
 
 // NewReadSet returns a read set with no edges. It allocates the set,
@@ -100,7 +104,7 @@ type ReadSet struct {
 func NewReadSet() *ReadSet { return &ReadSet{} }
 
 // Reset drops every recorded edge and keeps the maps, so a dispatcher
-// reuses one set across a rule's invocations instead of building five
+// reuses one set across a rule's invocations instead of building six
 // maps per subject. The set records again immediately, in place. It
 // zeroes the edges it kept in place or loaded, so a set kept for reuse
 // retains no string of the graph that recorded them.
@@ -117,6 +121,7 @@ func (s *ReadSet) Reset() {
 	clear(s.kinds)
 	clear(s.facts)
 	clear(s.directives)
+	clear(s.keys)
 	s.spilled = false
 }
 
@@ -155,6 +160,19 @@ func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName] {
 	return func(yield func(symbol.Identity, meta.KeyName) bool) { s.eachFact(yield) }
 }
 
+// RecordKey records the membership edge on key: what an enumeration of
+// the subjects of a key records. The edge is dirty where a subject gains
+// or loses the key, and a change of the value on a subject leaves it
+// clean. A reader of the value records the fact edge beside it.
+func (s *ReadSet) RecordKey(key meta.KeyName) {
+	s.record(edge{grain: grainKey, name: string(key)})
+}
+
+// Keys returns every membership edge on a key, in name order.
+func (s *ReadSet) Keys() iter.Seq[meta.KeyName] {
+	return func(yield func(meta.KeyName) bool) { s.eachKey(yield) }
+}
+
 // AppendPointReads appends the set's point reads to dst and returns the
 // extended slice: what a claim records as its derivation. The
 // declaration and package edges come first, as reads of their subject,
@@ -173,7 +191,7 @@ func (s *ReadSet) AppendPointReads(dst []meta.Read) []meta.Read {
 	if !s.spilled {
 		points = 0
 		for i := range listed {
-			if g := listed[i].grain; g != grainKind && g != grainDirective {
+			if g := listed[i].grain; g == grainIdentity || g == grainPackage || g == grainFact {
 				points++
 			}
 		}
@@ -224,13 +242,13 @@ func (s *ReadSet) Directives() iter.Seq[directive.Name] {
 	return func(yield func(directive.Name) bool) { s.eachDirective(yield) }
 }
 
-// Len returns how many edges the set contains, all five grains
+// Len returns how many edges the set contains, all six grains
 // counted.
 func (s *ReadSet) Len() int {
 	if !s.spilled {
 		return len(s.listed())
 	}
-	return len(s.identities) + len(s.packages) + len(s.kinds) + len(s.facts) + len(s.directives)
+	return len(s.identities) + len(s.packages) + len(s.kinds) + len(s.facts) + len(s.directives) + len(s.keys)
 }
 
 // eachIdentity calls yield with every edge of g, the declaration grain
@@ -264,6 +282,17 @@ func (s *ReadSet) eachDirective(yield func(directive.Name) bool) {
 		return
 	}
 	each(sortedKeys(s.directives, cmp.Compare[directive.Name]), yield)
+}
+
+// eachKey calls yield with every membership edge on a key, in name order,
+// until yield returns false.
+func (s *ReadSet) eachKey(yield func(meta.KeyName) bool) {
+	if !s.spilled {
+		eachListed(s, grainKey, func(e *edge) meta.KeyName { return meta.KeyName(e.name) },
+			cmp.Compare[meta.KeyName], yield)
+		return
+	}
+	each(sortedKeys(s.keys, cmp.Compare[meta.KeyName]), yield)
 }
 
 // eachFact calls yield with every recorded fact read, in subject then
@@ -384,6 +413,11 @@ func (s *ReadSet) insert(e edge) {
 			s.directives = map[directive.Name]struct{}{}
 		}
 		s.directives[directive.Name(e.name)] = struct{}{}
+	case grainKey:
+		if s.keys == nil {
+			s.keys = map[meta.KeyName]struct{}{}
+		}
+		s.keys[meta.KeyName(e.name)] = struct{}{}
 	}
 }
 
@@ -417,8 +451,8 @@ func eachListed[T any](s *ReadSet, g grain, get func(*edge) T, compare func(a, b
 
 // compareEdges orders two edges by grain, then in the order of the
 // grain's enumeration: declaration and package edges by identity, fact
-// edges by subject and then by key, membership edges by kind or by the
-// directive's name.
+// edges by subject and then by key, membership edges by kind, by the
+// directive's name or by the key's name.
 func compareEdges(a, b edge) int {
 	if a.grain != b.grain {
 		return cmp.Compare(a.grain, b.grain)

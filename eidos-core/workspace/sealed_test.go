@@ -1192,8 +1192,9 @@ func damageSegment(t *testing.T, mem *ledger.Mem, pick func(live int) bool, dama
 // do not take. The paths are a name that joins a scope, an export that
 // changes, the audit and a check, a clash with a kept file, a kept
 // finding, a plan that did not commit, a weaver that appends into a
-// mirror again, a weaver whose mirror disappears, and a package whose
-// clause an edit renames.
+// mirror again, a weaver whose mirror disappears, a package whose clause
+// an edit renames, a fact whose winner changes, and a key that gains a
+// subject.
 func damageScenarios() []damageScenario {
 	return []damageScenario{
 		{
@@ -1273,6 +1274,23 @@ func damageScenarios() []damageScenario {
 			},
 			before: func() fstest.MapFS { return clauseTree(cacheClause) },
 			after:  func() fstest.MapFS { return clauseTree(renamedClause) },
+		},
+		{
+			name: "a warm run whose edit changes the winner of a fact that an invocation read",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, warmBuilder(tb, l, &warmKeys{}))
+			},
+			before: func() fstest.MapFS { return warmTree(rowLine, colLine, readerLine) },
+			after:  func() fstest.MapFS { return warmTree(widerRow, colLine, readerLine) },
+		},
+		{
+			name: "a warm run whose edit adds a subject of a key that a plan enumerates",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				keys := &warmKeys{}
+				return built(tb, warmBuilder(tb, l, keys, labeler(tb, keys)).Plans(subjectListing(tb, keys)))
+			},
+			before: func() fstest.MapFS { return warmTree(rowLine, labelLine, colLine, readerLine) },
+			after:  func() fstest.MapFS { return warmTree(rowLine, labelLine, colLine, labelLine, readerLine) },
 		},
 	}
 }

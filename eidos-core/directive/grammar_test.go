@@ -54,6 +54,27 @@ func TestGrammar(t *testing.T) {
 		}
 	})
 
+	t.Run("Bare", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give directive.Name
+			want directive.Name
+		}{
+			{name: "returns the part after the prefix of a prefixed name", give: "mockgen:stub", want: "stub"},
+			{name: "returns a bare plugin name whole", give: "stub", want: "stub"},
+			{name: "returns a kernel name whole", give: directive.KernelSkip, want: directive.KernelSkip},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.Bare(), tt.want, "the bare part is the part after the colon")
+			})
+		}
+	})
+
 	t.Run("Valid", func(t *testing.T) {
 		t.Parallel()
 
@@ -382,6 +403,9 @@ func TestGrammarAllocs(t *testing.T) {
 	var plugin string
 	assert.MaxAllocs(t, func() { plugin = name.Plugin() }, 0, "Plugin allocates nothing")
 	assert.Equal(t, plugin, "mockgen", "Plugin returns the prefix")
+	var bare directive.Name
+	assert.MaxAllocs(t, func() { bare = name.Bare() }, 0, "Bare allocates nothing")
+	assert.Equal(t, bare, directive.Name("stub"), "Bare returns the part after the prefix")
 	var valid bool
 	assert.MaxAllocs(t, func() { valid = name.Valid() }, 0, "Valid allocates nothing")
 	assert.True(t, valid, "Valid accepts a prefixed name")
@@ -425,6 +449,17 @@ func BenchmarkGrammar(b *testing.B) {
 			got = name.Plugin()
 		}
 		assert.Equal(b, got, "mockgen", "Plugin returns the prefix")
+	})
+
+	b.Run("Name.Bare", func(b *testing.B) {
+		name := directive.Name("mockgen:stub")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got directive.Name
+		for c.Loop() {
+			got = name.Bare()
+		}
+		assert.Equal(b, got, directive.Name("stub"), "Bare returns the part after the prefix")
 	})
 
 	b.Run("Name.Valid", func(b *testing.B) {

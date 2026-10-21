@@ -84,8 +84,11 @@ type leaf struct {
 // sets an empty Kinds of s from the rules, as the documentation of
 // [Builder] states. A typed build gives a schema with an empty Plugin the
 // name of the plugin, and the workspace refuses a schema that names
-// another plugin. Directive allocates the copy of the schema and the list
-// of rules, two allocations.
+// another plugin. A wrapper around no rules registers s and gates nothing,
+// for a directive that a handler of another rule reads through the
+// Directives method of [SubjectMatch]. Its schema states its Kinds unless
+// it overrides, and a typed build panics otherwise. Directive allocates the
+// copy of the schema and the list of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return Rule{schema: &s, children: rules}
 }

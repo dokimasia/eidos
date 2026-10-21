@@ -60,6 +60,10 @@ const (
 	listerID plugin.ID = "lister"
 )
 
+// keyListerID is the generator of the case of a key read. It enumerates
+// the subjects of the flag on each struct.
+const keyListerID plugin.ID = "key-lister"
+
 // bogusID is the ID of a record that no run records.
 const bogusID = 1
 
@@ -160,7 +164,8 @@ func TestExplain(t *testing.T) {
 				{name: "returns kind for ReadKind", give: workspace.ReadKind, want: "kind"},
 				{name: "returns directive for ReadDirective", give: workspace.ReadDirective, want: "directive"},
 				{name: "returns export for ReadExport", give: workspace.ReadExport, want: "export"},
-				{name: "returns the number of an undeclared grain", give: workspace.ReadGrain(7), want: "ReadGrain(7)"},
+				{name: "returns key for ReadKey", give: workspace.ReadKey, want: "key"},
+				{name: "returns the number of an undeclared grain", give: workspace.ReadGrain(8), want: "ReadGrain(8)"},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
@@ -325,6 +330,27 @@ func TestExplain(t *testing.T) {
 			assert.InRange(t, at, 0, math.Inf(1), "the binder ran on the row")
 			assert.Contains(t, got.Executions[at].Reads, workspace.Read{Grain: workspace.ReadExport, Plan: planName},
 				"the binder read the plan's export")
+		})
+
+		t.Run("identifies the key read of an invocation", func(t *testing.T) {
+			t.Parallel()
+
+			lister := generator(keyListerID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				for range eidos.Subjects(m, meta.Named[bool](flagName)) { // ranging is what records the edge
+				}
+				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: "Listed" + m.Struct.Name})
+				return nil
+			})
+			var flag meta.Key[bool]
+			w := built(t, phaseRecording(t, ledger.NewMem(), &flag).Plans(sealedPlan("lists", lister)))
+			sealedRun(t, w, workspace.Input{Tree: markedTree("")})
+			got, err := w.Explain(t.Context(), workspace.Target{Identity: rowID})
+			assert.NoError(t, err, "the generation explains the row")
+			listed := func(r workspace.ExplainedExecution) bool { return r.Match.Plugin == keyListerID }
+			at := slices.IndexFunc(got.Executions, listed)
+			assert.InRange(t, at, 0, math.Inf(1), "the lister ran on the row")
+			assert.Contains(t, got.Executions[at].Reads, workspace.Read{Grain: workspace.ReadKey, Key: flagName},
+				"the lister enumerated the subjects of the flag")
 		})
 
 		t.Run("returns the entry alone of a file whose group the generation does not record", func(t *testing.T) {

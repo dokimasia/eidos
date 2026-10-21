@@ -266,9 +266,20 @@ func TestBuilder(t *testing.T) {
 				build: func() { eidos.NewPlugin("t").Handle(eidos.Rule{}).Generator() },
 			},
 			{
-				name: "panics on a directive wrapper around no rules",
+				name: "panics on a directive wrapper around no rules whose schema states no kinds",
 				build: func() {
-					eidos.NewPlugin("stubgen").Handle(eidos.Directive(stubSchema("stub"))).Generator()
+					eidos.NewPlugin("stubgen").Handle(eidos.Directive(stubSchema("stub")), emitNothing()).Generator()
+				},
+			},
+			{
+				name: "panics on one directive name in a wrapper around no rules and in another wrapper",
+				build: func() {
+					declared := stubSchema("stub")
+					declared.Kinds = []symbol.Kind{symbol.KindStruct}
+					eidos.NewPlugin("stubgen").Handle(
+						eidos.Directive(stubSchema("stub"), onEmit()),
+						eidos.Directive(declared),
+					).Generator()
 				},
 			},
 			{
@@ -458,6 +469,14 @@ func TestBuilder(t *testing.T) {
 				},
 			},
 			{
+				name: "panics on a directive wrapper inside another directive wrapper",
+				build: func() {
+					eidos.NewPlugin("stubgen").Handle(
+						eidos.Directive(stubSchema("stub"), eidos.Directive(stubSchema("mock"), onEmit())),
+					).Generator()
+				},
+			},
+			{
 				name: "panics on a directive gate on a graph rule",
 				build: func() {
 					eidos.NewPlugin("stubgen").Handle(
@@ -623,6 +642,16 @@ func TestBuilder(t *testing.T) {
 				rules: []eidos.Rule{eidos.Directive(explicitOverriding, onFunction), onMethod},
 				want:  explicitOverriding.Kinds,
 			},
+			{
+				name:  "returns the explicit kinds of a wrapper around no rules",
+				rules: []eidos.Rule{eidos.Directive(explicit), emitNothing()},
+				want:  explicit.Kinds,
+			},
+			{
+				name:  "returns the kinds of the bare rules of the plugin for an override schema around no rules",
+				rules: []eidos.Rule{eidos.Directive(overriding), onMethod},
+				want:  []symbol.Kind{symbol.KindMethod},
+			},
 		}
 		for _, tt := range derivations {
 			t.Run(tt.name, func(t *testing.T) {
@@ -645,6 +674,32 @@ func TestBuilder(t *testing.T) {
 			assert.Equal(t, got, any("eidos: stubgen handles Struct under directive stubgen:audit, "+
 				"and the kinds of the directive leave it out"),
 				"the panic states the plugin, the kind and the directive")
+		})
+
+		t.Run("panics on a wrapper around no rules whose schema states no kinds", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("stubgen").Handle(eidos.Directive(stubSchema("excuse")), emitNothing()).Generator()
+			}, "the declaration defect panics at the typed build")
+			assert.Equal(t, got, any("eidos: stubgen declares directive stubgen:excuse around no rules "+
+				"and without kinds"),
+				"the panic states the plugin and the directive")
+		})
+
+		t.Run("returns the schema of a wrapper around no rules in the order of the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			schemas := schemasOf(t, eidos.NewPlugin("stubgen").Handle(
+				eidos.Directive(explicit),
+				eidos.Directive(stubSchema("mock"), onStruct),
+			).Generator())
+			names := make([]directive.Name, 0, len(schemas))
+			for _, s := range schemas {
+				names = append(names, s.Name)
+			}
+			assert.Equal(t, names, []directive.Name{"audit", "mock"},
+				"the wrapper around no rules registers its schema first")
 		})
 	})
 }

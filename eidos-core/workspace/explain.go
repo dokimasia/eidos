@@ -98,6 +98,9 @@ const (
 	ReadDirective ReadGrain = 5
 	// ReadExport is a read of the export of one plan.
 	ReadExport ReadGrain = 6
+	// ReadKey is an enumeration of the subjects on which one key reads
+	// present.
+	ReadKey ReadGrain = 7
 )
 
 // String returns the name of the grain for a report, such as
@@ -117,6 +120,8 @@ func (g ReadGrain) String() string {
 		return "directive"
 	case ReadExport:
 		return "export"
+	case ReadKey:
+		return "key"
 	default:
 		return "ReadGrain(" + strconv.Itoa(int(g)) + ")"
 	}
@@ -132,7 +137,8 @@ type Read struct {
 	Directive directive.Name
 	Plan      string
 	// Subject is the declaration of a declaration read or a fact read, and
-	// the package of a package read. Key is the key of a fact read.
+	// the package of a package read. Key is the key of a fact read and of a
+	// key enumeration.
 	Subject symbol.Identity
 	Key     meta.KeyName
 }
@@ -305,7 +311,7 @@ func (w *Workspace) explain(ctx context.Context, l ledger.Ledger, t Target) (*Ex
 		loaded:   loaded,
 		facts:    meta.Restore(w.keys, phases),
 		units:    units,
-		common:   commonEdges(units, w.plans),
+		common:   commonEdges(units, w.plans, w.keys),
 		subjects: map[symbol.Identity]map[state.EdgeHash]Read{},
 		files:    map[string]bool{},
 		out:      &Explanation{Generation: g.Name, Recorded: g.Header.Anchor},
@@ -777,8 +783,9 @@ func (x *explainer) declarations(admit func(load.UnitRecord) bool, visit func(no
 // commonEdges maps the hash of each edge that is the same for every record
 // to its read. These edges are the edge of every kind, which commonEdges
 // enumerates through [symbol.ParseKind], the edge of every directive name
-// that a unit summary lists, and the export edge of every plan.
-func commonEdges(units []load.UnitRecord, plans []compiledPlan) map[state.EdgeHash]Read {
+// that a unit summary lists, the membership edge on every key that keys
+// registered, and the export edge of every plan.
+func commonEdges(units []load.UnitRecord, plans []compiledPlan, keys *meta.Registry) map[state.EdgeHash]Read {
 	common := map[state.EdgeHash]Read{}
 	for k := symbol.KindInvalid + 1; ; k++ {
 		if _, known := symbol.ParseKind(k.String()); !known {
@@ -790,6 +797,9 @@ func commonEdges(units []load.UnitRecord, plans []compiledPlan) map[state.EdgeHa
 		for _, n := range u.Summary.Directives {
 			common[state.DirectiveEdge(n)] = Read{Grain: ReadDirective, Directive: n}
 		}
+	}
+	for name := range keys.Keys() {
+		common[state.KeyEdge(name)] = Read{Grain: ReadKey, Key: name}
 	}
 	for i := range plans {
 		common[state.ExportEdge(plans[i].name)] = Read{Grain: ReadExport, Plan: plans[i].name}

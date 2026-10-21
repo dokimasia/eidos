@@ -27,6 +27,7 @@ const (
 	packageTag     = 'p'
 	kindTag        = 'k'
 	directiveTag   = 'r'
+	keyTag         = 'y'
 	factTag        = 'f'
 	findingsTag    = 'x'
 	exportTag      = 'e'
@@ -123,6 +124,24 @@ func TestEdge(t *testing.T) {
 
 			want := pinnedHash(spelledText([]byte{directiveTag}, string(edgeDirective)))
 			assert.Equal(t, state.DirectiveEdge(edgeDirective), want, "the spelling's SHA-256, first eight bytes")
+		})
+	})
+
+	t.Run("KeyEdge", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the hash of the key tag and the name", func(t *testing.T) {
+			t.Parallel()
+
+			want := pinnedHash(spelledText([]byte{keyTag}, string(edgeKey)))
+			assert.Equal(t, state.KeyEdge(edgeKey), want, "the spelling's SHA-256, first eight bytes")
+		})
+
+		t.Run("returns another hash than the directive edge of the same text", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, state.KeyEdge(edgeKey), state.DirectiveEdge(directive.Name(edgeKey)),
+				"the tags keep the two grains apart")
 		})
 	})
 
@@ -265,6 +284,7 @@ func TestEdgeAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = state.PackageEdge(edgePackage) }, 0, "PackageEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.KindEdge(symbol.KindStruct) }, 0, "KindEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.DirectiveEdge(edgeDirective) }, 0, "DirectiveEdge allocates nothing")
+	assert.MaxAllocs(t, func() { got = state.KeyEdge(edgeKey) }, 0, "KeyEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.FactEdge(edgeStruct, edgeKey) }, 0, "FactEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.ExportEdge(edgePlan) }, 0, "ExportEdge allocates nothing")
 	key := plugin.NameKey{Origin: edgeStruct, Emitted: "User"}
@@ -288,6 +308,7 @@ func BenchmarkEdge(b *testing.B) {
 		{name: "PackageEdge", hash: func() state.EdgeHash { return state.PackageEdge(edgePackage) }},
 		{name: "KindEdge", hash: func() state.EdgeHash { return state.KindEdge(symbol.KindStruct) }},
 		{name: "DirectiveEdge", hash: func() state.EdgeHash { return state.DirectiveEdge(edgeDirective) }},
+		{name: "KeyEdge", hash: func() state.EdgeHash { return state.KeyEdge(edgeKey) }},
 		{name: "FactEdge", hash: func() state.EdgeHash { return state.FactEdge(edgeStruct, edgeKey) }},
 		{name: "ExportEdge", hash: func() state.EdgeHash { return state.ExportEdge(edgePlan) }},
 		{name: "NameEdge", hash: func() state.EdgeHash { return state.NameEdge(edgePlan, key) }},

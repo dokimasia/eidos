@@ -5,6 +5,7 @@ package eidos
 
 import (
 	"fmt"
+	"iter"
 	"slices"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -241,6 +242,27 @@ func (rs *runState) reportf(
 // handler does not mutate it. Directive allocates nothing.
 func (m *match) Directive() *directive.Directive { return m.gate }
 
+// Directives returns the validated instances of the directive name of the
+// plugin on the subject of the match, in source order. name is the bare
+// spelling that a schema of the plugin states, or the canonical spelling of
+// that schema. An instance matches where its canonical spelling is the name
+// of the plugin, a colon and the bare name, so an instance of a directive of
+// another plugin or of the kernel never matches. Directives yields a
+// negated instance with Negated set. A graph match has no subject, so
+// Directives does not yield an instance there. The instances are the storage of the validated
+// table, so a handler does not mutate them.
+//
+// The read does not record an edge. The subject of the invocation is an
+// edge of every invocation, and a change of the validated instances of the
+// subject makes that edge dirty, so the handler runs again.
+//
+// # Allocation contract
+//
+// A range over Directives allocates nothing.
+func (m *match) Directives(name directive.Name) iter.Seq[*directive.Directive] {
+	return func(yield func(*directive.Directive) bool) { m.eachDirective(name, yield) }
+}
+
 // ErrorfAt reports at Error severity at the position at. A handler
 // passes a position of its own, such as the carrier line of a directive,
 // for a finding about what an author wrote there. A graph match has no
@@ -329,6 +351,30 @@ func (m *match) overrides() func(plugin.PolicyKey) (plugin.Choice, bool) {
 		return "", false
 	}
 	return m.override
+}
+
+// eachDirective calls yield with each validated instance of the directive
+// name of the plugin on the subject, in source order, until yield returns
+// false. A canonical spelling of another plugin matches no instance.
+func (m *match) eachDirective(name directive.Name, yield func(*directive.Directive) bool) {
+	owner := string(m.rs.b.name)
+	if prefix := name.Plugin(); prefix != "" && prefix != owner {
+		return
+	}
+	if m.subject.IsZero() {
+		return
+	}
+	bare := name.Bare()
+	ds := m.rs.index.DirectivesOf(m.subject)
+	for i := range ds {
+		d := &ds[i]
+		if d.Name.Plugin() != owner || d.Name.Bare() != bare {
+			continue
+		}
+		if !yield(d) {
+			return
+		}
+	}
 }
 
 // readset returns the read set of the invocation, which is the read set
@@ -420,7 +466,8 @@ type Reporter interface {
 
 // SubjectMatch is the part that every match with a subject has: the
 // language and the rules of the subject, the reader, the gating
-// directive, the keys of the kernel, the exports of the plans that the
+// directive, the instances of the directives of the plugin on the
+// subject, the keys of the kernel, the exports of the plans that the
 // plan depends on, and the reports of [Reporter]. A function that two
 // handlers of different kinds share takes a SubjectMatch, such as one
 // that writes the double of an interface and of a struct. Every match of
@@ -434,6 +481,7 @@ type SubjectMatch interface {
 	RulesFor(lang symbol.Lang) rules.Bound
 	Reader() *store.Reader
 	Directive() *directive.Directive
+	Directives(name directive.Name) iter.Seq[*directive.Directive]
 	Kernel() meta.KernelKeys
 	Export(plan string) (plugin.ExportDoc, bool)
 }
@@ -467,4 +515,57 @@ func FactOf[T meta.FactValue](
 	}
 	b := m.base()
 	return meta.Fact(b.rs.facts, b.readset(), id, k)
+}
+
+// Subjects returns the subjects under the scope of the match on which k
+// reads present, in identity order. It records the membership edge on k
+// into the read set of the invocation when the range starts. A subject in
+// the scope that gains or loses k then runs the handler again, and a change
+// of the value of k on a subject does not. A handler reads the value on a
+// subject through [FactOf], which records the fact edge. A named handle
+// resolves by its name in the registry of the run, because the presence of
+// a key does not depend on its value type. A name that the registry does
+// not contain does not yield a subject, and the edge records the name. The
+// zero Key does not yield a subject or record an edge. A graph match
+// enumerates as a match with a subject does.
+//
+// The enumeration lists the subjects that read present when the range
+// starts. In the annotate phase these are the subjects of the stamps of the
+// load, of the directives and of the annotators of earlier turns. A handler
+// does not read a key that another match of its own phase call stamps,
+// because handlers are order-independent within a plugin.
+//
+// # Allocation contract
+//
+// A range over Subjects allocates what [meta.Facts.ByKey] allocates, and
+// what the read set allocates to record the edge.
+func Subjects[T meta.FactValue](m Matcher, k meta.Key[T]) iter.Seq[symbol.Identity] {
+	name, id := k.Name(), k.ID()
+	return func(yield func(symbol.Identity) bool) { eachSubject(m, name, id, yield) }
+}
+
+// eachSubject records the membership edge on the key name into the read set
+// of the invocation of m, and calls yield with each subject under the scope
+// on which the key reads present, in identity order, until yield returns
+// false. id is the id of a registered handle, and zero for a named handle,
+// whose name resolves in the registry of the run. The empty name of the zero
+// Key does not record an edge, and a name that the registry does not contain
+// does not yield a subject.
+func eachSubject(m Matcher, name meta.KeyName, id meta.KeyID, yield func(symbol.Identity) bool) {
+	if name == "" {
+		return
+	}
+	b := m.base()
+	b.readset().RecordKey(name)
+	if id == 0 {
+		id, _ = b.rs.facts.Registry().Resolve(name)
+	}
+	if id == 0 {
+		return
+	}
+	for subject := range b.rs.index.ByFactKey(id) {
+		if !yield(subject) {
+			return
+		}
+	}
 }

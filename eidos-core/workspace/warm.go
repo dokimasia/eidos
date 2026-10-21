@@ -130,8 +130,10 @@ func (c *claimJournal) Evaluated(subject symbol.Identity, matches []plugin.Match
 //     facts that the plugin claimed in the generation.
 //  5. After the stamps and after each annotator call, each fact whose
 //     winner differs from the winner in the generation makes its fact
-//     edge dirty and its subject a candidate. A fact whose winner did not
-//     change stops there, so no record that read the fact runs again.
+//     edge dirty and its subject a candidate. A fact whose presence
+//     changed also makes the membership edge on its key dirty in the
+//     package of its subject. A fact whose winner did not change stops
+//     there, so no record that read the fact runs again.
 //  6. The run reports the findings of each validation and annotator
 //     invocation that it keeps.
 //  7. The run probes every candidate, so the dirty set lists each plan's
@@ -637,7 +639,10 @@ func (r *warmRun) drop(m plugin.MatchKey) {
 // settle compares the winner of each fact that the last step touched with
 // the winner in the generation. When the winner or the presence of the
 // fact differs, settle makes the fact edge dirty and the subject a
-// candidate. It handles each fact once.
+// candidate. When the presence differs, it also makes the membership edge
+// on the key dirty in the package of the subject, so the plans run their
+// enumerations of the subjects of the key again where their scope admits
+// the package. It handles each fact once.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a row of the
 // generation that does not read whole.
@@ -658,6 +663,12 @@ func (r *warmRun) settle(touched []meta.FactRef) error {
 		r.changed[f] = struct{}{}
 		r.candidates[f.Subject] = struct{}{}
 		if err := r.dirty.add(state.FactEdge(f.Subject, f.Key)); err != nil {
+			return err
+		}
+		if present == held {
+			continue
+		}
+		if err := r.dirty.member(state.KeyEdge(f.Key), f.Subject.PackageIdentity()); err != nil {
 			return err
 		}
 	}

@@ -78,6 +78,9 @@ func (l *ReadLog) Append(s *ReadSet) int {
 		for n := range s.directives {
 			l.edges = append(l.edges, edge{grain: grainDirective, name: string(n)})
 		}
+		for k := range s.keys {
+			l.edges = append(l.edges, edge{grain: grainKey, name: string(k)})
+		}
 		slices.SortFunc(l.edges[start:], compareEdges)
 	}
 	l.ends = append(grow.Room(l.ends, 1, minGrowth), len(l.edges))
