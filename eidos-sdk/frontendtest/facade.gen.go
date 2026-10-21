@@ -257,7 +257,8 @@ func ScriptedSchemas() []directive.Schema {
 // the directory its path names in [ScriptedStore], one unit per need.
 // A need the store has no scripted file for yields no unit, and the
 // round reports it placed nowhere, so a load without the store loads
-// no dependency and reports every need.
+// no dependency and reports every need. A round passes over a need
+// whose path is the directory of an output of the round.
 //
 // A use resolves to the scripted file of its name in the directory of
 // its package, as ext/lib/Used.zz for the use of Used in ext/lib, one

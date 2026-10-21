@@ -130,10 +130,10 @@ type Need = core.Need
 // path, and the reason the load's finding quotes.
 type Unplaced = core.Unplaced
 
-// DependencyRound is one dependency round of a frontend: its number,
-// its needs and its shared inputs, and the needs the frontend reports
-// it cannot place. The load passes the round by pointer and reads the
-// reports after Dependencies returns. A round is not safe for
+// DependencyRound is one dependency round of a frontend: its number, its
+// needs, uses, shared inputs and outputs, and the needs the frontend
+// reports it cannot place. The load passes the round by pointer and reads
+// the reports after Dependencies returns. A round is not safe for
 // concurrent use, so a frontend that places needs concurrently
 // serializes its reports.
 type DependencyRound = core.DependencyRound
