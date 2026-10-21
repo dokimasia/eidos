@@ -1,5 +1,20 @@
 # go.dokimi.dev/eidos/core
 
+## 0.6.0
+
+### Minor Changes
+
+- 6294c29: Add `directive.Cut` to cut a payload before the first argument that opens another directive.
+- 6294c29: Add `directive.Locate` to map an offset of a joined payload to its line.
+- 3d0b252: Add `plugin.DependencyRound.Outputs` with the outputs that the selection of the frontend claims.
+- 3d0b252: Add `load.DoorRecord.Outputs` with the outputs that the first dependency round passed.
+- 3d0b252: Pass over a need of the directory of an output in the round of `frontendtest.ScriptedDependent`.
+- 6294c29: Read each mark of the brand after a blank in a carrier line as the start of another directive.
+
+### Patch Changes
+
+- 3d0b252: Change the format of the state to 7, so the first load after the update is cold.
+
 ## 0.5.0
 
 ### Minor Changes

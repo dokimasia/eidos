@@ -1,5 +1,15 @@
 # go.dokimi.dev/eidos/lang/java
 
+## 0.2.3
+
+### Patch Changes
+
+- 1d46c7f: Fix the dependency round to pass over a need of a package whose directory contains an output of the brand.
+- Updated dependencies [6294c29, 3d0b252, 6902587, 12e54f3]
+  - go.dokimi.dev/eidos/core@0.6.0
+  - go.dokimi.dev/eidos/sdk@0.4.0
+  - go.dokimi.dev/eidos/lang@0.2.3
+
 ## 0.2.2
 
 ### Patch Changes

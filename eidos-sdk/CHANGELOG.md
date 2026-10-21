@@ -1,5 +1,17 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.4.0
+
+### Minor Changes
+
+- 12e54f3: Re-export `directive.Cut` and `directive.Locate` in the facade.
+
+### Patch Changes
+
+- 6902587: Copy the documentation of the outputs of a dependency round into the facades of `plugin` and `frontendtest`.
+- Updated dependencies [6294c29, 3d0b252]
+  - go.dokimi.dev/eidos/core@0.6.0
+
 ## 0.3.1
 
 ### Patch Changes

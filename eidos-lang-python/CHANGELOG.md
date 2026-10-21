@@ -1,5 +1,15 @@
 # go.dokimi.dev/eidos/lang/python
 
+## 0.1.3
+
+### Patch Changes
+
+- 2296c3c: Fix the dependency round to pass over a need of the module of an output of the brand or of a package above it.
+- Updated dependencies [6294c29, 3d0b252, 6902587, 12e54f3]
+  - go.dokimi.dev/eidos/core@0.6.0
+  - go.dokimi.dev/eidos/sdk@0.4.0
+  - go.dokimi.dev/eidos/lang@0.2.3
+
 ## 0.1.2
 
 ### Patch Changes
