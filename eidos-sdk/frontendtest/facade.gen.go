@@ -208,6 +208,8 @@ type ScriptedOptions = core.ScriptedOptions
 //	package PATH          the file's package path
 //	import ALIAS PATH...  bind an alias to one or more packages, one
 //	                      import record per path
+//	use PATH NAME         a use of the declaration NAME of the package
+//	                      PATH, which a dependency round places
 //	type NAME REF...      a struct, fields f0..fn typed by the refs
 //	typeparam NAME        a type parameter on the last type
 //	method NAME REF...    a method on the last type, params by ref
@@ -256,6 +258,12 @@ func ScriptedSchemas() []directive.Schema {
 // A need the store has no scripted file for yields no unit, and the
 // round reports it placed nowhere, so a load without the store loads
 // no dependency and reports every need.
+//
+// A use resolves to the scripted file of its name in the directory of
+// its package, as ext/lib/Used.zz for the use of Used in ext/lib, one
+// unit per use. A use whose file the store lacks yields no unit and no
+// report. A case does not combine a need and a use of one package,
+// because the unit of the need has the file of the use too.
 type ScriptedDependent = core.ScriptedDependent
 
 // NewScriptedDependent returns the scripted language in the dependent

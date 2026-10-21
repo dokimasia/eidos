@@ -149,9 +149,10 @@ type StoreReader = core.StoreReader
 // declarations outside the workspace tree. After the workspace's units
 // parse, the load calls Dependencies once per round, parses every
 // returned unit at [DepthSignatures], and calls it again with the
-// imports the returned units name. A round after the first runs only
-// when it has a need no earlier round passed, and the rounds end at
-// the first round that returns no unit the load has not loaded.
+// imports and the uses that the returned units name. A round after the
+// first runs only when it has a need or a use that no earlier round
+// passed, and the rounds end at the first round that returns no unit
+// the load has not loaded.
 type Dependent = core.Dependent
 
 // Cardinality is the number of outputs that a family produces. The zero

@@ -232,8 +232,8 @@ type RegionFile = core.RegionFile
 // Region is one unit's share of the graph: the unit's packages with
 // their files and declarations, after identity assignment and link,
 // the raw directives and classification stamps attached to them, the
-// link record of its references, and the findings its parse and its
-// link reported.
+// link record of its references, its uses, and the findings its parse
+// and its link reported.
 //
 // A package that more than one unit contributes files to appears in
 // each of those units' regions, each time with that unit's files alone.
@@ -241,8 +241,8 @@ type RegionFile = core.RegionFile
 // merges units. Every declaration's identity names the package whose
 // files contain it, and every directive and stamp subject names a
 // package of the region. A sealed graph reads the packages, the
-// directives and the stamps, and a warm load reads the links and the
-// findings.
+// directives and the stamps, and a warm load reads the links, the uses
+// and the findings.
 //
 // # Concurrency
 //
