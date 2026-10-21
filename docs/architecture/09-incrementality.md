@@ -269,6 +269,13 @@ bookkeeping is O(actual reads), because reads already flow through
 `meta.Key.Get` on the tracking Reader, and the per-key value diff is
 the comparison early cutoff needs anyway.
 
+An enumeration of the subjects of a key, through `Subjects`, records
+a membership edge on the key under the reader's scope. A subject that
+gains or loses the key makes the edge dirty in the package of the
+subject, and each plan runs its enumerators of the key again where its
+scope admits the package. A change of a value on a subject leaves the
+edge clean and runs only the readers of that fact edge.
+
 ### The warm pass, step by step
 
 The rules above applied in order, which is the warm body of
@@ -304,7 +311,9 @@ out so that O(dirty) names an algorithm rather than a hope.
    changed validation extends S with its subject.
 6. **Stamps and drops.** The claims of changed units and changed
    validations are withdrawn and applied again. Each fact whose
-   winner changed joins S.
+   winner changed joins S, and a fact whose presence changed also
+   makes the membership edge on its key dirty in the package of its
+   subject.
 7. **Annotate**, turn by turn. Run exactly the matches whose read
    record meets S and the matches that appeared, and withdraw the
    claims of matches that disappeared. Every re-stamp compares

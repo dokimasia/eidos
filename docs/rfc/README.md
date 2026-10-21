@@ -101,3 +101,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0082](0082-the-declaration-files-of-the-typescript-library.md) | The declaration files of the TypeScript library | Accepted |
 | [0083](0083-references-to-declarations-that-the-plan-emits.md) | References to declarations that the plan emits | Accepted |
 | [0084](0084-the-library-declarations-that-a-load-uses.md) | The declarations of the TypeScript library that a load uses | Accepted |
+| [0085](0085-the-instances-and-subjects-that-a-handler-reads.md) | The instances of a directive and the subjects of a key that a handler reads | Accepted |

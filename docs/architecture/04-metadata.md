@@ -153,9 +153,10 @@ type KeySpec struct {
 ```
 
 Reads and writes flow through the effects in
-[06b-authoring.md](06b-authoring.md), meaning `Fact` and `Stamp`.
-The handle is what code holds, and the spec here is what
-registration declares.
+[06b-authoring.md](06b-authoring.md), meaning `Fact`, `Subjects` and
+`Stamp`. `Subjects` reads the index of the subjects of a key that the
+dispatch reads for `HasKey`. The handle is what code holds, and the
+spec here is what registration declares.
 
 **Namespaces are owned per module.** The kernel owns `gen.*`, which
 holds the neutral facts every frontend writes: authored values

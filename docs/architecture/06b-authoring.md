@@ -202,6 +202,13 @@ share takes a `SubjectMatch`, such as one that writes the double of an
 interface and of a struct. A function that only reports takes its
 reporting half, `Reporter`.
 
+`m.Directives(name)` yields the validated instances of a directive of
+the plugin on the subject, in source order. `Subjects(m, key)` yields the
+subjects in scope on which a key reads present, in identity order, and
+records a membership edge on the key. A subject that gains or loses the
+key runs the handler again, and a change of a value on a subject does
+not. `FactOf` reads each value and records the fact edge.
+
 ## The Emitter
 
 **Every target is an accumulator, and the Emitter owns the bookkeeping.**
@@ -410,12 +417,14 @@ instance, so `m.Directive()` stays singular and handlers stay
 simple. `Name()` disambiguates the rare registration where one
 handler serves two schemas.
 
-**A handler sees only its own gating instance.** Bare and fact-gated
-matches get nil, and the *other* directives on a subject, meaning
-other plugins' annotations, are invisible by design. A directive's
-meaning belongs to the plugin that owns it, and its effects are
-consumed through stamped facts rather than by reading another plugin's
-annotations raw.
+**A handler sees the directives of its own plugin alone.**
+`m.Directive()` is the gating instance, and bare and fact-gated matches
+get nil. `m.Directives(name)` yields the instances of a directive of the
+plugin on the subject, such as each `excuse` beside the gating
+`subject`. The directives of other plugins on a subject are invisible by
+design. A directive's meaning belongs to the plugin that owns it, and
+its effects are consumed through stamped facts rather than by reading
+another plugin's annotations raw.
 
 Anything else would make every directive's params public API for
 every other plugin, which is compile-time coupling through a side
@@ -450,7 +459,11 @@ raw does not exist.
 **One directive may gate many rules, and it registers once.** The
 `Directive` wrapper both gates and registers its schema, and a
 plugin declares each directive in one wrapper: the typed build of the
-plugin panics on a second wrapper that declares the same directive. A name
+plugin panics on a second wrapper that declares the same directive. A
+wrapper around no rules registers its schema and gates nothing, for a
+directive that a handler of another rule reads through
+`m.Directives(name)`. Its schema states its `Kinds`, unless it overrides,
+because no rule gives the kinds that an instance may be written on. A name
 that two plugins register is ambiguous under its bare spelling, so
 a carrier writes it with its plugin prefix. The common multi-kind
 plugin needs one wrapper:
@@ -575,7 +588,7 @@ func OnGraph(h func(*GraphMatch, *Emitter) error) Rule
 func OnPackage[E Effect](h func(*PackageMatch, E) error) Rule // each package of the scope
 
 // Scoping wrappers compose around any rules.
-func Directive(s directive.Schema, rules ...Rule) Rule // gate + register
+func Directive(s directive.Schema, rules ...Rule) Rule // gate + register; without rules, register alone
 func Gated(name directive.Name, rules ...Rule) Rule    // gate on a kernel directive
 func Where(p Pred, rules ...Rule) Rule                 // gate on a predicate
 func HasKey[T any](k meta.Key[T]) Pred                 // key gates read a fact
@@ -589,6 +602,7 @@ func Not(p Pred) Pred
 //   RulesFor(symbol.Lang) rules.Bound                 // another language's
 //   Reader() *store.Reader       // incl. Lookup(Identity) after Link
 //   Directive() *DirectiveView   // the gating instance; nil otherwise
+//   Directives(name) iter.Seq[*DirectiveView] // the plugin's own instances on the subject
 //   Kernel() meta.KernelKeys     // the kernel's own keys, for its facts
 //   Errorf / Warnf(code, format, ...) // origin and position pre-bound
 //   ErrorfAt(code, pos, format, ...)  // at a carrier line instead
@@ -600,6 +614,8 @@ func Not(p Pred) Pred
 // with tracked fact reads, so a weaver can ask whose output it is
 // looking at without ever seeing another plugin's directive.
 // Tracked fact reads: func Fact[T any](m Matcher, k meta.Key[T]) (T, bool)
+// and func Subjects[T any](m Matcher, k meta.Key[T]) iter.Seq[symbol.Identity],
+// the subjects of a key under a membership edge on the key
 
 // Bodies a Mirror or Method accepts: the forms of 07 without a
 // template, which Emitter.Ref below claims.
