@@ -50,6 +50,10 @@ const (
 	overridesType = "Overrides"
 )
 
+// storeType is the type of the case whose carrier line has three
+// directives.
+const storeType = "Store"
+
 // The plan of the consumers of the cases and its directory, the names of
 // the consumers and the word of their family, and the separators that the
 // consumer of the whole vocabulary writes between classifications.
@@ -220,6 +224,59 @@ func TestComposeShape(t *testing.T) {
 			t.Parallel()
 
 			facts := classified(t)
+			commit := method(txType, "Commit")
+			writer, _ := shape.SpecOf(shape.Writer)
+			atomic, _ := shape.SpecOf(shape.Atomic)
+			tx, _ := shape.SpecOf(shape.Tx)
+			_, isWriter := meta.Get(facts, commit, meta.Named[bool](writer.Key))
+			expect.True(t, isWriter, "Commit is a writer")
+			_, isAtomic := meta.Get(facts, commit, meta.Named[bool](atomic.Key))
+			expect.True(t, isAtomic, "Commit is atomic")
+			role, _ := meta.Get(facts, commit, meta.Named[string](tx.Key))
+			expect.Equal(t, shape.Role(role), shape.TxCommit, "Commit has the role commit of tx")
+		})
+
+		t.Run("stamps each mixin of a carrier line of several directives", func(t *testing.T) {
+			t.Parallel()
+
+			facts := run(t, golang.ComposeShape(), fstest.MapFS{
+				"go.mod": {Data: []byte(caseModule)},
+				caseFile: {Data: []byte(`package store
+type Store struct{}
+//acme:mixin idempotent +acme:mixin concurrent +acme:mixin side-effect observe=List
+func (s *Store) Swap(key, value string) (string, error) { return "", nil }
+func (s *Store) List() ([]string, error) { return nil, nil }
+`)},
+			}).Facts
+			swap := method(storeType, "Swap")
+			for _, m := range []shape.Mixin{shape.Idempotent, shape.Concurrent, shape.SideEffect} {
+				s, _ := shape.SpecOf(m)
+				_, held := meta.Get(facts, swap, meta.Named[bool](s.Key))
+				expect.True(t, held, "Swap has the mixin "+string(m))
+			}
+			effect, _ := shape.SpecOf(shape.SideEffect)
+			got, _ := meta.Get(facts, swap, meta.Named[symbol.Identity](effect.Params[0].Fact))
+			expect.Equal(t, got, method(storeType, "List"), "observe=List is a param of the directive side-effect")
+		})
+
+		t.Run("stamps every form of classification from one carrier line", func(t *testing.T) {
+			t.Parallel()
+
+			facts := run(t, golang.ComposeShape(), fstest.MapFS{
+				"go.mod": {Data: []byte(caseModule)},
+				caseFile: {Data: []byte(`package store
+type Value struct{}
+var ErrClosed error
+type Tx struct{}
+//+acme:contract tx role=begin
+func (t *Tx) Begin() error { return nil }
+//+acme:shape writer reads=Get +acme:mixin atomic read=Get +acme:contract tx role=commit closed=ErrClosed
+func (t *Tx) Commit() error { return nil }
+//+acme:contract tx role=rollback
+func (t *Tx) Rollback() error { return nil }
+func (t *Tx) Get(id string) (Value, error) { return Value{}, nil }
+`)},
+			}).Facts
 			commit := method(txType, "Commit")
 			writer, _ := shape.SpecOf(shape.Writer)
 			atomic, _ := shape.SpecOf(shape.Atomic)
