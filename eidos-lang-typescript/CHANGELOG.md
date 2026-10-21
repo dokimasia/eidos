@@ -1,5 +1,23 @@
 # go.dokimi.dev/eidos/lang/typescript
 
+## 0.3.0
+
+### Minor Changes
+
+- 9ce9209: Add `library.Index` with the statements of the global names of each file of the embedded library.
+- 9ce9209: Load one dependency unit for each global name of the TypeScript library that a load uses, in place of one unit for the whole library.
+- 9ce9209: Serve the statements of one global name of a file of the library store at `<key>/<file>#<name>`.
+
+### Patch Changes
+
+- d302660: Fix the resolution of a bare name that an import binds to probe no global tier.
+- 597952f: Import an emitted reference from the module path of its referent relative to the file.
+- 9ce9209: Stop importing the extended library into a source file that a lib directive extends.
+- Updated dependencies [b9677b7, e14100f, 575bf2a, 9621f52, 61f41a7, 7494b32, e64dff0]
+  - go.dokimi.dev/eidos/core@0.4.0
+  - go.dokimi.dev/eidos/sdk@0.3.0
+  - go.dokimi.dev/eidos/lang@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes

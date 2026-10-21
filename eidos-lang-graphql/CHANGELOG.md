@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang/graphql
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [b9677b7, e14100f, 575bf2a, 9621f52, 61f41a7, 7494b32, e64dff0]
+  - go.dokimi.dev/eidos/core@0.4.0
+  - go.dokimi.dev/eidos/sdk@0.3.0
+  - go.dokimi.dev/eidos/lang@0.2.1
+
 ## 0.1.0
 
 ### Minor Changes

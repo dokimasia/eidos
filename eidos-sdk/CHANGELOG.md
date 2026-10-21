@@ -1,5 +1,18 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.3.0
+
+### Minor Changes
+
+- 7494b32: Re-export `Subjects` in the facade.
+
+### Patch Changes
+
+- 9621f52: Regenerate the facade for the documentation of `emit.TypeRef.Emitted` and `plugin.Emit.Translates`.
+- 61f41a7: Regenerate the facade for the documentation of the uses of a unit and of a dependency round.
+- Updated dependencies [b9677b7, e14100f, 575bf2a]
+  - go.dokimi.dev/eidos/core@0.4.0
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,5 +1,33 @@
 # go.dokimi.dev/eidos/core
 
+## 0.4.0
+
+### Minor Changes
+
+- b9677b7: Add `directive.Name.Bare` to return a spelling without its plugin prefix.
+- b9677b7: Add `SubjectMatch.Directives` to read the instances of a directive of the plugin on the subject.
+- e14100f: Add `emit.TypeRef.Emitted` to mark a reference to a declaration that the plan emits.
+- b9677b7: Add `store.ReadSet.RecordKey` and `store.ReadSet.Keys` for the membership edge on a key.
+- b9677b7: Add `workspace.ReadKey` for an enumeration of the subjects of a key in an explanation.
+- b9677b7: Add `Subjects` to enumerate the subjects of a key under a membership edge on the key.
+- 575bf2a: Add the statement `use PATH NAME` to the scripted frontend of `frontendtest`, whose dependent places the file of the use.
+- 575bf2a: Add `plugin.DependencyRound.Uses` with the uses of the loaded units that the round passes for the first time.
+- 575bf2a: Add `load.DoorRecord.Uses` with the uses that a dependency round passed.
+- 575bf2a: Add `store.Region.Uses` with the uses that the parse of a unit recorded.
+- 575bf2a: Add `plugin.SourceUnit.Use` and `plugin.SourceUnit.Uses` to record the declarations outside the workspace that a unit uses.
+- 575bf2a: Add `load.UnitRecord.Uses` with the uses of the region of a unit.
+- e14100f: Add `layout.UnemittedReference` for an emitted reference to a declaration that the plan does not emit.
+- e14100f: Mark each bare reference that `layout.Route` qualifies into another package as emitted.
+- e14100f: Qualify an emitted reference in `layout.Route` by the package of the file of its referent.
+- b9677b7: Register the schema of a `Directive` wrapper around no rules, which gates nothing.
+- e14100f: Report a store with an emitted reference through `plugin.Emit.Translates`.
+- 575bf2a: Run a dependency round after the first when the loaded units have a use that no earlier round passed.
+- b9677b7: Run an enumeration of the subjects of a key again in a warm run when a subject gains or loses the key.
+
+### Patch Changes
+
+- 575bf2a: Change the format of the state to 6, so the first load after the update is cold.
+
 ## 0.3.0
 
 ### Minor Changes
