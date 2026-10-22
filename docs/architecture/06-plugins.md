@@ -104,11 +104,12 @@ Four structural rules bind the roles:
 Capabilities are asserted through interfaces, and each has a name
 the conformance suite can hold it to:
 
-- `CapabilityProvider` states the priority, the capabilities that the
-  plugin provides and requires, and the capabilities that it runs after
-  where the composition contains them. Capability topology orders the
-  plugins of one priority. Build refuses a plugin that implements part
-  of the interface, as it refuses a partial `TemplateProvider`.
+- `CapabilityProvider` states the priority and the provided
+  capabilities of each role. It also states the capabilities that the
+  plugin requires, and the capabilities that it runs after where the
+  composition contains them. Capability topology orders the plugins of
+  one priority. Build refuses a plugin that implements part of the
+  interface, as it refuses a partial `TemplateProvider`.
 - `OptionsProvider` states typed options schemas: a struct whose fields
   have an `opt` key and a `doc` description. The mark
   `schema:"required"` states an option without a usable zero value,
@@ -143,6 +144,13 @@ generator half alone. Its annotator half runs after each annotator whose
 capability it requires or runs after. Build refuses a plugin with the
 annotator role alone that requires or runs after a capability of a
 generator.
+
+**A capability can belong to one half.** `Provides` gives a capability
+to both halves of a dual-role plugin, and `ProvidesIn` gives it to one
+role. A capability of the annotator half orders the annotators alone. A
+generator that runs after such a capability has no order against the
+generator half, so the generator half can require that generator. Build
+reads the capabilities of the roles that a plugin implements.
 
 ## The concurrency contract
 

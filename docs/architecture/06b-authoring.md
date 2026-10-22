@@ -455,7 +455,11 @@ the namespace of the keys that the owner registers. The workspace then
 leaves the gate of the weaver unbound, so the gate does not select a
 subject. A misspelled key still fails the build where a plugin claims
 the namespace of the key. It also fails the build where each capability
-that the weaver names in `After` has a provider.
+that the weaver names in `After` has a provider. An owner whose
+generator half requires the weaver declares its capability with
+`ProvidesIn(plugin.RoleAnnotator, owner.Cap)`. The capability then
+orders no generator, so the generator half of the owner runs after the
+weaver.
 
 A param that two plugins both want is either promoted to a fact by
 its owner, or it belongs in the consumer's own directive. Sharing it

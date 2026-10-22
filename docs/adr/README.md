@@ -119,3 +119,4 @@ way.
 | [0098](0098-the-go-frontend-loads-the-packages-that-a-load-uses.md) | The Go frontend loads the packages that a load uses | Accepted |
 | [0099](0099-a-reference-with-a-target-resolves-to-a-record.md) | A reference with a target resolves to a record | Accepted |
 | [0100](0100-the-workspace-leaves-a-gate-on-a-key-of-an-absent-owner-unbound.md) | The workspace leaves a gate on a key of an absent owner unbound | Accepted |
+| [0101](0101-a-plugin-with-both-roles-provides-a-capability-in-one-role.md) | A plugin with both roles provides a capability in one role | Accepted |
