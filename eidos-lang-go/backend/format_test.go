@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"runtime"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -257,9 +258,15 @@ func TestFormatEnv(t *testing.T) {
 	assert.Contains(t, err.Error(), splitVariable, "the error names the variable")
 }
 
-// Format allocates what gofumpt and golines allocate. The ordinary run,
-// which runs no benchmark, checks those ceilings here.
+// Format allocates what gofumpt and golines allocate. The ordinary run does
+// not run benchmarks, so it checks those ceilings here. gofumpt reads
+// GOFUMPT_SPLIT_LONG_LINES once for each node that it visits. A read of the
+// environment allocates twice on Windows, so the test does not run on
+// Windows.
 func TestFormatAllocs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gofumpt reads the environment once for each node, and each read allocates on Windows")
+	}
 	checkAllocs(t, formatCalls())
 }
 
