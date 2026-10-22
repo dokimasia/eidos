@@ -1,5 +1,19 @@
 # go.dokimi.dev/eidos/reference
 
+## 0.1.6
+
+### Patch Changes
+
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, 141d240, e1de752, 8716d09, 8c07b86, 4c06021, 529673e, 217c870, 7dfcd57, d0ab2c4, 6dc24ee, e75c0ca]
+  - go.dokimi.dev/eidos/core@0.7.0
+  - go.dokimi.dev/eidos/sdk@0.5.0
+  - go.dokimi.dev/eidos/lang/go@0.3.0
+  - go.dokimi.dev/eidos/lang/typescript@0.4.0
+  - go.dokimi.dev/eidos/lang@0.3.0
+  - go.dokimi.dev/eidos/cli@0.2.5
+  - go.dokimi.dev/eidos/declarative@0.1.6
+
 ## 0.1.5
 
 ### Patch Changes

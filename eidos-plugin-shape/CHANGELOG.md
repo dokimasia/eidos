@@ -1,5 +1,15 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.0.7
+
+### Patch Changes
+
+- 6672f85: Regenerate the registry of the shapes with the format of gofumpt and golines.
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, 141d240, e1de752, 8c07b86, 217c870, 7dfcd57, d0ab2c4, 6dc24ee, e75c0ca]
+  - go.dokimi.dev/eidos/core@0.7.0
+  - go.dokimi.dev/eidos/sdk@0.5.0
+
 ## 0.0.6
 
 ### Patch Changes

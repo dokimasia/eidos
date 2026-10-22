@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/cli
 
+## 0.2.5
+
+### Patch Changes
+
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, e1de752, 8c07b86, 217c870, e75c0ca]
+  - go.dokimi.dev/eidos/core@0.7.0
+  - go.dokimi.dev/eidos/declarative@0.1.6
+
 ## 0.2.4
 
 ### Patch Changes

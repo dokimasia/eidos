@@ -1,5 +1,22 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.5.0
+
+### Minor Changes
+
+- 141d240: Add `Builder.ProvidesIn` to provide a capability in one role of a plugin with both roles.
+- 141d240: **Breaking:** Pass the role to `plugin.CapabilityProvider.Provides`, which returns the capabilities of that role.
+- 7dfcd57: Re-export `plugin.ErrUnclaimedNamespace`.
+
+### Patch Changes
+
+- 7dfcd57: Copy the documentation of an unbound gate into `HasKey` and `plugin.KeyBinder`.
+- d0ab2c4: Copy the documentation of the two formatters of a language into the facade of `render`.
+- 6dc24ee: Copy the documentation of the names of records into `plugin.NamesOf` and `plugin.Settle`.
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, e1de752, 8c07b86, 217c870, e75c0ca]
+  - go.dokimi.dev/eidos/core@0.7.0
+
 ## 0.4.0
 
 ### Minor Changes

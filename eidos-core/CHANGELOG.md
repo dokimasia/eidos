@@ -1,5 +1,28 @@
 # go.dokimi.dev/eidos/core
 
+## 0.7.0
+
+### Minor Changes
+
+- 9c9c4bb: Add `Builder.ProvidesIn` to provide a capability in one role of a plugin with both roles.
+- e1de752: Add `plugin.ErrUnclaimedNamespace` for a gate on a key of an unclaimed namespace.
+- 8c07b86: Add `render.Language.FinaliseUnder`, a formatter that receives the policy of the plan.
+- e1de752: Bind a plugin of `plugintest.Fixture` in the composition of the plugins of its source.
+- 8c07b86: Add `backend.Builder.FinaliseUnder` to declare a formatter that receives the policy of the plan.
+- e1de752: Leave a gate on a key of an absent owner unbound in a plugin that runs after a capability without a provider.
+- 217c870: **Breaking:** List the names of records in `plugin.NamesOf`, each marked with the new field `NameEntry.Record`.
+- 217c870: List the records of a scope in `plugin.Names.InScope`, and none in `InPackage`, `OfOrigin` or `InFileScope`.
+- 9c9c4bb: Order the members of each role by the capabilities that their plugins provide in that role.
+- 9c9c4bb: **Breaking:** Pass the role to `plugin.CapabilityProvider.Provides`, which returns the capabilities of that role.
+
+### Patch Changes
+
+- 217c870: Change the format of the state to 8, so the first run after the update is cold.
+- 217c870: Fix a cold run to leave a bare reference to the name of a record as written, as a warm run does.
+- 217c870: Fix a warm run to qualify a reference with a target into the kept file of a record, as a cold run does.
+- 217c870: Fix a warm run to refuse a reference into a record that the run no longer emits, as a cold run does.
+- e75c0ca: Require Go 1.27.3.
+
 ## 0.6.0
 
 ### Minor Changes
