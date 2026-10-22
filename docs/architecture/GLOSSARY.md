@@ -55,7 +55,7 @@ The document named in each row carries the full contract.
 | declarative plugin | a plugin written as files, a manifest plus template trees, which `declarative.Load` builds into an ordinary generator | [06](06-plugins.md) |
 | extensible plan | a plan that admits the generators of the config after its own, such as the declarative plugins that `plans.<name>.plugins` lists | [08](08-workspace-and-plans.md) |
 | file template | the template of a family that claims its files. It writes each file of the family from the family's records | [07](07-rendering.md) |
-| record | a declaration that a handler places into a family that claims its files, with the data of its match. No name table, collision check or export reads it | [07](07-rendering.md) |
+| record | a declaration that a handler places into a family that claims its files, with the data of its match. A translated or an emitted reference resolves to it, and the collision check, a bare reference and the exports leave it out | [07](07-rendering.md) |
 | command kernels | the seven complete commands of `eidos-cli`, which a consumer's binary mounts beside its own | [20](20-cli.md) |
 | host | the command line that selects a command kernel: `cli.Main`, or the binary's own, such as a cobra tree. It passes the arguments after the command's name and exits with the command's status | [20](20-cli.md) |
 | canary ring | the satellites the kernel runs against HEAD before it tags a release | [15](15-compatibility.md) |

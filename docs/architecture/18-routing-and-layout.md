@@ -126,16 +126,22 @@ decides it.
      emits, such as a fixture in a test package. Its referent is found
      as the referent of a translated reference is, in any language.
 
+   The referent of a translated or an emitted reference can be a record
+   of a family that claims its files, in a file that the run routes or
+   in a file that it keeps. The referent of a bare reference is never a
+   record.
+
    A backend imports a reference with the mark from the package that the
    layout sets. The TypeScript backend writes that module path relative
    to the file, such as `./thing.maker`. The layout refuses the
    referencing declaration under `UnemittedReference` where the plan
    does not emit the referent of an emitted reference.
 8. **Names.** Each settled file-level name occurs once in the namespace
-   of its file and its receiver. The layout reports the declarations of
-   one name as one `CollidingNames` Error, positioned at the second
-   declaration with the others as related. The check refuses no
-   declaration, and the Error fails the plan. A warm run compares the
+   of its file and its receiver, and a record does not collide with a
+   name. The layout reports the declarations of one name as one
+   `CollidingNames` Error, positioned at the second declaration with the
+   others as related. The check refuses no declaration, and the Error
+   fails the plan. A warm run compares the
    names of the files that it routes with the names of the files that it
    keeps. The backend of a target whose language overloads functions,
    such as Python, implements the role `plugin.Overloader`. The functions

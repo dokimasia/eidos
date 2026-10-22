@@ -4,7 +4,7 @@ title: A family claims its files through a file template
 status: Accepted
 date: 2026-10-10
 supersedes: none
-superseded-by: none
+superseded-by: ADR-0099
 rfc: RFC-0025
 ---
 
@@ -17,7 +17,8 @@ rfc: RFC-0025
 
 ## Status
 
-Accepted
+Accepted. [ADR-0099](0099-a-reference-with-a-target-resolves-to-a-record.md) supersedes its rule
+for the name tables and the references to records.
 
 ## Context
 

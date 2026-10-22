@@ -110,8 +110,10 @@ while the same emit graph renders through
 `Output.Template` ([18-routing-and-layout.md](18-routing-and-layout.md)),
 a family claims every one of its files. Its handlers place records
 through `Out.Record`. A
-record is a declaration with the data of its match. No name table,
-collision check or export reads a record. The render executes the
+record is a declaration with the data of its match. The collision
+check, a bare reference and the exports leave records out. A translated
+or an emitted reference resolves to a record, and the name table of a
+warm run lists each record for that lookup. The render executes the
 template from the plugin's tree for the plan's target. The template
 reads the name and the package of the file, and the declaration and the
 data of each record. It writes the declarations of the file through the

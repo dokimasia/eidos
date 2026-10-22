@@ -37,7 +37,7 @@ way.
 | [0016](0016-the-proto2-schema-marks-message-fields-optional.md) | The proto2 service schema marks its message fields optional | Accepted |
 | [0017](0017-the-service-fixture-edit-narrows-a-field.md) | The service fixture's edit narrows a field | Accepted |
 | [0018](0018-the-declarative-host-is-a-module.md) | The declarative host is a module of its own | Accepted |
-| [0019](0019-a-family-claims-its-files-through-a-template.md) | A family claims its files through a file template | Accepted |
+| [0019](0019-a-family-claims-its-files-through-a-template.md) | A family claims its files through a file template | Accepted, superseded in part by [0099](0099-a-reference-with-a-target-resolves-to-a-record.md) |
 | [0020](0020-the-interface-rules-account-for-properties.md) | The interface rules account for properties | Accepted |
 | [0021](0021-the-receiver-avoids-the-names-of-its-signature.md) | The receiver of an implementation avoids the names of its signature | Accepted |
 | [0022](0022-a-rules-implementation-reads-a-named-key-through-fact.md) | A rules implementation reads a named key through rules.Fact | Accepted |
@@ -117,3 +117,4 @@ way.
 | [0096](0096-a-typescript-file-has-the-spaces-and-quotes-of-its-formatters.md) | A TypeScript file has the spaces and the quotes of Biome and Prettier | Accepted |
 | [0097](0097-a-go-file-has-the-format-of-gofumpt-and-golines.md) | A Go file has the format of gofumpt and golines | Accepted |
 | [0098](0098-the-go-frontend-loads-the-packages-that-a-load-uses.md) | The Go frontend loads the packages that a load uses | Accepted |
+| [0099](0099-a-reference-with-a-target-resolves-to-a-record.md) | A reference with a target resolves to a record | Accepted |
