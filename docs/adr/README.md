@@ -118,3 +118,4 @@ way.
 | [0097](0097-a-go-file-has-the-format-of-gofumpt-and-golines.md) | A Go file has the format of gofumpt and golines | Accepted |
 | [0098](0098-the-go-frontend-loads-the-packages-that-a-load-uses.md) | The Go frontend loads the packages that a load uses | Accepted |
 | [0099](0099-a-reference-with-a-target-resolves-to-a-record.md) | A reference with a target resolves to a record | Accepted |
+| [0100](0100-the-workspace-leaves-a-gate-on-a-key-of-an-absent-owner-unbound.md) | The workspace leaves a gate on a key of an absent owner unbound | Accepted |

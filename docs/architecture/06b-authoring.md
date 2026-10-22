@@ -450,7 +450,12 @@ the owner, or named slots the owner exported as constants.
 And **`Requires(owner.Cap)`** turns the ordering into a scheduled
 guarantee. A weaver that also serves compositions without the owner
 declares `After(owner.Cap)`, which orders it after the owner where the
-owner is present.
+owner is present. In a composition without the owner, no plugin claims
+the namespace of the keys that the owner registers. The workspace then
+leaves the gate of the weaver unbound, so the gate does not select a
+subject. A misspelled key still fails the build where a plugin claims
+the namespace of the key. It also fails the build where each capability
+that the weaver names in `After` has a provider.
 
 A param that two plugins both want is either promoted to a fact by
 its owner, or it belongs in the consumer's own directive. Sharing it
