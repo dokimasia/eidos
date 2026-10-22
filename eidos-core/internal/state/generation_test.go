@@ -55,7 +55,7 @@ const (
 )
 
 // stateFormat is the format of the encoding that the kernel writes.
-const stateFormat = 7
+const stateFormat = 8
 
 // castagnoli is the CRC-32C table a generation's trailer is computed
 // with.
@@ -130,7 +130,7 @@ func TestGeneration(t *testing.T) {
 			assert.ErrorIs(t, err, state.ErrFormat, "the kernel reads its own format alone")
 		})
 
-		t.Run("reads a generation that starts with format 5", func(t *testing.T) {
+		t.Run("reads a generation that starts with the format of the kernel", func(t *testing.T) {
 			t.Parallel()
 
 			l := ledger.NewMem()

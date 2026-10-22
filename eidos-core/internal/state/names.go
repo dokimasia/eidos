@@ -30,7 +30,8 @@ const (
 // InPackage reads the rows of the package's scope under the emitted name,
 // OfOrigin the rows of the origin under the emitted name, and InScope and
 // InFileScope the rows of a source scope and of a routed scope, which each
-// sorts by settled name once and keeps.
+// sorts by settled name once and keeps. A record has one row, under its
+// source scope, so InScope returns it and InPackage leaves it out.
 //
 // The methods of [plugin.Names] return no error. A lookup that meets a row
 // that does not read whole or does not decode finds nothing, and
@@ -85,8 +86,9 @@ func (s *PhaseState) Names(plan string, skip func(file string) bool) *KeptNames 
 
 // InPackage returns the entry that a file-level declaration of a package
 // declares under an emitted name, and false where none does. A method is
-// no such declaration. The entry is the first in settled order, and it
-// reports Ambiguous where two entries settle the name apart.
+// no such declaration, and neither is a record. The entry is the first in
+// settled order, and it reports Ambiguous where two entries settle the
+// name apart.
 func (n *KeptNames) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 	var key [spellingCap]byte
 	prefix := append(append(scopePrefix(key[:0], n.plan, pkg, ""), emitted...), keySep)
@@ -94,7 +96,7 @@ func (n *KeptNames) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 	found := false
 	for _, e := range n.entries(prefix) {
 		switch {
-		case e.Kind == symbol.KindMethod:
+		case e.Kind == symbol.KindMethod, e.Record:
 		case !found:
 			out, found = e, true
 		case e.Settled != out.Settled:
@@ -107,6 +109,7 @@ func (n *KeptNames) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 // OfOrigin returns the entry that a file-level declaration derived from
 // an origin declares under an emitted name, the first in the order of its
 // package, its receiver and its settled name, and false where none does.
+// A record has a row under its source scope alone.
 func (n *KeptNames) OfOrigin(origin symbol.Identity, emitted string) (plugin.NameEntry, bool) {
 	var key [spellingCap]byte
 	prefix := append(append(key[:0], n.plan...), keySep, rowByOrigin, keySep)
@@ -120,9 +123,10 @@ func (n *KeptNames) OfOrigin(origin symbol.Identity, emitted string) (plugin.Nam
 
 // InScope returns the entries of one source scope, sorted by settled
 // name: the methods and the fields that attach to the receiver where it
-// is set, and the package's other file-level names where it is empty. It
-// reads each scope once and returns the same list to every later call,
-// which the caller does not mutate.
+// is set, and the package's other file-level names where it is empty. The
+// entries include the records of the scope. It reads each scope once and
+// returns the same list to every later call, which the caller does not
+// mutate.
 func (n *KeptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 	at := scopeName{pkg: pkg, receiver: receiver}
 	if entries, read := n.scopes[at]; read {
@@ -140,9 +144,10 @@ func (n *KeptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 
 // InFileScope returns the entries of one routed scope, sorted by settled
 // name: the names that the kept files of the namespace scope declare under
-// receiver, and their other file-level names where receiver is empty. It
-// reads each scope once and returns the same list to every later call,
-// which the caller does not mutate.
+// receiver, and their other file-level names where receiver is empty. A
+// record has a row under its source scope alone. It reads each scope once
+// and returns the same list to every later call, which the caller does not
+// mutate.
 func (n *KeptNames) InFileScope(scope symbol.Identity, receiver string) []plugin.NameEntry {
 	at := fileScopeName{scope: scope, receiver: receiver}
 	if entries, read := n.fileScopes[at]; read {
@@ -206,6 +211,17 @@ func scopeRowKey(dst []byte, plan string, e *plugin.NameEntry) []byte {
 	return append(dst, e.Settled...)
 }
 
+// recordRowKey appends the key of a record's row under its source scope
+// to dst: the key that [scopeRowKey] appends, then the separator, the
+// origin, the separator and the file. Records of one name can repeat in a
+// scope, such as an init function in each file. The origin and the file
+// make the key the entry's own.
+func recordRowKey(dst []byte, plan string, e *plugin.NameEntry) []byte {
+	dst = append(scopeRowKey(dst, plan, e), keySep)
+	dst = append(identityKey(dst, e.Origin), keySep)
+	return append(dst, e.File...)
+}
+
 // fileScopePrefix appends the prefix of a routed scope's rows to dst: the
 // plan, the routed scope tag, the namespace of the routed file and the
 // receiver, each closed by the separator.
@@ -248,8 +264,8 @@ func rowPlan(key []byte) []byte {
 
 // appendNameRow appends a name's row to dst: the file first, so a commit
 // decides from the file alone which prior rows it keeps, then the file's
-// package and the entry's package, receiver, origin, kind, emitted name
-// and settled name.
+// package and the entry's package, receiver, origin, kind, emitted name,
+// settled name and mark of a record.
 func appendNameRow(dst []byte, e *plugin.NameEntry) []byte {
 	enc := encoder{buf: dst}
 	enc.text(e.File)
@@ -260,6 +276,7 @@ func appendNameRow(dst []byte, e *plugin.NameEntry) []byte {
 	enc.uvarint(uint64(e.Kind))
 	enc.text(e.Emitted)
 	enc.text(e.Settled)
+	enc.boolean(e.Record)
 	return enc.buf
 }
 
@@ -274,5 +291,6 @@ func decodeNameRow(d *decoder) plugin.NameEntry {
 		Kind:     symbol.Kind(d.Enum()),
 		Emitted:  d.text(),
 		Settled:  d.text(),
+		Record:   d.Bool(),
 	}
 }

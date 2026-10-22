@@ -81,6 +81,19 @@ const (
 // directory of the store package only in case.
 const caseSource = "svc/Store/col.zz"
 
+// The generator that records the suite of Row into a family that claims
+// its files, the tag and the template of that family, the name of the
+// struct of the row line, and the name of the suite, which the mirror of
+// each other struct refers to.
+const (
+	suitesID      plugin.ID = "suites"
+	suiteTag      eidos.Tag = "suite"
+	suiteTemplate           = "suite.tmpl"
+	suiteText               = "{{range .Records}}func {{.Decl.Name}}()\n{{end}}"
+	rowName                 = "Row"
+	rowSuite                = "RunRowSuite"
+)
+
 // readerName is the name of the struct that the reader line declares.
 const readerName = "Reader"
 
@@ -407,6 +420,37 @@ func TestRounds(t *testing.T) {
 				"a received field declares no name in the scope of the column's file")
 		})
 
+		t.Run("records the entries that a cold run records for an emitted reference into a kept record",
+			func(t *testing.T) {
+				t.Parallel()
+
+				build := func() *workspace.Workspace { return built(t, sealingOf(t, ledger.NewMem(), "plan", suites())) }
+				after := roundsTree(rowLine, widerUser)
+				warm, err := warmAfter(t, build(), roundsTree(rowLine, userLine), after)
+				expect.Empty(t, findings(warm.Sink, layout.UnemittedReference), "the warm run finds the kept suite")
+				assert.NoError(t, err, "the warm run resolves the reference into the kept file of the suite")
+				expect.Equal(t, warm.Stats.Rendered, 1, "the run keeps the file of the suite")
+				cold := sealedRun(t, build(), workspace.Input{Tree: after})
+				expect.Equal(t, warm.Manifest.Files, cold.Manifest.Files,
+					"the warm run records the entries of the cold run")
+			})
+
+		t.Run("reports the UnemittedReference of an emitted reference into a record that the run no longer emits",
+			func(t *testing.T) {
+				t.Parallel()
+
+				build := func() *workspace.Workspace { return built(t, sealingOf(t, ledger.NewMem(), "plan", suites())) }
+				after := roundsTree("", userLine)
+				warm, err := warmAfter(t, build(), roundsTree(rowLine, userLine), after)
+				assert.ErrorIs(t, err, workspace.ErrRunFailed, "the reference to the removed suite fails the plan")
+				expect.Length(t, findings(warm.Sink, layout.UnemittedReference), 1,
+					"the warm run refuses the mirror of the user")
+				cold, _ := build().Run(t.Context(), workspace.Input{Tree: after})
+				expect.Equal(t, slices.SortedStableFunc(warm.Sink.All(), diag.Diag.Compare),
+					slices.SortedStableFunc(cold.Sink.All(), diag.Diag.Compare),
+					"the warm run reports the same findings as the cold run")
+			})
+
 		t.Run("reports the PathCollision of a new path that differs from a kept path only in case", func(t *testing.T) {
 			t.Parallel()
 
@@ -546,6 +590,30 @@ func roundsBuilder(
 		}).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// suites returns a generator that records the suite of Row into a family
+// that claims its files, and that mirrors each other struct with a field
+// whose type is an emitted reference to the suite.
+func suites() plugin.Generator {
+	return eidos.NewPlugin(suitesID).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Output(plugin.Output{Tag: string(suiteTag), Per: plugin.PerPackage, Word: "suite", Template: suiteTemplate}).
+		Templates(fstest.MapFS{suiteTemplate: {Data: []byte(suiteText)}}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			if m.Struct.Name == rowName {
+				suite := &emit.Function{Origin: m.Struct.Identity(), Name: rowSuite}
+				e.PackageFile(suiteTag).Record(m.Struct.Name, suite)
+				return nil
+			}
+			row := m.Struct.Identity()
+			row.Package, row.Name = storePkg, rowName
+			s := &emit.Struct{Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name}
+			run := &emit.TypeRef{Spelling: rowSuite, Target: row, Emitted: true}
+			s.Fields.Append(&emit.Field{Name: "run", Type: run})
+			e.PackageFile().Append(s)
+			return nil
+		})).Generator()
 }
 
 // sealingOnDisk returns the builder of the sealing composition over the

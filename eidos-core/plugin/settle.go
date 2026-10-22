@@ -154,9 +154,10 @@ type MemberRespeller interface {
 //
 // The settle respells the records of a family that claims its files.
 // The units of such a family have a [Unit.Template], and the template
-// reads the names of the target. A record declares no name of its file,
-// so the settle checks no record for a collision, and no reference
-// follows a record.
+// reads the names of the target. The settle does not check a record for a
+// collision, and it does not rewrite a reference to the name of a record.
+// The layout qualifies a reference with a target into the file of a
+// record.
 //
 // The settle records whether a declaration that renders has an emitted
 // reference, or a type reference to a declaration of another language
@@ -563,11 +564,11 @@ type originName struct {
 // references follow. table records the settled name of each emitted name
 // of each package, and byOrigin records the same keyed by the identity of
 // the origin, for resolved references. Both record the unit that declares
-// each name. The records of a claimed family declare no name of their
-// file, so they join no table. The settle does not check whether two
-// file-level names collide. The layout checks them in the packages of
-// their routed files, which the settle does not know. It allocates the two
-// tables, each sized once to the store.
+// each name. The records of a claimed family join no table, because the
+// settle does not rewrite a reference to a record. It does not check
+// whether two file-level names collide. The layout checks them in the
+// packages of their routed files, which the settle does not know. It
+// allocates the two tables, each sized once to the store.
 func resolveTop(e *Emit, plans *plan) (map[pkgName]tableEntry, map[originName]originEntry) {
 	table := make(map[pkgName]tableEntry, len(plans.spans))
 	byOrigin := make(map[originName]originEntry, len(plans.spans))

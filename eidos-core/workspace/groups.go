@@ -92,7 +92,8 @@ type planGroups struct {
 //     the unit makes dirty
 //   - the edge of each name that the settle looked up for one of its units,
 //     and of each override that the settle read for one
-//   - the scope of each name that its files declare
+//   - the scope of each name that its files declare, a record excepted,
+//     because a record does not collide with the names of its scope
 //   - the declaration edge of each origin of its declarations, whose
 //     directives and position the layout reads, the declaration edge of the
 //     package of each origin, whose out directive the layout reads, and the
@@ -283,7 +284,9 @@ func (pg *planGroups) record(lane *state.Lane) {
 		}
 		g := groups[fileGroup[fi]]
 		for _, n := range s.names {
-			g.Reads = append(g.Reads, state.ScopeEdge(pg.plan, n.Package, n.Receiver))
+			if !n.Record {
+				g.Reads = append(g.Reads, state.ScopeEdge(pg.plan, n.Package, n.Receiver))
+			}
 		}
 		for _, pkg := range s.packages {
 			g.Reads = append(g.Reads, state.DeclarationEdge(pkg))

@@ -78,27 +78,28 @@ func (h *homes) Home(_ symbol.Identity, schema plugin.Placement) (symbol.Identit
 }
 
 // keptFiles is the name table of kept files over a list of entries: what
-// a warm run hands the layout of part of a plan.
+// a warm run hands the layout of part of a plan. InScope lists the records
+// of a scope, and the other lookups leave every record out.
 type keptFiles []plugin.NameEntry
 
 var _ plugin.Names = keptFiles(nil)
 
 // InPackage returns the first entry of the package under the emitted
-// name that is not a method's. It allocates nothing.
+// name that is neither a method's nor a record's. It does not allocate.
 func (k keptFiles) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 	for _, e := range k {
-		if e.Package == pkg && e.Emitted == emitted && e.Kind != symbol.KindMethod {
+		if e.Package == pkg && e.Emitted == emitted && e.Kind != symbol.KindMethod && !e.Record {
 			return e, true
 		}
 	}
 	return plugin.NameEntry{}, false
 }
 
-// OfOrigin returns the first entry derived from the origin under the
-// emitted name. It allocates nothing.
+// OfOrigin returns the first entry other than a record derived from the
+// origin under the emitted name. It does not allocate.
 func (k keptFiles) OfOrigin(origin symbol.Identity, emitted string) (plugin.NameEntry, bool) {
 	for _, e := range k {
-		if e.Origin == origin && e.Emitted == emitted {
+		if e.Origin == origin && e.Emitted == emitted && !e.Record {
 			return e, true
 		}
 	}
@@ -118,13 +119,13 @@ func (k keptFiles) InScope(pkg, receiver string) []plugin.NameEntry {
 	return out
 }
 
-// InFileScope returns the entries of the namespace and receiver, sorted by
-// settled name. The namespace of a kept file is its package. It allocates
-// the list it returns.
+// InFileScope returns the entries of the namespace and receiver other than
+// the records, sorted by settled name. The namespace of a kept file is its
+// package. It allocates the list it returns.
 func (k keptFiles) InFileScope(scope symbol.Identity, receiver string) []plugin.NameEntry {
 	var out []plugin.NameEntry
 	for _, e := range k {
-		if e.FilePkg == scope && e.Receiver == receiver {
+		if e.FilePkg == scope && e.Receiver == receiver && !e.Record {
 			out = append(out, e)
 		}
 	}
@@ -489,6 +490,66 @@ func TestReference(t *testing.T) {
 				f.target = tsxTarget
 				_, sink := f.route(t)
 				assert.Equal(t, ref.Package, fakesDir, "the reference takes the package of the kept file")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		records := []struct {
+			name string
+			give *emit.TypeRef
+			want string
+		}{
+			{
+				name: "qualifies an emitted reference into a record of another package",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID, Emitted: true}, want: fakesDir,
+			},
+			{
+				name: "leaves a bare reference to the name of a record bare",
+				give: &emit.TypeRef{Spelling: rowStubName}, want: "",
+			},
+		}
+		for _, tt := range records {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				record := unitOf(stubgen, families()[stubgen][1], rowFile, coretest.PackageID(storePkg),
+					generated(rowID, rowStubName))
+				f := newFixture(referring(tt.give), record).on(rowID, written(stubDirective, 1, keyOut, "fakes/"))
+				f.outputs[stubgen][1].Template = claimTemplate
+				f.packager = directories{}
+				f.target = plugin.Target(coretest.Lang)
+				_, sink := f.route(t)
+				assert.Equal(t, tt.give.Package, tt.want, "the reference's package")
+				coretest.AssertCodes(t, sink)
+			})
+		}
+
+		keptRecords := []struct {
+			name string
+			give *emit.TypeRef
+			want string
+		}{
+			{
+				name: "qualifies an emitted reference into a kept record of another package",
+				give: &emit.TypeRef{Spelling: rowStubName, Target: rowID, Emitted: true}, want: fakesDir,
+			},
+			{
+				name: "leaves a bare reference to the name of a kept record bare",
+				give: &emit.TypeRef{Spelling: rowStubName}, want: "",
+			},
+		}
+		for _, tt := range keptRecords {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				record := keptRowStub(fakesDir)
+				record.Record = true
+				f := newFixture(referring(tt.give))
+				f.packager = directories{}
+				f.others = keptFiles{record}
+				f.target = plugin.Target(coretest.Lang)
+				_, sink := f.route(t)
+				assert.Equal(t, tt.give.Package, tt.want, "the reference's package")
 				coretest.AssertCodes(t, sink)
 			})
 		}

@@ -27,25 +27,30 @@ type Names interface {
 	// InPackage returns the entry that a file-level declaration of the
 	// package declares under an emitted name, and false where none does.
 	// A method is no such declaration, because no bare reference names
-	// one. Where declarations of the package declare the emitted name
-	// under different settled names, the entry reports Ambiguous.
+	// one, and neither is a record. Where declarations of the package
+	// declare the emitted name under different settled names, the entry
+	// reports Ambiguous.
 	InPackage(pkg, emitted string) (NameEntry, bool)
 	// OfOrigin returns the entry that a file-level declaration derived
 	// from the origin declares under an emitted name, and false where
-	// none does.
+	// none does. A record is not such a declaration, because the settle
+	// does not follow a reference to a record.
 	OfOrigin(origin symbol.Identity, emitted string) (NameEntry, bool)
 	// InScope returns the entries of one source scope, sorted by settled
 	// name: the methods and the fields of the source package pkg that
 	// attach to the receiver where receiver is set, and every other
 	// file-level name of the package where it is empty. A bare reference and
-	// the spelling of a receiver resolve in the source package.
+	// the spelling of a receiver resolve in the source package. The entries
+	// include the records of the scope, because a reference with a target
+	// resolves to a record.
 	InScope(pkg, receiver string) []NameEntry
 	// InFileScope returns the entries of one routed scope, sorted by
 	// settled name: the names that the kept files of the namespace scope
 	// declare under receiver, and every other file-level name of those files
 	// where receiver is empty. The namespace of a file is its [File.Scope].
 	// Each file-level name occurs once in its routed scope, which the layout
-	// checks.
+	// checks. The entries leave the records out, because a record does not
+	// collide with a name.
 	InFileScope(scope symbol.Identity, receiver string) []NameEntry
 }
 
@@ -76,6 +81,11 @@ type NameEntry struct {
 	// declares the emitted name under different settled names. A bare
 	// reference to such a name is left as written.
 	Ambiguous bool
+	// Record reports that the declaration is a record of a family that
+	// claims its files. A reference with a target resolves to a record.
+	// The check of colliding names, a bare reference and the receiver of a
+	// method leave it out.
+	Record bool
 	// File is the path the layout routed the declaration to, and
 	// FilePkg the package that the file declares.
 	File    string
@@ -144,8 +154,9 @@ type Settled struct {
 // declarations map it first, and others map it second. A receiver whose
 // type neither declares keeps its spelling. Ambiguous is false on every
 // entry, because the ambiguity of a name depends on every file of the
-// plan. A unit of a family that claims its files contains records, which
-// declare no name of the file, so NamesOf lists none of them.
+// plan. A unit of a family that claims its files contains records. The
+// entry of the name of a record has Record set, and a receiver does not
+// map back to a record.
 //
 // # Allocation contract
 //
@@ -171,7 +182,7 @@ func NamesOf(files []File, settled *Emit, others Names) []NameEntry {
 		}
 		entry := NameEntry{
 			Package: unit.Pkg.Package, Kind: kind, Emitted: emittedName(settled, carrier, name), Settled: name,
-			File: file.Path, FilePkg: file.Pkg,
+			Record: unit.Template != "", File: file.Path, FilePkg: file.Pkg,
 		}
 		entry.Origin, _ = emit.OriginOf(carrier)
 		if receives := emit.ReceivesOf(carrier); receives != nil {
@@ -184,9 +195,6 @@ func NamesOf(files []File, settled *Emit, others Names) []NameEntry {
 		file = &files[i]
 		for j := range file.Units {
 			unit = &file.Units[j]
-			if unit.Template != "" {
-				continue
-			}
 			for _, d := range unit.Decls {
 				_ = emit.RespellNames(d, visit)
 			}
@@ -213,8 +221,8 @@ func (d declaredName) compare(o declaredName) int {
 // declaredNames returns the file-level declarations of files that have a
 // declared name, each under the package of its unit, sorted by package
 // and then by settled name: how a method's receiver finds the name that
-// its type was emitted under. A record of a claimed family declares no
-// name, so the list leaves its unit out. n sizes the list.
+// its type was emitted under. A receiver does not map back to a record,
+// so the list leaves the units of a claimed family out. n sizes the list.
 func declaredNames(files []File, settled *Emit, n int) []declaredName {
 	declared := make([]declaredName, 0, n)
 	for _, f := range files {
@@ -250,7 +258,8 @@ func emittedName(settled *Emit, d symbol.Symbol, name string) string {
 // hostOf returns the name that the type a receiver spells was emitted
 // under: through declared, which is sorted by package and settled name,
 // then through the kept names of the package's scope in others, and the
-// spelling itself where neither declares the type.
+// spelling itself where neither declares the type. A kept record is not
+// such a type.
 func hostOf(declared []declaredName, others Names, pkg, spelling string) string {
 	key := declaredName{pkg: pkg, settled: spelling}
 	if at, found := slices.BinarySearchFunc(declared, key, declaredName.compare); found {
@@ -260,11 +269,13 @@ func hostOf(declared []declaredName, others Names, pkg, spelling string) string 
 		return spelling
 	}
 	kept := others.InScope(pkg, "")
-	at, found := slices.BinarySearchFunc(kept, spelling, func(e NameEntry, settled string) int {
+	at, _ := slices.BinarySearchFunc(kept, spelling, func(e NameEntry, settled string) int {
 		return strings.Compare(e.Settled, settled)
 	})
-	if !found {
-		return spelling
+	for ; at < len(kept) && kept[at].Settled == spelling; at++ {
+		if !kept[at].Record {
+			return kept[at].Emitted
+		}
 	}
-	return kept[at].Emitted
+	return spelling
 }

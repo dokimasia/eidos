@@ -22,11 +22,12 @@ import (
 )
 
 // The files that the plans of the group cases write into the directory
-// of the store package, the family of the mirror and the family of the
-// echo.
+// of the store package, the family of the mirror, the family of the echo
+// and the family of the suites.
 const (
 	mirroredFile = "svc/store/gen.txt"
 	echoedFile   = "svc/store/echo.txt"
+	suiteFile    = "svc/store/suite.txt"
 )
 
 // The second mirror, the echo and the slotter of the group cases. The
@@ -203,6 +204,15 @@ func TestGroups(t *testing.T) {
 			sealedRun(t, sealing(t, mem, "plan"), workspace.Input{Tree: sealedTree()})
 			assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.ScopeEdge("plan", storePackage.Package, ""),
 				"the file declares a name in the store package")
+		})
+
+		t.Run("records no scope of the name of a record among a group's reads", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			sealedRun(t, built(t, sealingOf(t, mem, "plan", suites())), workspace.Input{Tree: roundsTree(rowLine, "")})
+			assert.NotContains(t, groupOf(t, mem, suiteFile).Reads, state.ScopeEdge("plan", storePackage.Package, ""),
+				"a record does not collide with the names of its scope")
 		})
 
 		t.Run("records two units that write one file in one group", func(t *testing.T) {

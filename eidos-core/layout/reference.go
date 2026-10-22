@@ -31,6 +31,13 @@ type derived struct {
 	name   string
 }
 
+// routedAt is where the pass routed a declaration: the index of its file,
+// and whether its unit is a record of a family that claims its files.
+type routedAt struct {
+	file   int
+	record bool
+}
+
 // qualify sets the package of every reference to a declaration of the
 // plan that is written in a file of another package, so the target
 // qualifies the reference and records its import. The file of the
@@ -54,8 +61,10 @@ type derived struct {
 //     reference.
 //
 // The referent is in a file that the pass routes, or else in a kept file
-// that the input's Others name. Where the referent's file derives no
-// package, the referencing declaration is refused under
+// that the input's Others name. The referent of a translated or an
+// emitted reference can be a record of a family that claims its files,
+// and the referent of a bare reference cannot. Where the referent's file
+// derives no package, the referencing declaration is refused under
 // [UnderivedPackage]. Where no file declares the referent of a translated
 // reference, the referencing declaration is refused under
 // [UntranslatedReference]. Where no file declares the referent of an
@@ -70,12 +79,12 @@ func (r *router) qualify() {
 	if r.in.Others == nil && !r.relocated() && !r.in.Emit.Translates() {
 		return
 	}
-	fileOf := map[symbol.Symbol]int{}
+	fileOf := map[symbol.Symbol]routedAt{}
 	for fi := range r.files {
 		for _, u := range r.files[fi].file.Units {
 			for _, d := range u.Decls {
 				if !r.isRefused(d) {
-					fileOf[d] = fi
+					fileOf[d] = routedAt{file: fi, record: u.Template != ""}
 				}
 			}
 		}
@@ -85,27 +94,27 @@ func (r *router) qualify() {
 	for i := range r.units {
 		u := &r.units[i]
 		for _, d := range u.Decls {
-			fi, routed := fileOf[d]
+			at, routed := fileOf[d]
 			name := emit.DeclaredName(d)
 			if !routed || name == "" {
 				continue
 			}
 			k := declared{pkg: u.Pkg.Package, name: name}
-			if _, taken := homes[k]; !taken {
-				homes[k] = fi
+			if _, taken := homes[k]; !taken && !at.record {
+				homes[k] = at.file
 			}
 			origin, _ := emit.OriginOf(d)
 			o := derived{origin: origin, name: name}
 			if _, taken := origins[o]; !taken {
-				origins[o] = fi
+				origins[o] = at.file
 			}
 		}
 	}
 	for i := range r.units {
 		u := &r.units[i]
 		for _, d := range u.Decls {
-			if fi, routed := fileOf[d]; routed {
-				r.qualifyDecl(d, u, fi, homes, origins)
+			if at, routed := fileOf[d]; routed {
+				r.qualifyDecl(d, u, at.file, homes, origins)
 			}
 		}
 	}
@@ -280,8 +289,8 @@ func (r *router) home(homes map[declared]int, pkg, name string) (building, bool)
 // referent returns the file that declares the referent of a translated or
 // an emitted reference: a file of the pass, and else a kept file of the
 // input's Others. A kept referent is a name of the target's package, or a name
-// of a unit without a package, such as a per-plan unit. It reports false
-// where no file declares the referent.
+// of a unit without a package, such as a per-plan unit. A referent can be a
+// record. It reports false where no file declares the referent.
 func (r *router) referent(origins map[derived]int, t *emit.TypeRef) (building, bool) {
 	if hi, generated := origins[derived{origin: t.Target, name: t.Spelling}]; generated {
 		return r.files[hi], true
@@ -295,9 +304,10 @@ func (r *router) referent(origins map[derived]int, t *emit.TypeRef) (building, b
 // kept returns the kept file of the input's Others that declares a
 // settled name of a package, whose path and package the kept name
 // records. A method is never the home of a type reference. A zero origin
-// matches a name of any origin, and any other origin matches a name
-// derived from it alone. It reports false for an input without Others,
-// and where no kept file declares the name.
+// matches a name of any origin other than a record, because a bare
+// reference does not resolve to a record. Any other origin matches a name
+// derived from it alone, a record included. It reports false for an input
+// without Others, and where no kept file declares the name.
 func (r *router) kept(pkg, name string, origin symbol.Identity) (building, bool) {
 	if r.in.Others == nil {
 		return building{}, false
@@ -308,14 +318,17 @@ func (r *router) kept(pkg, name string, origin symbol.Identity) (building, bool)
 	})
 	for ; at < len(kept) && kept[at].Settled == name; at++ {
 		e := &kept[at]
-		if e.Kind == symbol.KindMethod || (!origin.IsZero() && e.Origin != origin) {
-			continue
+		switch {
+		case e.Kind == symbol.KindMethod:
+		case origin.IsZero() && e.Record:
+		case !origin.IsZero() && e.Origin != origin:
+		default:
+			home := building{file: plugin.File{Path: e.File, Pkg: e.FilePkg}}
+			if e.FilePkg.IsZero() {
+				home.reason = errKeptUnderived
+			}
+			return home, true
 		}
-		home := building{file: plugin.File{Path: e.File, Pkg: e.FilePkg}}
-		if e.FilePkg.IsZero() {
-			home.reason = errKeptUnderived
-		}
-		return home, true
 	}
 	return building{}, false
 }

@@ -50,8 +50,9 @@ type Artifact struct {
 	// package.
 	Export []plugin.ExportedSymbol
 	// Names lists the file-level names the file declares, in the order of
-	// its declarations. Each entry's File and FilePkg are the artifact's
-	// path and package, and no entry is Ambiguous.
+	// its declarations, the names of its records included. Each entry's
+	// File and FilePkg are the artifact's path and package, and no entry is
+	// Ambiguous.
 	Names []plugin.NameEntry
 }
 
@@ -219,6 +220,7 @@ func appendArtifact(dst []byte, a *Artifact) []byte {
 		e.uvarint(uint64(n.Kind))
 		e.text(n.Emitted)
 		e.text(n.Settled)
+		e.boolean(n.Record)
 	}
 	return e.buf
 }
@@ -258,7 +260,7 @@ func decodeArtifact(d *decoder, at string) Artifact {
 		for i := range a.Names {
 			a.Names[i] = plugin.NameEntry{
 				Package: d.text(), Receiver: d.text(), Origin: d.identity(), Kind: symbol.Kind(d.Enum()),
-				Emitted: d.text(), Settled: d.text(), File: at, FilePkg: a.Pkg,
+				Emitted: d.text(), Settled: d.text(), Record: d.Bool(), File: at, FilePkg: a.Pkg,
 			}
 		}
 	}

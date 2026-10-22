@@ -63,6 +63,15 @@ func TestArtifacts(t *testing.T) {
 				assert.Equal(t, got, want, "the record contains the entry, the export rows and the names")
 			})
 
+			t.Run("returns the Record mark of a name", func(t *testing.T) {
+				t.Parallel()
+
+				want := recordedArtifact(artifactPath, recordedSubject)
+				want.Names[0].Record = true
+				got := artifactOf(t, func(l *state.Lane) { l.Artifact(want) })
+				assert.Equal(t, got, want, "the name keeps the mark")
+			})
+
 			t.Run("returns the record of a file whose namespace is its package", func(t *testing.T) {
 				t.Parallel()
 

@@ -24,14 +24,16 @@ import (
 const namesOfAllocs = 2
 
 // keptNames is the name table of kept files over a list of entries:
-// what a warm run hands a settle of part of a plan.
+// what a warm run hands a settle of part of a plan. InScope lists the
+// records of a scope, and the other lookups leave every record out.
 type keptNames []plugin.NameEntry
 
 var _ plugin.Names = keptNames(nil)
 
 // InPackage returns the first entry that a declaration of the package
-// other than a method declares under the emitted name, ambiguous where
-// another entry settles the name apart. It allocates nothing.
+// other than a method or a record declares under the emitted name,
+// ambiguous where another entry settles the name apart. It does not
+// allocate.
 func (k keptNames) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 	var (
 		out   plugin.NameEntry
@@ -39,7 +41,7 @@ func (k keptNames) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 	)
 	for _, e := range k {
 		switch {
-		case e.Package != pkg || e.Emitted != emitted || e.Kind == symbol.KindMethod:
+		case e.Package != pkg || e.Emitted != emitted || e.Kind == symbol.KindMethod || e.Record:
 		case !found:
 			out, found = e, true
 		case e.Settled != out.Settled:
@@ -49,11 +51,11 @@ func (k keptNames) InPackage(pkg, emitted string) (plugin.NameEntry, bool) {
 	return out, found
 }
 
-// OfOrigin returns the first entry derived from the origin under the
-// emitted name. It allocates nothing.
+// OfOrigin returns the first entry other than a record derived from the
+// origin under the emitted name. It does not allocate.
 func (k keptNames) OfOrigin(origin symbol.Identity, emitted string) (plugin.NameEntry, bool) {
 	for _, e := range k {
-		if e.Origin == origin && e.Emitted == emitted {
+		if e.Origin == origin && e.Emitted == emitted && !e.Record {
 			return e, true
 		}
 	}
@@ -73,13 +75,13 @@ func (k keptNames) InScope(pkg, receiver string) []plugin.NameEntry {
 	return out
 }
 
-// InFileScope returns the entries of the namespace and receiver, sorted by
-// settled name. The namespace of a kept file is its package. It allocates
-// the list it returns.
+// InFileScope returns the entries of the namespace and receiver other than
+// the records, sorted by settled name. The namespace of a kept file is its
+// package. It allocates the list it returns.
 func (k keptNames) InFileScope(scope symbol.Identity, receiver string) []plugin.NameEntry {
 	var out []plugin.NameEntry
 	for _, e := range k {
-		if e.FilePkg == scope && e.Receiver == receiver {
+		if e.FilePkg == scope && e.Receiver == receiver && !e.Record {
 			out = append(out, e)
 		}
 	}
@@ -184,6 +186,18 @@ func TestNames(t *testing.T) {
 			assert.Equal(t, got[0].Receiver, exportForeign, "no file declares the type")
 		})
 
+		t.Run("sets Receiver to the receiver's spelling where only a kept record declares the type",
+			func(t *testing.T) {
+				t.Parallel()
+
+				kept := keptNames{
+					{Package: "svc", Kind: symbol.KindStruct, Emitted: "crate", Settled: "box", Record: true},
+				}
+				got := namesAfterSettle(t, kept, receiving("box"))
+				assert.Length(t, got, 1, "the method has an entry")
+				assert.Equal(t, got[0].Receiver, "box", "a method does not attach to a record")
+			})
+
 		t.Run("sets Receiver to the emitted name of the type that a field extends", func(t *testing.T) {
 			t.Parallel()
 
@@ -196,13 +210,16 @@ func TestNames(t *testing.T) {
 			assert.Equal(t, got[1].Receiver, "box", "the field attaches to the struct as it was emitted")
 		})
 
-		t.Run("returns no NameEntry for a record of a family that claims its files", func(t *testing.T) {
+		t.Run("sets Record on the NameEntry of a record of a family that claims its files", func(t *testing.T) {
 			t.Parallel()
 
 			record := settleUnit("svc", "svc/a.src", boxWithItem())
 			record.Tag, record.Template = claimTag, claimTemplate
 			in := []plugin.File{{Path: exportFile, Pkg: exportPkg, Units: []plugin.Unit{record}}}
-			assert.Empty(t, plugin.NamesOf(in, nil, nil), "a record declares no name of its file")
+			assert.Equal(t, plugin.NamesOf(in, nil, nil), []plugin.NameEntry{{
+				Package: "svc", Origin: settleOrigin("box", symbol.KindStruct), Kind: symbol.KindStruct,
+				Emitted: "box", Settled: "box", Record: true, File: exportFile, FilePkg: exportPkg,
+			}}, "the record's entry names its file")
 		})
 
 		t.Run("sets Emitted to the declared name for a nil store", func(t *testing.T) {

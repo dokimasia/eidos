@@ -209,8 +209,9 @@ func (l *Lane) Group(g Group) {
 // its path, its row under its path in lower case, and the row of each
 // name the file declares under the name's source scope, under the routed
 // scope of the file's namespace and, for a name with an origin, under its
-// origin. The rows name the lane's plan, whatever plan a names. A name's
-// row states the file's path and package.
+// origin. A record has one row, under its source scope. Each row records
+// the plan of the lane, also where a has another plan. A name's row
+// states the file's path and package.
 func (l *Lane) Artifact(a Artifact) {
 	if l == nil {
 		return
@@ -224,6 +225,10 @@ func (l *Lane) Artifact(a Artifact) {
 		n := a.Names[i]
 		n.File, n.FilePkg, n.Ambiguous = a.Entry.Path, a.Pkg, false
 		l.entry = appendNameRow(l.entry[:0], &n)
+		if n.Record {
+			l.put(plainNames, recordRowKey(l.key[:0], l.plan, &n))
+			continue
+		}
 		l.put(plainNames, scopeRowKey(l.key[:0], l.plan, &n))
 		l.put(plainNames, fileScopeRowKey(l.key[:0], l.plan, a.Scope, &n))
 		if !n.Origin.IsZero() {

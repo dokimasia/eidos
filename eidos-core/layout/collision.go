@@ -100,17 +100,18 @@ type scopedName struct {
 // method or of a field that another type receives. A file without a
 // namespace has no package that the target derives, so its names are in
 // no scope. names are the names of files, in the order that
-// [plugin.NamesOf] returns them. The names of a scope are in the order of
-// the paths of their files, and the names of one file in the order of
-// their declarations. Where Input.Others is set, the kept names of each
-// scope take part in the same order. The first declaration of a settled
-// name in a scope opens a group, and each later declaration joins it. A
-// group is one Error at the origin of its second declaration, with the
-// origins of the others as related. A group of functions of one emitted
-// name is no collision where the target is a [plugin.Overloader] that
-// overloads, because its declarations are the overloads of one function.
-// The check refuses no declaration: the Error fails the plan, so no file of
-// the group is written.
+// [plugin.NamesOf] returns them. A record of a family that claims its files
+// does not collide with a name, so the check leaves the records out. The
+// names of a scope are in the order of the paths of their files, and the
+// names of one file in the order of their declarations. Where Input.Others
+// is set, the kept names of each scope take part in the same order. The
+// first declaration of a settled name in a scope opens a group, and each
+// later declaration joins it. A group is one Error at the origin of its
+// second declaration, with the origins of the others as related. A group of
+// functions of one emitted name is no collision where the target is a
+// [plugin.Overloader] that overloads, because its declarations are the
+// overloads of one function. The check does not refuse a declaration. The
+// Error fails the plan, so no file of the group is written.
 func (r *router) collideNames(files []plugin.File, names []plugin.NameEntry) {
 	overloader, declares := r.in.Packager.(plugin.Overloader)
 	overloading := declares && overloader.Overloads()
@@ -120,7 +121,9 @@ func (r *router) collideNames(files []plugin.File, names []plugin.NameEntry) {
 	at := 0
 	for fi := range files {
 		for at < len(names) && names[at].File == files[fi].Path {
-			order = append(order, scopedName{name: at, file: fi})
+			if !names[at].Record {
+				order = append(order, scopedName{name: at, file: fi})
+			}
 			at++
 		}
 	}

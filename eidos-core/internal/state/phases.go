@@ -434,6 +434,10 @@ func (p *PhaseRecord) readFiles(ctx context.Context, g *Generation) error {
 		}
 		for i := range a.Names {
 			n := &a.Names[i]
+			if n.Record {
+				names = append(names, recordRowKey(nil, a.Entry.Plan, n))
+				continue
+			}
 			names = append(names, scopeRowKey(nil, a.Entry.Plan, n), fileScopeRowKey(nil, a.Entry.Plan, a.Scope, n))
 			if !n.Origin.IsZero() {
 				names = append(names, originRowKey(nil, a.Entry.Plan, n))

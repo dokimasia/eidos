@@ -92,6 +92,15 @@ func TestNames(t *testing.T) {
 				assert.False(t, held, "no bare reference names a method")
 			})
 
+			t.Run("returns false for a record", func(t *testing.T) {
+				t.Parallel()
+
+				a := recordedArtifact(artifactPath, recordedSubject)
+				a.Names[0].Record = true
+				_, held := keptNames(t, nil, a).InPackage(edgeDir, recordedSubject.Name)
+				assert.False(t, held, "a bare reference does not resolve to a record")
+			})
+
 			t.Run("returns false for the name of a file that skip reports", func(t *testing.T) {
 				t.Parallel()
 
@@ -135,6 +144,15 @@ func TestNames(t *testing.T) {
 				assert.False(t, held, "no declaration derives from the sibling")
 			})
 
+			t.Run("returns false for a record", func(t *testing.T) {
+				t.Parallel()
+
+				a := recordedArtifact(artifactPath, recordedSubject)
+				a.Names[0].Record = true
+				_, held := keptNames(t, nil, a).OfOrigin(recordedSubject, recordedSubject.Name)
+				assert.False(t, held, "the settle does not follow a reference to a record")
+			})
+
 			t.Run("returns false for the name of a file that skip reports", func(t *testing.T) {
 				t.Parallel()
 
@@ -171,6 +189,37 @@ func TestNames(t *testing.T) {
 				assert.Equal(t, got[0].Settled, methodName, "the method is the type's")
 			})
 
+			t.Run("returns a record with Record set", func(t *testing.T) {
+				t.Parallel()
+
+				a := recordedArtifact(artifactPath, recordedSubject)
+				a.Names[0].Record = true
+				got := keptNames(t, nil, a).InScope(edgeDir, "")
+				assert.Equal(t, got, a.Names, "an emitted reference resolves to the record")
+			})
+
+			t.Run("returns the records of one name in two files", func(t *testing.T) {
+				t.Parallel()
+
+				first := recordedArtifact(artifactPath, recordedSubject)
+				second := recordedArtifact(siblingPath, recordedSubject)
+				first.Names[0].Record, second.Names[0].Record = true, true
+				got := keptNames(t, nil, first, second).InScope(edgeDir, "")
+				assert.Length(t, got, 2, "each file declares the record")
+			})
+
+			t.Run("returns the records of one name of two origins in one file", func(t *testing.T) {
+				t.Parallel()
+
+				a := recordedArtifact(artifactPath, recordedSubject)
+				a.Names[0].Record = true
+				sibling := a.Names[0]
+				sibling.Origin = siblingSubject
+				a.Names = append(a.Names, sibling)
+				got := keptNames(t, nil, a).InScope(edgeDir, "")
+				assert.Length(t, got, 2, "the file declares a record of each origin")
+			})
+
 			t.Run("returns every entry of a scope whose rows fill several blocks", func(t *testing.T) {
 				t.Parallel()
 
@@ -191,6 +240,27 @@ func TestNames(t *testing.T) {
 				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
 					plan := r.Lane(recordedPlan)
 					plan.Artifact(recordedArtifact(artifactPath, recordedSubject))
+					plan.Artifact(recordedArtifact(siblingPath, siblingSubject))
+				})
+				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					r.Keep()
+					r.KeepPlan(recordedPlan)
+					r.DropFile(artifactPath)
+				})
+				got := g.Phases(t.Context()).Names(recordedPlan, nil).InScope(edgeDir, "")
+				assert.Length(t, got, 1, "one file remains")
+				assert.Equal(t, got[0].File, siblingPath, "the sibling's name remains")
+			})
+
+			t.Run("leaves out the record of a file that a later commit dropped", func(t *testing.T) {
+				t.Parallel()
+
+				l := ledger.NewMem()
+				record := recordedArtifact(artifactPath, recordedSubject)
+				record.Names[0].Record = true
+				recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
+					plan := r.Lane(recordedPlan)
+					plan.Artifact(record)
 					plan.Artifact(recordedArtifact(siblingPath, siblingSubject))
 				})
 				g := recordedPhases(t, l, emptyFacts(), nil, func(r *state.Recorder) {
@@ -263,6 +333,14 @@ func TestNames(t *testing.T) {
 				again := func(file string) bool { return file == artifactPath }
 				names := keptNames(t, again, recordedArtifact(artifactPath, recordedSubject))
 				assert.Empty(t, names.InFileScope(artifactScope, ""), "the run generates the file again")
+			})
+
+			t.Run("returns no record", func(t *testing.T) {
+				t.Parallel()
+
+				a := recordedArtifact(artifactPath, recordedSubject)
+				a.Names[0].Record = true
+				assert.Empty(t, keptNames(t, nil, a).InFileScope(artifactScope, ""), "a record does not collide")
 			})
 
 			t.Run("leaves out the entries of a file that a later commit dropped", func(t *testing.T) {

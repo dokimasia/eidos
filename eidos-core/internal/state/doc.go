@@ -61,7 +61,8 @@
 // under its path and under its path in lower case, which finds the paths
 // that one tree cannot contain beside a new path. The names table keeps
 // each file-level name that a plan's files declare, under its collision
-// scope and under its origin. [PhaseState.Names] reads it as the
+// scope and under its origin. A record has one row, under its source
+// scope. [PhaseState.Names] reads it as the
 // [go.dokimi.dev/eidos/core/plugin.Names] of the files a warm run keeps.
 //
 // A warm run calls [Recorder.Keep], drops the record of each validation
