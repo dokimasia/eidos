@@ -1,5 +1,28 @@
 # go.dokimi.dev/eidos/lang/typescript
 
+## 0.4.0
+
+### Minor Changes
+
+- 4c06021: Add the plan policy `typescript.quote` to select the quote of each string that the backend writes.
+- 4c06021: Add `typescript.AppendQuote` and `typescript.Requote` to write the string literals of TypeScript.
+- 4c06021: Derive the sample of a class as a construction through its first public constructor, with the fields that it leaves unset set through `Object.assign`.
+- 4c06021: **Breaking:** Derive the sample of an interface as an object literal of each required property, and refuse an interface with a required method.
+- 4c06021: **Breaking:** Move `PropKey`, `MethodKey` and `EnumKey` of the TypeScript backend to `Speller`.
+- 4c06021: Write a TypeScript object literal with a space inside its braces.
+- 4c06021: Spell a callee with an owner as the owner and its name, as `Object.assign`.
+- 4c06021: **Breaking:** Spell a TypeScript type with the spaces that Biome and Prettier write on one line.
+- 4c06021: **Breaking:** Write each string of a TypeScript file in the double quote by default.
+
+### Patch Changes
+
+- 4c06021: Parse the TypeScript benchmark corpus in 1,710,009 allocations instead of 2,180,003.
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, 141d240, e1de752, 8c07b86, 529673e, 217c870, 7dfcd57, d0ab2c4, 6dc24ee, e75c0ca]
+  - go.dokimi.dev/eidos/core@0.7.0
+  - go.dokimi.dev/eidos/sdk@0.5.0
+  - go.dokimi.dev/eidos/lang@0.3.0
+
 ## 0.3.2
 
 ### Patch Changes

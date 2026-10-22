@@ -1,5 +1,25 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.3.0
+
+### Minor Changes
+
+- 8716d09: Add `backend.Format` to format a Go file as gofumpt and golines format it.
+- 8716d09: Add the plan policy `golang.width` to choose the width at which the backend wraps a line of code.
+- 8716d09: **Breaking:** Format each rendered Go file with gofumpt and then with golines at the width of the plan.
+- 8716d09: **Breaking:** Load a Go dependency package only where a declaration or a directive of the load uses it.
+- 8716d09: Record a use for each declaration outside a Go file that a named type or a directive argument of the file can resolve to.
+- 8716d09: Refuse to format a Go file while the environment sets `GOFUMPT_SPLIT_LONG_LINES=on`.
+
+### Patch Changes
+
+- e75c0ca: Declare Go 1.27.3 in the scratch module that the conformance adapter of `testing` lays out.
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, 141d240, e1de752, 8c07b86, 529673e, 217c870, 7dfcd57, d0ab2c4, 6dc24ee, e75c0ca]
+  - go.dokimi.dev/eidos/core@0.7.0
+  - go.dokimi.dev/eidos/sdk@0.5.0
+  - go.dokimi.dev/eidos/lang@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes

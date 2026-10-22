@@ -1,5 +1,27 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.4
+
+### Patch Changes
+
+- bb9aecd: Probe the policy `typescript.quote` in the hub of the support matrix.
+- bb9aecd: Probe the width policy of Go in the hub of the matrix.
+- e75c0ca: Require Go 1.27.3.
+- Updated dependencies [9c9c4bb, 141d240, e1de752, 8716d09, 8c07b86, 4c06021, 529673e, 217c870, 7dfcd57, d0ab2c4, 6dc24ee, e75c0ca, 6672f85]
+  - go.dokimi.dev/eidos/core@0.7.0
+  - go.dokimi.dev/eidos/sdk@0.5.0
+  - go.dokimi.dev/eidos/lang/go@0.3.0
+  - go.dokimi.dev/eidos/lang/typescript@0.4.0
+  - go.dokimi.dev/eidos/lang@0.3.0
+  - go.dokimi.dev/eidos/plugin/shape@0.0.7
+  - go.dokimi.dev/eidos/cli@0.2.5
+  - go.dokimi.dev/eidos/declarative@0.1.6
+  - go.dokimi.dev/eidos/lang/graphql@0.1.4
+  - go.dokimi.dev/eidos/lang/java@0.2.4
+  - go.dokimi.dev/eidos/lang/protobuf@0.2.4
+  - go.dokimi.dev/eidos/lang/python@0.1.4
+  - go.dokimi.dev/eidos/lang/rust@0.2.4
+
 ## 0.3.3
 
 ### Patch Changes

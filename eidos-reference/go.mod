@@ -7,12 +7,12 @@ go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.2.0
-	go.dokimi.dev/eidos/cli v0.2.4
-	go.dokimi.dev/eidos/core v0.6.0
-	go.dokimi.dev/eidos/lang v0.2.3
-	go.dokimi.dev/eidos/lang/go v0.2.3
-	go.dokimi.dev/eidos/lang/typescript v0.3.2
-	go.dokimi.dev/eidos/sdk v0.4.0
+	go.dokimi.dev/eidos/cli v0.2.5
+	go.dokimi.dev/eidos/core v0.7.0
+	go.dokimi.dev/eidos/lang v0.3.0
+	go.dokimi.dev/eidos/lang/go v0.3.0
+	go.dokimi.dev/eidos/lang/typescript v0.4.0
+	go.dokimi.dev/eidos/sdk v0.5.0
 	golang.org/x/mod v0.42.0
 )
 
@@ -24,7 +24,7 @@ require (
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
-	go.dokimi.dev/eidos/declarative v0.1.5 // indirect
+	go.dokimi.dev/eidos/declarative v0.1.6 // indirect
 	go.stealthscale.io/cli v0.4.0 // indirect
 	go.stealthscale.io/cli/yaml v0.1.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
