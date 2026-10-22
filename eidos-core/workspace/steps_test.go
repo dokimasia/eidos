@@ -54,11 +54,15 @@ const (
 // roles, makerID is the generator that provides the capability that duoID
 // requires or runs after, and duoKeyName is the key that the annotator half
 // of duoID stamps. The name duoID sorts before makerID, so only the
-// capability orders the two generators.
+// capability orders the two generators. In the weave cases, duoCap is the
+// capability of the annotator half of duoID, and misspelledDuoKey is
+// duoKeyName with a misspelled namespace.
 const (
-	duoID      plugin.ID    = "duo"
-	makerID    plugin.ID    = "maker"
-	duoKeyName meta.KeyName = "duo.seen"
+	duoID            plugin.ID         = "duo"
+	makerID          plugin.ID         = "maker"
+	duoKeyName       meta.KeyName      = "duo.seen"
+	duoCap           plugin.Capability = "duo"
+	misspelledDuoKey meta.KeyName      = "dou.seen"
 )
 
 // The language of [keyedFrontend] and the key that it registers.
@@ -185,8 +189,8 @@ func (*declaring) Annotate(*plugin.AnnotatorContext) error { return nil }
 // Priority places every role at priority one.
 func (*declaring) Priority(plugin.Role) int { return 1 }
 
-// Provides returns the provided labels verbatim.
-func (d *declaring) Provides() []plugin.Capability { return d.provides }
+// Provides returns the provided labels verbatim in every role.
+func (d *declaring) Provides(plugin.Role) []plugin.Capability { return d.provides }
 
 // Requires returns the required labels verbatim.
 func (d *declaring) Requires() []plugin.Capability { return d.requires }
@@ -208,7 +212,7 @@ func (partial) Annotate(*plugin.AnnotatorContext) error { return nil }
 func (partial) Priority(plugin.Role) int { return 1 }
 
 // Provides returns no label.
-func (partial) Provides() []plugin.Capability { return nil }
+func (partial) Provides(plugin.Role) []plugin.Capability { return nil }
 
 // treeless is a hand-rolled generator that implements Templates of
 // [plugin.TemplateProvider], and lacks its three other methods.
@@ -266,6 +270,34 @@ func (unclaiming) Annotate(*plugin.AnnotatorContext) error { return nil }
 func (u unclaiming) BindKeys(*meta.Registry) (plugin.Plugin, error) {
 	return u, plugin.ErrUnclaimedNamespace
 }
+
+// scoping is a hand-rolled generator that provides its capabilities in the
+// annotator role alone, which it does not implement.
+type scoping struct{ provides []plugin.Capability }
+
+// Name returns the name scoping.
+func (scoping) Name() plugin.ID { return "scoping" }
+
+// Generate emits nothing.
+func (scoping) Generate(*plugin.GeneratorContext) error { return nil }
+
+// Priority places every role at priority zero.
+func (scoping) Priority(plugin.Role) int { return 0 }
+
+// Provides returns the capabilities of s in the annotator role, and none in
+// another role.
+func (s scoping) Provides(r plugin.Role) []plugin.Capability {
+	if r == plugin.RoleAnnotator {
+		return s.provides
+	}
+	return nil
+}
+
+// Requires returns no capability.
+func (scoping) Requires() []plugin.Capability { return nil }
+
+// After returns no capability.
+func (scoping) After() []plugin.Capability { return nil }
 
 // TestSteps tests the steps of Build, whose output is the schedule. A
 // case observes the schedule in the order in which the handlers run,
@@ -480,6 +512,39 @@ func TestSteps(t *testing.T) {
 			_, err := valid().Annotators(&declaring{name: "trailing", after: caps("absent")}).Build()
 			assert.NoError(t, err, "a label that the plugin runs after needs no provider")
 		})
+
+		t.Run("returns an error naming two providers of a label that one of them provides in one role",
+			func(t *testing.T) {
+				t.Parallel()
+
+				duo := eidos.NewPlugin(duoID).
+					ProvidesIn(plugin.RoleAnnotator, "x").
+					Handle(
+						eidos.OnStruct(quiet),
+						eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil }),
+					).
+					Dual()
+				_, err := valid().Annotators(capable("first", caps("x"), nil)).
+					Plans(planTo("second", "fixture", duo)).
+					Build()
+				assert.HasError(t, err, "the composition fails")
+				expect.That(t, err.Error()).
+					Contains(`capability "x" is provided by`, "the error names the label").
+					Contains("first", "the error names the plugin of both roles").
+					Contains(string(duoID), "the error names the plugin of one role")
+			})
+
+		t.Run("returns an error for a required label that its provider declares in a role that it lacks",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, err := valid().Annotators(capable("asking", nil, caps("x"))).
+					Plans(planTo("second", "fixture", scoping{provides: caps("x")})).
+					Build()
+				assert.HasError(t, err, "the composition fails")
+				assert.Contains(t, err.Error(), `asking requires capability "x", which nothing provides`,
+					"a label of a role that its provider lacks has no provider")
+			})
 	})
 
 	t.Run("partialProviders", func(t *testing.T) {
@@ -1127,6 +1192,34 @@ func TestSteps(t *testing.T) {
 					"the capability orders the generator half after the provider")
 			})
 
+		t.Run("runs a generator after the annotator half of a dual plugin whose generator half requires it",
+			func(t *testing.T) {
+				t.Parallel()
+
+				calls, err := weaveOrder(t, eidos.HasKey(meta.Named[bool](duoKeyName)))
+				assert.NoError(t, err, "the composition builds")
+				assert.Equal(t, calls, []plugin.ID{makerID, duoID}, "the generator half runs after its requirement")
+			})
+
+		t.Run("returns an error naming an annotator that requires a capability of the generator half alone",
+			func(t *testing.T) {
+				t.Parallel()
+
+				duo := eidos.NewPlugin(duoID).
+					ProvidesIn(plugin.RoleGenerator, "x").
+					Handle(
+						eidos.OnStruct(quiet),
+						eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil }),
+					).
+					Dual()
+				_, err := valid().Annotators(capable("asking", nil, caps("x"))).
+					Plans(planTo("second", "fixture", duo)).
+					Build()
+				assert.HasError(t, err, "the composition fails")
+				want := `annotator asking requires capability "x", which the generator duo provides`
+				assert.Contains(t, err.Error(), want, "the error names the annotator and the generator half")
+			})
+
 		t.Run("returns an error naming the plugins of a cycle through a followed capability", func(t *testing.T) {
 			t.Parallel()
 
@@ -1336,6 +1429,47 @@ func TestSteps(t *testing.T) {
 
 				_, err := valid().Annotators(unclaiming{}).Build()
 				assert.ErrorIs(t, err, plugin.ErrUnclaimedNamespace, "the composition fails with the error of the bind")
+			})
+
+		t.Run("returns an error for an unclaimed namespace where an annotator half provides the capability of After",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, err := weaveOrder(t, eidos.HasKey(meta.Named[bool](misspelledDuoKey)))
+				assert.ErrorIs(t, err, plugin.ErrUnclaimedNamespace, "the bind refuses the misspelled namespace")
+			})
+
+		t.Run("returns an error stating that a registrant provides no capability in the annotator role",
+			func(t *testing.T) {
+				t.Parallel()
+
+				var flag meta.Key[bool]
+				registrant := eidos.NewPlugin(flaggerID).
+					ProvidesIn(plugin.RoleGenerator, flagsCap).
+					Keys(func(r *meta.Registry) error {
+						if err := r.ClaimNamespace(flagKeyName.Namespace()); err != nil {
+							return err
+						}
+						k, err := meta.Register[bool](r, meta.KeySpec{Name: flagKeyName, Doc: "a flagged struct"})
+						flag = k
+						return err
+					}).
+					Handle(
+						eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+							eidos.Stamp(st, flag, true)
+							return nil
+						}),
+						eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil }),
+					).
+					Dual()
+				var visited []string
+				_, err := valid().
+					Annotators(auditing(eidos.HasKey(meta.Named[bool](flagKeyName)), nil, nil, &visited)).
+					Plans(planTo("second", "fixture", registrant)).
+					Build()
+				assert.HasError(t, err, "the composition fails")
+				assert.Contains(t, err.Error(), "flagger provides no capability to require",
+					"the advice leaves out the capability of the generator half")
 			})
 
 		t.Run("returns an error naming a plugin whose BindKeys returns a plugin of another type", func(t *testing.T) {
@@ -1605,6 +1739,60 @@ func dualOrder(t *testing.T, requires, after []plugin.Capability) []plugin.ID {
 	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
 	assert.NoError(t, err, "the dual fixture runs")
 	return calls
+}
+
+// weaveOrder composes the generator makerID, which provides the capability
+// cap, runs after duoCap and gates on gate, with the plugin duoID. The
+// annotator half of duoID provides duoCap and stamps duoKeyName on every
+// struct, and its generator half requires cap. weaveOrder returns the error
+// of Build where Build fails. Otherwise it runs the composition over the
+// fixture of one struct, and returns the generators in the order of their
+// runs.
+func weaveOrder(t *testing.T, gate eidos.Pred) ([]plugin.ID, error) {
+	t.Helper()
+
+	var (
+		calls []plugin.ID
+		seen  meta.Key[bool]
+	)
+	maker := eidos.NewPlugin(makerID).
+		Provides("cap").
+		After(duoCap).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "made"}).
+		Handle(eidos.Where(gate, eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+			calls = append(calls, makerID)
+			return nil
+		}))).Generator()
+	duo := eidos.NewPlugin(duoID).
+		ProvidesIn(plugin.RoleAnnotator, duoCap).
+		Requires("cap").
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace(duoKeyName.Namespace()); err != nil {
+				return err
+			}
+			k, err := meta.Register[bool](r, meta.KeySpec{Name: duoKeyName, Doc: "a struct that duo saw"})
+			seen = k
+			return err
+		}).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "duo"}).
+		Handle(
+			eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+				eidos.Stamp(st, seen, true)
+				return nil
+			}),
+			eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+				calls = append(calls, duoID)
+				return nil
+			}),
+		).Dual()
+	w, err := valid().Plans(planTo("second", "fixture", maker, duo)).Build()
+	if err != nil {
+		return nil, err
+	}
+	g, _ := alpha(t)
+	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
+	assert.NoError(t, err, "the weave fixture runs")
+	return calls, nil
 }
 
 // capable returns a hand-rolled annotator with the capability lists

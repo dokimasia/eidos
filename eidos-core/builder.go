@@ -53,6 +53,9 @@ import (
 //     and a family template that is not a slash-separated path inside a
 //     tree
 //   - an empty capability label and a nil key registration
+//   - a capability of [Builder.ProvidesIn] in a role other than the
+//     annotator role and the generator role, or in a role that the typed
+//     build lacks
 //   - a directive name in two wrappers, and explicit Kinds that leave out
 //     the kind of a rule under the wrapper other than an [OnEmit] rule
 //   - a [Gated] name that is not a kernel directive, a rule gated on two
@@ -89,6 +92,7 @@ type Builder struct {
 	outputs  []plugin.Output
 	priority map[plugin.Role]int
 	provides []plugin.Capability
+	scoped   []scopedCapability
 	requires []plugin.Capability
 	after    []plugin.Capability
 	options  any
@@ -103,6 +107,13 @@ type Builder struct {
 type targetLayer struct {
 	target plugin.Target
 	opts   []TargetOption
+}
+
+// scopedCapability is one capability of a [Builder.ProvidesIn]
+// declaration, with the role that provides it.
+type scopedCapability struct {
+	role  plugin.Role
+	label plugin.Capability
 }
 
 // Dual is a plugin with an annotator half and a generator half. Each half
@@ -144,12 +155,27 @@ func (b *Builder) Priority(r plugin.Role, p int) *Builder {
 	return b
 }
 
-// Provides declares the capabilities that the plugin provides. A plugin
-// that requires one of them, or runs after one of them, runs after this
-// plugin. A first call allocates the list of labels, and a later call
-// allocates only to grow it.
+// Provides declares the capabilities that the plugin provides in each of
+// its roles. A plugin that requires one of them, or runs after one of
+// them, runs after this plugin. A first call allocates the list of labels,
+// and a later call allocates only to grow it.
 func (b *Builder) Provides(caps ...plugin.Capability) *Builder {
 	b.provides = append(b.provides, caps...)
+	return b
+}
+
+// ProvidesIn declares capabilities that the plugin provides in the role r
+// alone. Such a capability orders the plugins of r alone. A plugin with
+// both roles provides a capability of its annotator half this way. A
+// generator that runs after the capability then has no order against the
+// generator half, so the generator half can require that generator. A
+// first call allocates the list of these capabilities, and a later call
+// allocates only to grow it.
+func (b *Builder) ProvidesIn(r plugin.Role, caps ...plugin.Capability) *Builder {
+	b.scoped = slices.Grow(b.scoped, len(caps))
+	for _, c := range caps {
+		b.scoped = append(b.scoped, scopedCapability{role: r, label: c})
+	}
 	return b
 }
 
@@ -245,22 +271,30 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 
 // Generator lowers the declaration to a generator, as the documentation
 // of [Builder] states. It panics where a rule stamps facts, because a
-// plugin with such a rule is an annotator or a dual plugin.
+// plugin with such a rule is an annotator or a dual plugin. It also panics
+// on a capability of the annotator role, which only a dual plugin has.
 func (b *Builder) Generator() plugin.Generator {
 	base, annotates, _ := b.lower()
 	if annotates {
 		panic("eidos: " + string(b.name) + " declares a rule that stamps facts, so build it with Annotator or Dual")
+	}
+	if slices.ContainsFunc(b.scoped, func(s scopedCapability) bool { return s.role == plugin.RoleAnnotator }) {
+		panic("eidos: " + string(b.name) + " provides a capability in the annotator role, so build it with Dual")
 	}
 	return &builtGenerator{built: base}
 }
 
 // Annotator lowers the declaration to an annotator, as the documentation
 // of [Builder] states. It panics where a rule emits, because a plugin
-// with such a rule is a generator or a dual plugin.
+// with such a rule is a generator or a dual plugin. It also panics on a
+// capability of the generator role, which only a dual plugin has.
 func (b *Builder) Annotator() plugin.Annotator {
 	base, _, generates := b.lower()
 	if generates {
 		panic("eidos: " + string(b.name) + " declares a rule that emits, so build it with Generator or Dual")
+	}
+	if slices.ContainsFunc(b.scoped, func(s scopedCapability) bool { return s.role == plugin.RoleGenerator }) {
+		panic("eidos: " + string(b.name) + " provides a capability in the generator role, so build it with Dual")
 	}
 	return &builtAnnotator{built: base}
 }
@@ -314,6 +348,15 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 			panic("eidos: " + name + " declares an empty capability label")
 		}
 	}
+	for _, s := range b.scoped {
+		if s.role != plugin.RoleAnnotator && s.role != plugin.RoleGenerator {
+			panic("eidos: " + name + " provides capability " + strconv.Quote(string(s.label)) + " in role " +
+				s.role.String() + ", which is no role of a plugin")
+		}
+		if s.label == "" {
+			panic("eidos: " + name + " declares an empty capability label")
+		}
+	}
 	for _, register := range b.keys {
 		if register == nil {
 			panic("eidos: " + name + " declares a nil key registration")
@@ -334,7 +377,7 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 		outputs:  slices.Clone(b.outputs),
 		outByTag: outByTag,
 		priority: maps.Clone(b.priority),
-		provides: slices.Clone(b.provides),
+		provides: rolesOf(b.provides, b.scoped),
 		requires: slices.Clone(b.requires),
 		after:    slices.Clone(b.after),
 		options:  b.options,
@@ -353,6 +396,25 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 		}
 	}
 	return base, annotates, generates
+}
+
+// rolesOf returns the capabilities of each role of a declaration. The list
+// of a role has the capabilities of provides, then the capabilities of
+// scoped in that role. rolesOf returns nil for a declaration without
+// capabilities, so a typed build of such a declaration allocates nothing
+// for them.
+func rolesOf(provides []plugin.Capability, scoped []scopedCapability) map[plugin.Role][]plugin.Capability {
+	if len(provides) == 0 && len(scoped) == 0 {
+		return nil
+	}
+	roles := map[plugin.Role][]plugin.Capability{
+		plugin.RoleAnnotator: slices.Clone(provides),
+		plugin.RoleGenerator: slices.Clone(provides),
+	}
+	for _, s := range scoped {
+		roles[s.role] = append(roles[s.role], s.label)
+	}
+	return roles
 }
 
 // flatten lowers the rule tree to its leaves. It collects the gates of the

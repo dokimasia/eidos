@@ -29,6 +29,13 @@ const (
 	afterLabel       = plugin.Capability("indexed")
 )
 
+// The declaration with both roles provides stampedLabel in its annotator
+// role alone, and emittedLabel in its generator role alone.
+const (
+	stampedLabel = plugin.Capability("stamped")
+	emittedLabel = plugin.Capability("emitted")
+)
+
 // ghostKeyName is a key name that no fixture registers, in a namespace that
 // a fixture claims. absentKeyName is a key name in a namespace that no
 // fixture claims.
@@ -81,12 +88,40 @@ func TestBuilt(t *testing.T) {
 	t.Run("Provides", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the provided labels", func(t *testing.T) {
+		t.Run("returns the provided labels in the role of a generator", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, capabilities(t).Provides(), []plugin.Capability{providedLabel},
+			assert.Equal(t, capabilities(t).Provides(plugin.RoleGenerator), []plugin.Capability{providedLabel},
 				"the provided label is returned")
 		})
+
+		tests := []struct {
+			name     string
+			giveRole plugin.Role
+			want     []plugin.Capability
+		}{
+			{
+				name:     "returns the label of ProvidesIn in the annotator role after the label of Provides",
+				giveRole: plugin.RoleAnnotator,
+				want:     []plugin.Capability{providedLabel, stampedLabel},
+			},
+			{
+				name:     "returns the label of ProvidesIn in the generator role after the label of Provides",
+				giveRole: plugin.RoleGenerator,
+				want:     []plugin.Capability{providedLabel, emittedLabel},
+			},
+			{
+				name:     "returns no label in the zero role",
+				giveRole: 0,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, halves(t).Provides(tt.giveRole), tt.want, "the role has the labels that it declares")
+			})
+		}
 	})
 
 	t.Run("Requires", func(t *testing.T) {
@@ -384,6 +419,24 @@ func capabilities(tb assert.TB) plugin.CapabilityProvider {
 	tb.Helper()
 
 	caps, held := declared(&plannerOptions{}).(plugin.CapabilityProvider)
+	assert.True(tb, held, "the capabilities are returned")
+	return caps
+}
+
+// halves returns a declaration with both roles as a
+// [plugin.CapabilityProvider]. It provides providedLabel in both roles,
+// stampedLabel in the annotator role and emittedLabel in the generator
+// role.
+func halves(tb assert.TB) plugin.CapabilityProvider {
+	tb.Helper()
+
+	p := eidos.NewPlugin(plannerPlugin).
+		Provides(providedLabel).
+		ProvidesIn(plugin.RoleAnnotator, stampedLabel).
+		ProvidesIn(plugin.RoleGenerator, emittedLabel).
+		Handle(eidos.OnStruct(nothing[*eidos.Stamper]), eidos.OnStruct(nothing[*eidos.Emitter])).
+		Dual()
+	caps, held := p.(plugin.CapabilityProvider)
 	assert.True(tb, held, "the capabilities are returned")
 	return caps
 }

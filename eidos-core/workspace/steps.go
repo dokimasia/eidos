@@ -444,11 +444,32 @@ func implements(t reflect.Type, m reflect.Method) bool {
 	return true
 }
 
-// capabilities collects the labels. It refuses a label with two
-// providers, a required label without a provider, and an empty label.
-// Each refusal names the plugins, because the label alone does not
-// identify the plugin at fault. A label that a plugin runs after needs no
-// provider.
+// memberRole is a role of the members of a composition, with the check
+// whether a plugin implements it.
+type memberRole struct {
+	role          plugin.Role
+	implementedBy func(plugin.Plugin) bool
+}
+
+// The roles of the members of a composition. A plugin with both roles
+// implements both.
+var (
+	annotatorRole = memberRole{
+		role:          plugin.RoleAnnotator,
+		implementedBy: func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held },
+	}
+	generatorRole = memberRole{
+		role:          plugin.RoleGenerator,
+		implementedBy: func(p plugin.Plugin) bool { _, held := p.(plugin.Generator); return held },
+	}
+	roles = [...]memberRole{annotatorRole, generatorRole}
+)
+
+// capabilities collects the labels that each plugin provides in the roles
+// that it implements. It refuses a label with two providers, a required
+// label without a provider, and an empty label. Each refusal names the
+// plugins, because the label alone does not identify the plugin at fault. A
+// label that a plugin runs after needs no provider.
 func capabilities(roster []plugin.Plugin) []error {
 	var faults []error
 	providers := map[plugin.Capability][]plugin.ID{}
@@ -458,18 +479,23 @@ func capabilities(roster []plugin.Plugin) []error {
 			continue
 		}
 		mine := map[plugin.Capability]bool{}
-		for _, c := range cp.Provides() {
-			if c == "" {
-				faults = append(faults, fmt.Errorf(
-					"workspace: %s provides an empty capability label", p.Name(),
-				))
+		for _, r := range roles {
+			if !r.implementedBy(p) {
 				continue
 			}
-			if mine[c] {
-				continue
+			for _, c := range cp.Provides(r.role) {
+				if mine[c] {
+					continue
+				}
+				mine[c] = true
+				if c == "" {
+					faults = append(faults, fmt.Errorf(
+						"workspace: %s provides an empty capability label", p.Name(),
+					))
+					continue
+				}
+				providers[c] = append(providers[c], p.Name())
 			}
-			mine[c] = true
-			providers[c] = append(providers[c], p.Name())
 		}
 	}
 	for _, c := range slices.Sorted(maps.Keys(providers)) {
@@ -534,18 +560,18 @@ type member struct {
 // member runs after.
 var orderings = [...]string{"requires", "runs after"}
 
-// membersOf reads the candidates of one role off the roster, in roster
-// order.
-func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugin) bool) []member {
+// membersOf reads the candidates of the role r off the roster, in roster
+// order. A member provides the capabilities of the role r.
+func membersOf(roster []plugin.Plugin, r memberRole) []member {
 	var out []member
 	for _, p := range roster {
-		if !holds(p) {
+		if !r.implementedBy(p) {
 			continue
 		}
 		m := member{p: p, name: p.Name()}
 		if cp, held := p.(plugin.CapabilityProvider); held {
-			m.pri = cp.Priority(role)
-			m.provides = cp.Provides()
+			m.pri = cp.Priority(r.role)
+			m.provides = cp.Provides(r.role)
 			m.requires = cp.Requires()
 			m.after = cp.After()
 		}
@@ -562,10 +588,11 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 // annotators, so lower returns a fault for an annotator that requires or
 // runs after a capability that only a generator provides. A plugin that
 // also generates is exempt, because the capability then orders its
-// generator half among the generators.
+// generator half among the generators. A member provides the capabilities
+// of its own role, so a capability that a plugin with both roles provides
+// in one role orders the members of that role alone.
 func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry, []error) {
-	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
-		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
+	annotators, aerr := order("annotator", membersOf(roster, annotatorRole))
 	ann := make([]annEntry, 0, len(entries)+len(annotators))
 	for _, l := range entries {
 		ann = append(ann, annEntry{turn: len(ann) + 1, name: l.Name(), run: l})
@@ -578,8 +605,7 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 		ann = append(ann, annEntry{turn: len(ann) + 1, name: m.name, run: run})
 	}
 
-	generators, gerr := order("generator", membersOf(roster, plugin.RoleGenerator,
-		func(p plugin.Plugin) bool { _, held := p.(plugin.Generator); return held }))
+	generators, gerr := order("generator", membersOf(roster, generatorRole))
 	gen := make([]genEntry, 0, len(generators))
 	for i, m := range generators {
 		run, held := m.p.(plugin.Generator)
@@ -658,10 +684,16 @@ func runsWithout(p plugin.Plugin, roster []plugin.Plugin) bool {
 		return false
 	}
 	return slices.ContainsFunc(cp.After(), func(c plugin.Capability) bool {
-		return !slices.ContainsFunc(roster, func(q plugin.Plugin) bool {
-			provider, provides := q.(plugin.CapabilityProvider)
-			return provides && slices.Contains(provider.Provides(), c)
-		})
+		return !slices.ContainsFunc(roster, func(q plugin.Plugin) bool { return providedBy(q, c) })
+	})
+}
+
+// providedBy reports whether p provides the capability c in a role that p
+// implements.
+func providedBy(p plugin.Plugin, c plugin.Capability) bool {
+	cp, declares := p.(plugin.CapabilityProvider)
+	return declares && slices.ContainsFunc(roles[:], func(r memberRole) bool {
+		return r.implementedBy(p) && slices.Contains(cp.Provides(r.role), c)
 	})
 }
 
@@ -724,12 +756,13 @@ func gateOrder(ann []annEntry, keys *meta.Registry) []error {
 }
 
 // requirable returns the text of what an annotator requires to run after
-// a registrant. The text lists the capabilities of the registrant, or
-// reports that the registrant provides none.
+// a registrant. The text lists the capabilities of the annotator role of
+// the registrant, or reports that the registrant provides none in that
+// role.
 func requirable(registrant annEntry) string {
 	var labels []string
 	if cp, provides := registrant.run.(plugin.CapabilityProvider); provides {
-		for _, c := range cp.Provides() {
+		for _, c := range cp.Provides(plugin.RoleAnnotator) {
 			labels = append(labels, strconv.Quote(string(c)))
 		}
 	}

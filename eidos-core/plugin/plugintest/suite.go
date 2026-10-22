@@ -219,7 +219,7 @@ type declaration struct {
 	outputs       []plugin.Output
 	directives    []directive.Schema
 	priorities    map[plugin.Role]int
-	provides      []plugin.Capability
+	provides      map[plugin.Role][]plugin.Capability
 	requires      []plugin.Capability
 	after         []plugin.Capability
 	options       any
@@ -253,7 +253,11 @@ func declared(tb assert.TB, p plugin.Plugin, targets []plugin.Target) declaratio
 				plugin.RoleAnnotator: c.Priority(plugin.RoleAnnotator),
 				plugin.RoleGenerator: c.Priority(plugin.RoleGenerator),
 			}
-			d.provides, d.requires, d.after = c.Provides(), c.Requires(), c.After()
+			d.provides = map[plugin.Role][]plugin.Capability{
+				plugin.RoleAnnotator: c.Provides(plugin.RoleAnnotator),
+				plugin.RoleGenerator: c.Provides(plugin.RoleGenerator),
+			}
+			d.requires, d.after = c.Requires(), c.After()
 		}
 		if o, held := p.(plugin.OptionsProvider); held {
 			d.options = o.Options()

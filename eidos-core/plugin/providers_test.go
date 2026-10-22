@@ -37,8 +37,8 @@ func (declared) Outputs() []plugin.Output {
 // Priority returns the number of the role r as its priority.
 func (declared) Priority(r plugin.Role) int { return int(r) }
 
-// Provides returns the capability a.
-func (declared) Provides() []plugin.Capability { return []plugin.Capability{"a"} }
+// Provides returns the capability a in every role.
+func (declared) Provides(plugin.Role) []plugin.Capability { return []plugin.Capability{"a"} }
 
 // Requires returns the capability b.
 func (declared) Requires() []plugin.Capability { return []plugin.Capability{"b"} }

@@ -24,7 +24,7 @@ type built struct {
 	outputs  []plugin.Output
 	outByTag map[Tag]plugin.Output
 	priority map[plugin.Role]int
-	provides []plugin.Capability
+	provides map[plugin.Role][]plugin.Capability
 	requires []plugin.Capability
 	after    []plugin.Capability
 	options  any
@@ -49,8 +49,9 @@ func (b *built) Outputs() []plugin.Output { return b.outputs }
 // plugin declares none.
 func (b *built) Priority(r plugin.Role) int { return b.priority[r] }
 
-// Provides returns the capabilities that the plugin provides.
-func (b *built) Provides() []plugin.Capability { return b.provides }
+// Provides returns the capabilities that the plugin provides in the role
+// r, and nil for a role in which it provides none.
+func (b *built) Provides(r plugin.Role) []plugin.Capability { return b.provides[r] }
 
 // Requires returns the capabilities that the plugin requires.
 func (b *built) Requires() []plugin.Capability { return b.requires }

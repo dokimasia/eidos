@@ -363,8 +363,8 @@ func (f *Fixture) store() *plugin.Emit {
 }
 
 // runsWithout reports whether p runs after a capability that no plugin of
-// composition provides. composition contains p, as the roster of a
-// workspace does.
+// composition provides in a role that the plugin implements. composition
+// contains p, as the roster of a workspace does.
 func runsWithout(p plugin.Plugin, composition []plugin.Plugin) bool {
 	cp, declares := p.(plugin.CapabilityProvider)
 	if !declares {
@@ -373,7 +373,13 @@ func runsWithout(p plugin.Plugin, composition []plugin.Plugin) bool {
 	return slices.ContainsFunc(cp.After(), func(c plugin.Capability) bool {
 		return !slices.ContainsFunc(composition, func(q plugin.Plugin) bool {
 			provider, provides := q.(plugin.CapabilityProvider)
-			return provides && slices.Contains(provider.Provides(), c)
+			if !provides {
+				return false
+			}
+			_, annotates := q.(plugin.Annotator)
+			_, generates := q.(plugin.Generator)
+			return annotates && slices.Contains(provider.Provides(plugin.RoleAnnotator), c) ||
+				generates && slices.Contains(provider.Provides(plugin.RoleGenerator), c)
 		})
 	})
 }

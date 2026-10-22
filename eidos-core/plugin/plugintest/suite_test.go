@@ -278,8 +278,8 @@ type shifting struct {
 func (shifting) Priority(plugin.Role) int { return 0 }
 
 // Provides returns one capability that has the number of reads so far in
-// its label.
-func (s shifting) Provides() []plugin.Capability {
+// its label, in every role.
+func (s shifting) Provides(plugin.Role) []plugin.Capability {
 	*s.reads++
 	return []plugin.Capability{plugin.Capability("read" + strconv.Itoa(*s.reads))}
 }

@@ -114,6 +114,19 @@ func TestBuilder(t *testing.T) {
 			assert.Equal(t, got, any("eidos: planner declares a rule that emits, so build it with Generator or Dual"),
 				"the panic names the plugin and the typed builds that fit it")
 		})
+
+		t.Run("panics on a capability of the generator role", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").
+					ProvidesIn(plugin.RoleGenerator, emittedLabel).
+					Handle(eidos.OnStruct(nothing[*eidos.Stamper])).
+					Annotator()
+			}, "an annotator with a capability of the generator role panics")
+			want := any("eidos: planner provides a capability in the generator role, so build it with Dual")
+			assert.Equal(t, got, want, "the panic names the plugin and the typed build that fits it")
+		})
 	})
 
 	t.Run("Dual", func(t *testing.T) {
@@ -176,6 +189,19 @@ func TestBuilder(t *testing.T) {
 			}, "a generator with a rule that stamps facts panics")
 			want := any("eidos: planner declares a rule that stamps facts, so build it with Annotator or Dual")
 			assert.Equal(t, got, want, "the panic names the plugin and the typed builds that fit it")
+		})
+
+		t.Run("panics on a capability of the annotator role", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").
+					ProvidesIn(plugin.RoleAnnotator, stampedLabel).
+					Handle(emitNothing()).
+					Generator()
+			}, "a generator with a capability of the annotator role panics")
+			want := any("eidos: planner provides a capability in the annotator role, so build it with Dual")
+			assert.Equal(t, got, want, "the panic names the plugin and the typed build that fits it")
 		})
 
 		t.Run("returns one schema for a wrapper that gates two rules", func(t *testing.T) {
@@ -349,6 +375,18 @@ func TestBuilder(t *testing.T) {
 				name: "panics on an empty capability label that the plugin runs after",
 				build: func() {
 					eidos.NewPlugin("t").After("").Handle(emitNothing()).Generator()
+				},
+			},
+			{
+				name: "panics on an empty capability label of one role",
+				build: func() {
+					eidos.NewPlugin("t").ProvidesIn(plugin.RoleGenerator, "").Handle(emitNothing()).Generator()
+				},
+			},
+			{
+				name: "panics on a capability of the zero role",
+				build: func() {
+					eidos.NewPlugin("t").ProvidesIn(0, emittedLabel).Handle(emitNothing()).Generator()
 				},
 			},
 			{
@@ -821,6 +859,9 @@ func declarations(tb assert.TB) []declaring {
 		}},
 		{name: "Provides", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
 			return b.Provides(providedLabel)
+		}},
+		{name: "ProvidesIn", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
+			return b.ProvidesIn(plugin.RoleAnnotator, stampedLabel)
 		}},
 		{name: "Requires", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
 			return b.Requires(requiredLabel)

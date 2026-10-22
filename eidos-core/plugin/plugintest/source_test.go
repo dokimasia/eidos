@@ -58,6 +58,34 @@ const (
 	gatingID plugin.ID = "gating"
 )
 
+// stamping is a hand-rolled generator that provides the capability
+// absentCap in the annotator role alone, which it does not implement.
+type stamping struct{}
+
+// Name returns the name owner.
+func (stamping) Name() plugin.ID { return ownerID }
+
+// Generate emits nothing.
+func (stamping) Generate(*plugin.GeneratorContext) error { return nil }
+
+// Priority places every role at priority zero.
+func (stamping) Priority(plugin.Role) int { return 0 }
+
+// Provides returns absentCap in the annotator role, and no capability in
+// another role.
+func (stamping) Provides(r plugin.Role) []plugin.Capability {
+	if r == plugin.RoleAnnotator {
+		return []plugin.Capability{absentCap}
+	}
+	return nil
+}
+
+// Requires returns no capability.
+func (stamping) Requires() []plugin.Capability { return nil }
+
+// After returns no capability.
+func (stamping) After() []plugin.Capability { return nil }
+
 // keyedFront is the scripted frontend that registers its classification
 // key through its own role.
 type keyedFront struct{ *frontendtest.Scripted }
@@ -176,6 +204,25 @@ func TestSource(t *testing.T) {
 					})
 				assert.Equal(t, coretest.Contracts(failure), []string{"the gates of the plugin on named handles bind"},
 					"the failure names the bind")
+			})
+
+		t.Run("binds a gate on a namespace that nothing claims where its provider lacks the role of the capability",
+			func(t *testing.T) {
+				t.Parallel()
+
+				s := source(nil)
+				s.Plugins = append(s.Plugins, stamping{})
+				var visited []string
+				p := eidos.NewPlugin(gatingID).
+					After(absentCap).
+					Handle(eidos.Where(eidos.HasKey(meta.Named[bool](absentKey)),
+						eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
+							visited = append(visited, m.Struct.Name)
+							return nil
+						}))).
+					Annotator()
+				assert.NoError(t, plugintest.Loaded(t, s).Annotate(t, p).Err, "the phase call passes")
+				assert.Empty(t, visited, "the gate does not select a subject")
 			})
 
 		t.Run("stops the test where the load returns an error", func(t *testing.T) {
