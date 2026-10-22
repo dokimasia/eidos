@@ -601,8 +601,9 @@ type Settled = core.Settled
 // declarations map it first, and others map it second. A receiver whose
 // type neither declares keeps its spelling. Ambiguous is false on every
 // entry, because the ambiguity of a name depends on every file of the
-// plan. A unit of a family that claims its files contains records, which
-// declare no name of the file, so NamesOf lists none of them.
+// plan. A unit of a family that claims its files contains records. The
+// entry of the name of a record has Record set, and a receiver does not
+// map back to a record.
 //
 // # Allocation contract
 //
@@ -1144,9 +1145,10 @@ type MemberRespeller = core.MemberRespeller
 //
 // The settle respells the records of a family that claims its files.
 // The units of such a family have a [Unit.Template], and the template
-// reads the names of the target. A record declares no name of its file,
-// so the settle checks no record for a collision, and no reference
-// follows a record.
+// reads the names of the target. The settle does not check a record for a
+// collision, and it does not rewrite a reference to the name of a record.
+// The layout qualifies a reference with a target into the file of a
+// record.
 //
 // The settle records whether a declaration that renders has an emitted
 // reference, or a type reference to a declaration of another language
