@@ -36,8 +36,8 @@ func TestName(t *testing.T) {
 
 			provider, provides := catalog.Annotators()[0].(plugin.CapabilityProvider)
 			assert.True(t, provides, "the plugin shape declares its capabilities")
-			assert.Equal(t, provider.Provides(), []plugin.Capability{shape.Capability},
-				"the plugin shape provides the capability")
+			assert.Equal(t, provider.Provides(plugin.RoleAnnotator), []plugin.Capability{shape.Capability},
+				"the plugin shape provides the capability in the annotator role")
 		})
 
 		t.Run("is the capability that the plugin shapecheck requires", func(t *testing.T) {
