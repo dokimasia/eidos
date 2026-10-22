@@ -39,12 +39,15 @@ const (
 // and stamps the flag key. auditID is the annotator that gates on the
 // key through a named handle, flagsCap is the capability that orders
 // the two, flagKeyName is the key, and ghostFlagName is a name that
-// nothing registers.
+// nothing registers. absentKeyName is a name in a namespace that nothing
+// claims, and absentCap is a capability that nothing provides.
 const (
 	auditID       plugin.ID         = "audit"
 	flagsCap      plugin.Capability = "flags"
 	flagKeyName   meta.KeyName      = "flag.marked"
 	ghostFlagName meta.KeyName      = "flag.ghost"
+	absentKeyName meta.KeyName      = "absent.marked"
+	absentCap     plugin.Capability = "absent"
 )
 
 // The dual fixture of the ordering cases. duoID is the plugin with both
@@ -246,6 +249,22 @@ func (rebinding) Annotate(*plugin.AnnotatorContext) error { return nil }
 // BindKeys returns a hand-made annotator of the same name.
 func (rebinding) BindKeys(*meta.Registry) (plugin.Plugin, error) {
 	return handmade{name: "rebinding"}, nil
+}
+
+// unclaiming is a hand-rolled annotator without capabilities whose bind
+// refuses a name of a namespace that nothing claims.
+type unclaiming struct{}
+
+// Name returns the name unclaiming.
+func (unclaiming) Name() plugin.ID { return "unclaiming" }
+
+// Annotate stamps nothing.
+func (unclaiming) Annotate(*plugin.AnnotatorContext) error { return nil }
+
+// BindKeys returns u and the error of a name of a namespace that nothing
+// claims.
+func (u unclaiming) BindKeys(*meta.Registry) (plugin.Plugin, error) {
+	return u, plugin.ErrUnclaimedNamespace
 }
 
 // TestSteps tests the steps of Build, whose output is the schedule. A
@@ -1173,7 +1192,7 @@ func TestSteps(t *testing.T) {
 			var visited []string
 			w, err := valid().Annotators(
 				flagger(caps(flagsCap)),
-				auditing(eidos.HasKey(meta.Named[bool](flagKeyName)), caps(flagsCap), &visited),
+				auditing(eidos.HasKey(meta.Named[bool](flagKeyName)), caps(flagsCap), nil, &visited),
 			).Build()
 			assert.NoError(t, err, "the composition builds")
 			g, _ := alpha(t)
@@ -1182,10 +1201,42 @@ func TestSteps(t *testing.T) {
 			assert.Equal(t, visited, []string{"Alpha"}, "the gate admits the struct that the registrant flagged")
 		})
 
+		absent := []struct {
+			name string
+			gate eidos.Pred
+			want []string
+		}{
+			{
+				name: "does not select a subject through a gate on a namespace that nothing claims after a capability " +
+					"without a provider",
+				gate: eidos.HasKey(meta.Named[bool](absentKeyName)),
+			},
+			{
+				name: "selects every subject through a negated gate on a namespace that nothing claims after a capability " +
+					"without a provider",
+				gate: eidos.Not(eidos.HasKey(meta.Named[bool](absentKeyName))),
+				want: []string{"Alpha"},
+			},
+		}
+		for _, tt := range absent {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var visited []string
+				w, err := valid().Annotators(auditing(tt.gate, nil, caps(absentCap), &visited)).Build()
+				assert.NoError(t, err, "the composition builds without the registrant of the key")
+				g, _ := alpha(t)
+				_, err = w.Run(t.Context(), workspace.Input{Graph: g})
+				assert.NoError(t, err, "the composition runs")
+				assert.Equal(t, visited, tt.want, "the gate reads the key as absent on every struct")
+			})
+		}
+
 		refused := []struct {
 			name    string
 			flagger plugin.Annotator
 			gate    eidos.Pred
+			after   []plugin.Capability
 			markers []string
 		}{
 			{
@@ -1212,13 +1263,34 @@ func TestSteps(t *testing.T) {
 				gate:    eidos.HasKey(meta.Named[bool](flagKeyName)),
 				markers: []string{string(auditID), "flagger provides no capability to require"},
 			},
+			{
+				name:    "returns an error naming the plugin and the key of a namespace that nothing claims",
+				flagger: flagger(caps(flagsCap)),
+				gate:    eidos.HasKey(meta.Named[bool](absentKeyName)),
+				markers: []string{string(auditID), string(absentKeyName), "nothing claims the namespace"},
+			},
+			{
+				name:    "returns an error for a namespace that nothing claims where each capability of After has a provider",
+				flagger: flagger(caps(flagsCap)),
+				gate:    eidos.HasKey(meta.Named[bool](absentKeyName)),
+				after:   caps(flagsCap),
+				markers: []string{string(auditID), string(absentKeyName), "nothing claims the namespace"},
+			},
+			{
+				name: "returns an error naming the key of a name that nothing registers after a capability " +
+					"without a provider",
+				flagger: flagger(caps(flagsCap)),
+				gate:    eidos.HasKey(meta.Named[bool](ghostFlagName)),
+				after:   caps(absentCap),
+				markers: []string{string(auditID), string(ghostFlagName), "nothing registers"},
+			},
 		}
 		for _, tt := range refused {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				var visited []string
-				_, err := valid().Annotators(tt.flagger, auditing(tt.gate, nil, &visited)).Build()
+				_, err := valid().Annotators(tt.flagger, auditing(tt.gate, nil, tt.after, &visited)).Build()
 				assert.HasError(t, err, "the composition fails")
 				for _, marker := range tt.markers {
 					assert.Contains(t, err.Error(), marker, "the error names the fault")
@@ -1239,6 +1311,32 @@ func TestSteps(t *testing.T) {
 			assert.HasError(t, err, "the composition fails")
 			assert.Equal(t, strings.Count(err.Error(), string(flagKeyName)), 1, "the gate on the key is refused once")
 		})
+
+		t.Run("returns the error of an unregistered name without the error of an unclaimed namespace",
+			func(t *testing.T) {
+				t.Parallel()
+
+				mixed := eidos.NewPlugin(auditID).
+					After(absentCap).
+					Handle(
+						eidos.Where(eidos.HasKey(meta.Named[bool](absentKeyName)), eidos.OnStruct(quiet)),
+						eidos.Where(eidos.HasKey(meta.Named[bool](ghostFlagName)), eidos.OnStruct(quiet)),
+					).
+					Annotator()
+				_, err := valid().Annotators(flagger(caps(flagsCap)), mixed).Build()
+				assert.HasError(t, err, "the composition fails")
+				expect.That(t, err.Error()).
+					Contains(string(ghostFlagName), "the error names the key that nothing registers").
+					NotContains(string(absentKeyName), "the error leaves out the key of the namespace that nothing claims")
+			})
+
+		t.Run("returns an error that wraps ErrUnclaimedNamespace for a plugin without capabilities",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, err := valid().Annotators(unclaiming{}).Build()
+				assert.ErrorIs(t, err, plugin.ErrUnclaimedNamespace, "the composition fails with the error of the bind")
+			})
 
 		t.Run("returns an error naming a plugin whose BindKeys returns a plugin of another type", func(t *testing.T) {
 			t.Parallel()
@@ -1550,10 +1648,12 @@ func flagger(provides []plugin.Capability) plugin.Annotator {
 }
 
 // auditing returns an annotator that requires the capabilities requires,
-// and that appends the name of each struct that gate admits to visited.
-func auditing(gate eidos.Pred, requires []plugin.Capability, visited *[]string) plugin.Annotator {
+// runs after the capabilities after, and appends the name of each struct
+// that gate admits to visited.
+func auditing(gate eidos.Pred, requires, after []plugin.Capability, visited *[]string) plugin.Annotator {
 	return eidos.NewPlugin(auditID).
 		Requires(requires...).
+		After(after...).
 		Handle(eidos.Where(gate, eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
 			*visited = append(*visited, m.Struct.Name)
 			return nil

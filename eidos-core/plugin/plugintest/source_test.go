@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -48,6 +49,13 @@ const (
 	libFile    = "ext/lib/lib.zz"
 	libPackage = "ext/lib"
 	libSource  = "package " + libPackage + "\ntype Lib string\n"
+)
+
+// The plugins of the composition case. The plugin owner provides the
+// capability that the plugin gating runs after.
+const (
+	ownerID  plugin.ID = "owner"
+	gatingID plugin.ID = "gating"
 )
 
 // keyedFront is the scripted frontend that registers its classification
@@ -147,6 +155,28 @@ func TestSource(t *testing.T) {
 			_, err := meta.Register[bool](f.Keys, meta.KeySpec{Name: sealedKey, Doc: sealedDoc})
 			assert.HasError(t, err, "a key registers in no sealed registry")
 		})
+
+		t.Run("fails the test for a gate on a namespace that nothing claims where the source provides the capability",
+			func(t *testing.T) {
+				t.Parallel()
+
+				failure := assert.Rejects(t, "a gate on a namespace that nothing claims must fail the test",
+					func(tb assert.TB) {
+						s := source(nil)
+						s.Plugins = append(s.Plugins, eidos.NewPlugin(ownerID).
+							Provides(absentCap).
+							Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error { return nil })).
+							Annotator())
+						p := eidos.NewPlugin(gatingID).
+							After(absentCap).
+							Handle(eidos.Where(eidos.HasKey(meta.Named[bool](absentKey)),
+								eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error { return nil }))).
+							Annotator()
+						plugintest.Loaded(tb, s).Annotate(tb, p)
+					})
+				assert.Equal(t, coretest.Contracts(failure), []string{"the gates of the plugin on named handles bind"},
+					"the failure names the bind")
+			})
 
 		t.Run("stops the test where the load returns an error", func(t *testing.T) {
 			t.Parallel()

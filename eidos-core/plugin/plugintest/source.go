@@ -36,7 +36,8 @@ type Source struct {
 	Frontends []plugin.Frontend
 	Rules     []rules.SourceRules
 	// Plugins are the plugins whose keys the fixture registers and whose
-	// directives it validates.
+	// directives it validates. A phase call of the fixture binds a plugin in
+	// the composition of these plugins.
 	Plugins []plugin.Plugin
 	// Packages are the paths of the packages of the tree that the fixture
 	// contains, and nil contains every package of the load. The fixture
@@ -77,6 +78,7 @@ func Loaded(tb assert.TB, s Source) *Fixture {
 	reportedClean(tb, sink, "the load of the source tree")
 
 	f := New(tb)
+	f.plugins = slices.Clone(s.Plugins)
 	f.Rules = rules.NewRegistry()
 	assert.Total(tb, f.Rules.Register, s.Rules, "the rules of each language of the source register")
 	for _, front := range s.Frontends {

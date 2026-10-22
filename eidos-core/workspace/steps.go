@@ -619,7 +619,10 @@ func lower(roster []plugin.Plugin, entries []*lowering) ([]annEntry, []genEntry,
 // handles in the sealed key registry. The bound plugin takes the place of
 // the plugin in the roster and in byName, so the schedule runs the bound
 // plugin. The step refuses a bound plugin of another type or another name
-// than its plugin.
+// than its plugin. For a plugin that runs after a capability that no
+// plugin of the roster provides, the step drops each error that wraps
+// [plugin.ErrUnclaimedNamespace]. The gate on such a name does not select
+// a subject.
 func bindKeys(roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, keys *meta.Registry) []error {
 	var faults []error
 	for i, p := range roster {
@@ -631,7 +634,7 @@ func bindKeys(roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, keys *
 		}
 		bound, err := kb.BindKeys(keys)
 		if err != nil {
-			faults = append(faults, err)
+			faults = append(faults, bindFaults(err, runsWithout(p, roster))...)
 		}
 		if reflect.TypeOf(bound) != reflect.TypeOf(p) || bound.Name() != p.Name() {
 			faults = append(faults, fmt.Errorf(
@@ -641,6 +644,46 @@ func bindKeys(roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, keys *
 		}
 		roster[i] = bound
 		byName[p.Name()] = bound
+	}
+	return faults
+}
+
+// runsWithout reports whether p runs after a capability that no plugin of
+// the roster provides. It scans the capabilities of the roster for each
+// capability of After, because bindKeys asks only for a plugin whose bind
+// failed.
+func runsWithout(p plugin.Plugin, roster []plugin.Plugin) bool {
+	cp, declares := p.(plugin.CapabilityProvider)
+	if !declares {
+		return false
+	}
+	return slices.ContainsFunc(cp.After(), func(c plugin.Capability) bool {
+		return !slices.ContainsFunc(roster, func(q plugin.Plugin) bool {
+			provider, provides := q.(plugin.CapabilityProvider)
+			return provides && slices.Contains(provider.Provides(), c)
+		})
+	})
+}
+
+// bindFaults returns the faults of an error of BindKeys. Where absent is
+// false, it returns err. Where absent is true, it splits a joined err into
+// its errors and leaves out each error that wraps
+// [plugin.ErrUnclaimedNamespace]. absent reports whether the plugin runs
+// after a capability that no plugin of the roster provides.
+func bindFaults(err error, absent bool) []error {
+	if !absent {
+		return []error{err}
+	}
+	errs := []error{err}
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		errs = joined.Unwrap()
+	}
+	var faults []error
+	for _, e := range errs {
+		if !errors.Is(e, plugin.ErrUnclaimedNamespace) {
+			faults = append(faults, e)
+		}
 	}
 	return faults
 }

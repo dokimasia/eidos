@@ -4,6 +4,9 @@
 package plugintest
 
 import (
+	"errors"
+	"slices"
+
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/backend/render"
@@ -72,6 +75,10 @@ type Fixture struct {
 
 	emit    *plugin.Emit
 	claimed map[string]bool
+	// plugins are the plugins of the source of a fixture that [Loaded]
+	// returns. A phase call binds a plugin in the composition of these
+	// plugins and the plugin itself.
+	plugins []plugin.Plugin
 }
 
 // New returns an empty fixture at turn one, with the keys of the kernel
@@ -298,7 +305,10 @@ func (f *Fixture) Layout(tb assert.TB, plugins ...plugin.Plugin) *layout.Input {
 // bind returns the plugin that p binds in the registry of the fixture, as
 // a workspace binds it when it builds, and p itself where p does not
 // implement [plugin.KeyBinder]. A name that the registry does not contain
-// fails the test.
+// fails the test. The composition of the bind is p and the plugins of the
+// source of [Loaded]. Where p runs after a capability that no plugin of the
+// composition provides, a name whose namespace no registrant claims passes.
+// The gate on such a name does not select a subject.
 func (f *Fixture) bind(tb assert.TB, p plugin.Plugin) plugin.Plugin {
 	tb.Helper()
 
@@ -307,6 +317,16 @@ func (f *Fixture) bind(tb assert.TB, p plugin.Plugin) plugin.Plugin {
 		return p
 	}
 	bound, err := kb.BindKeys(f.Keys)
+	if err != nil && runsWithout(p, slices.Concat(f.plugins, []plugin.Plugin{p})) {
+		var joined interface{ Unwrap() []error }
+		errs := []error{err}
+		if errors.As(err, &joined) {
+			errs = joined.Unwrap()
+		}
+		err = errors.Join(slices.DeleteFunc(slices.Clone(errs), func(e error) bool {
+			return errors.Is(e, plugin.ErrUnclaimedNamespace)
+		})...)
+	}
 	assert.NoError(tb, err, "the gates of the plugin on named handles bind")
 	return bound
 }
@@ -340,4 +360,20 @@ func (f *Fixture) store() *plugin.Emit {
 		f.emit = plugin.NewEmit()
 	}
 	return f.emit
+}
+
+// runsWithout reports whether p runs after a capability that no plugin of
+// composition provides. composition contains p, as the roster of a
+// workspace does.
+func runsWithout(p plugin.Plugin, composition []plugin.Plugin) bool {
+	cp, declares := p.(plugin.CapabilityProvider)
+	if !declares {
+		return false
+	}
+	return slices.ContainsFunc(cp.After(), func(c plugin.Capability) bool {
+		return !slices.ContainsFunc(composition, func(q plugin.Plugin) bool {
+			provider, provides := q.(plugin.CapabilityProvider)
+			return provides && slices.Contains(provider.Provides(), c)
+		})
+	})
 }

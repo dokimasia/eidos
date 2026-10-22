@@ -4,9 +4,19 @@
 package plugin
 
 import (
+	"errors"
+
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 )
+
+// ErrUnclaimedNamespace is the error that [KeyBinder.BindKeys] wraps for a
+// gate on a named key whose namespace no registrant claims. The plugin that
+// registers the key is absent from the composition, or the name of the key
+// is misspelled. The workspace drops such an error of a plugin that runs
+// after a capability that no plugin of the composition provides. The gate
+// on the name then does not select a subject.
+var ErrUnclaimedNamespace = errors.New("plugin: nothing claims the namespace of the key")
 
 // The provider interfaces are the declarations that the workspace reads
 // off a plugin when it composes. Each returns data that the plugin built
@@ -43,7 +53,10 @@ type KeyProvider interface {
 // Error modes: one error for each name that r does not contain under the
 // value type of its handle. The message of each error contains the plugin
 // and the key, and the workspace collects the error as a fault of the
-// composition.
+// composition. The error for a name whose namespace no registrant claims
+// wraps [ErrUnclaimedNamespace]. The workspace drops such an error of a
+// plugin that runs after a capability that no plugin of the composition
+// provides. The gate on the name then does not select a subject.
 type KeyBinder interface {
 	BindKeys(r *meta.Registry) (Plugin, error)
 }

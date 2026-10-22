@@ -33,6 +33,13 @@ const (
 // panicReason is what the handlers of the panic cases panic with.
 const panicReason = "t: the handler panics"
 
+// The key of the cases in a namespace that nothing claims, and the
+// capability that the plugin of a case runs after.
+const (
+	absentKey meta.KeyName      = "absent.marked"
+	absentCap plugin.Capability = "absent"
+)
+
 // keyRecorder is a journal that keeps the match key of every
 // invocation a phase call hands it.
 type keyRecorder struct{ keys []plugin.MatchKey }
@@ -67,6 +74,22 @@ func (s schemed) Directives() []directive.Schema { return s }
 
 // probeSchema is the schema of the directive probe of the plugin t.
 var probeSchema = directive.Schema{Plugin: "t", Name: "probe", Doc: "marks a subject that the plugin probes"}
+
+// unclaiming is a hand-rolled annotator without capabilities whose bind
+// refuses a name of a namespace that nothing claims.
+type unclaiming struct{}
+
+// Name returns the name unclaiming.
+func (unclaiming) Name() plugin.ID { return "unclaiming" }
+
+// Annotate stamps nothing.
+func (unclaiming) Annotate(*plugin.AnnotatorContext) error { return nil }
+
+// BindKeys returns u and the error of a name of a namespace that nothing
+// claims.
+func (u unclaiming) BindKeys(*meta.Registry) (plugin.Plugin, error) {
+	return u, plugin.ErrUnclaimedNamespace
+}
 
 // The fixture is the read side of a run, built by hand, so everything
 // that a phase call receives through it is contract: the loaded
@@ -137,6 +160,55 @@ func TestFixture(t *testing.T) {
 			assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Alpha"}, "the gate admits the stamped subject through the name")
 		})
+
+		t.Run("binds a gate on a namespace that nothing claims in a plugin that runs after a capability",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f, _, _ := twoStructs(t)
+				var visited []string
+				p := eidos.NewPlugin("t").
+					After(absentCap).
+					Handle(eidos.Where(eidos.HasKey(meta.Named[bool](absentKey)),
+						eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
+							visited = append(visited, m.Struct.Name)
+							return nil
+						}))).
+					Annotator()
+
+				assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
+				assert.Empty(t, visited, "the gate does not select a subject")
+			})
+
+		t.Run("fails the test for a gate on a namespace that nothing claims in a plugin without After",
+			func(t *testing.T) {
+				t.Parallel()
+
+				failure := assert.Rejects(t, "a gate on a namespace that nothing claims must fail the test",
+					func(tb assert.TB) {
+						f, _, _ := twoStructs(tb)
+						p := eidos.NewPlugin("t").
+							Handle(eidos.Where(eidos.HasKey(meta.Named[bool](absentKey)),
+								eidos.OnStruct(func(*eidos.StructMatch, *eidos.Stamper) error { return nil }))).
+							Annotator()
+						f.Annotate(tb, p)
+					})
+				assert.Equal(t, coretest.Contracts(failure), []string{"the gates of the plugin on named handles bind"},
+					"the failure names the bind")
+			})
+
+		t.Run("fails the test for a gate on a namespace that nothing claims in a plugin without capabilities",
+			func(t *testing.T) {
+				t.Parallel()
+
+				failure := assert.Rejects(t, "a gate on a namespace that nothing claims must fail the test",
+					func(tb assert.TB) {
+						f, _, _ := twoStructs(tb)
+						f.Annotate(tb, unclaiming{})
+					})
+				assert.Equal(t, coretest.Contracts(failure), []string{"the gates of the plugin on named handles bind"},
+					"the failure names the bind")
+			})
 
 		t.Run("fails the test for a phase that panics", func(t *testing.T) {
 			t.Parallel()

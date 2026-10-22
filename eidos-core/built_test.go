@@ -29,8 +29,13 @@ const (
 	afterLabel       = plugin.Capability("indexed")
 )
 
-// ghostKeyName is a key name that no fixture registers.
-const ghostKeyName meta.KeyName = "t.ghost"
+// ghostKeyName is a key name that no fixture registers, in a namespace that
+// a fixture claims. absentKeyName is a key name in a namespace that no
+// fixture claims.
+const (
+	ghostKeyName  meta.KeyName = "t.ghost"
+	absentKeyName meta.KeyName = "absent.marked"
+)
 
 // registryOutput is the one family that the full declaration states.
 var registryOutput = plugin.Output{Per: plugin.PerPlan, Word: "registry"}
@@ -300,11 +305,36 @@ func TestBuilt(t *testing.T) {
 
 			_, facts := boolKey(t)
 			_, err := binderOf(t, gatedPlugin(eidos.HasKey(meta.Named[bool](ghostKeyName)))).BindKeys(facts.Registry())
-			assert.HasError(t, err, "the name binds to nothing")
+			assert.HasError(t, err, "the bind of the name fails")
 			expect.That(t, err.Error()).
 				Contains(string(plannerPlugin), "the error names the plugin").
 				Contains(string(ghostKeyName), "the error names the key").
 				Contains("nothing registers", "the error states the cause")
+			expect.That(t, err).ErrorIsNot(plugin.ErrUnclaimedNamespace,
+				"a registrant claims the namespace of the name")
+		})
+
+		t.Run("returns an error that wraps ErrUnclaimedNamespace for a name whose namespace nothing claims",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, facts := boolKey(t)
+				p := gatedPlugin(eidos.HasKey(meta.Named[bool](absentKeyName)))
+				_, err := binderOf(t, p).BindKeys(facts.Registry())
+				assert.ErrorIs(t, err, plugin.ErrUnclaimedNamespace, "no registrant claims the namespace of the name")
+				expect.That(t, err.Error()).
+					Contains(string(plannerPlugin), "the error names the plugin").
+					Contains(string(absentKeyName), "the error names the key")
+			})
+
+		t.Run("leaves the gate on a name whose namespace nothing claims unbound", func(t *testing.T) {
+			t.Parallel()
+
+			_, facts := boolKey(t)
+			p := gatedPlugin(eidos.HasKey(meta.Named[bool](absentKeyName)))
+			bound, err := binderOf(t, p).BindKeys(facts.Registry())
+			assert.HasError(t, err, "the bind of the name fails")
+			assert.Equal(t, subscribedKeys(t, bound), []meta.KeyID{0}, "the subscription of the bound plugin has no id")
 		})
 
 		t.Run("returns an error for a name that the registry has under another value type", func(t *testing.T) {
@@ -327,7 +357,7 @@ func TestBuilt(t *testing.T) {
 				)).
 				Generator()
 			_, err := binderOf(t, p).BindKeys(facts.Registry())
-			assert.HasError(t, err, "the name binds to nothing")
+			assert.HasError(t, err, "the bind of the name fails")
 			assert.Equal(t, strings.Count(err.Error(), string(ghostKeyName)), 1, "the name is refused once")
 		})
 	})

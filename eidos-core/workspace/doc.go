@@ -107,11 +107,14 @@
 // on a named handle, which has the key's name alone. After the key
 // registry seals, Build binds each such gate through
 // [plugin.KeyBinder], and refuses a name that the registry does not
-// contain under the handle's value type. An annotator that gates on a
-// key that another annotator registers runs in a later turn than that
-// annotator. Build refuses the composition otherwise, and the message of
-// the error contains the capabilities that the gating annotator can
-// require.
+// contain under the handle's value type. A plugin that runs after a
+// capability that no plugin of the composition provides serves the
+// composition without the provider. Build leaves a gate of such a plugin
+// unbound where no registrant claims the namespace of its name. The gate
+// then does not select a subject. An annotator that gates on a key that
+// another annotator registers runs in a later turn than that annotator.
+// Build refuses the composition otherwise, and the message of the error
+// contains the capabilities that the gating annotator can require.
 //
 // # The run
 //

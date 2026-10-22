@@ -148,9 +148,12 @@ type Pred struct {
 // through its closure, and a gate cannot. A handle from [meta.Named] has
 // the name of a key of another registrant and no id. The workspace binds
 // the gate when it builds, and refuses a name that the registry does not
-// contain under T. HasKey allocates the closure of the test over the key,
-// one allocation, and for a named handle the closure that binds it, two
-// allocations.
+// contain under T. The workspace leaves the gate unbound where no
+// registrant claims the namespace of the name and the plugin runs after a
+// capability that no plugin of the composition provides. An unbound gate
+// does not select a subject. HasKey allocates the closure of the test over
+// the key, one allocation, and for a named handle the closure that binds
+// it, two allocations.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return Pred{
 		id:   k.ID(),
@@ -263,7 +266,9 @@ func HasSlot(name string) Pred {
 // function that returns the id of its name in a registry. The function
 // returns an error for a name that the registry does not contain, and for
 // a name that the registry contains under another value type than T. The
-// message of the error contains the plugin of the gate and the key.
+// message of the error contains the plugin of the gate and the key. The
+// error for a name whose namespace no registrant claims wraps
+// [plugin.ErrUnclaimedNamespace].
 func bindName[T meta.FactValue](k meta.Key[T]) func(r *meta.Registry, p plugin.ID) (meta.KeyID, error) {
 	if k.ID() != 0 || k.Name() == "" {
 		return nil
@@ -280,6 +285,9 @@ func bindName[T meta.FactValue](k meta.Key[T]) func(r *meta.Registry, p plugin.I
 				k.Name(),
 				want,
 			)
+		}
+		if _, claimed := r.Claimant(k.Name().Namespace()); !claimed {
+			return 0, fmt.Errorf("eidos: %s gates on %s: %w", p, k.Name(), plugin.ErrUnclaimedNamespace)
 		}
 		return 0, fmt.Errorf("eidos: %s gates on %s, and nothing registers the key", p, k.Name())
 	}
