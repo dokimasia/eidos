@@ -594,9 +594,12 @@ type Pred = core.Pred
 // through its closure, and a gate cannot. A handle from [meta.Named] has
 // the name of a key of another registrant and no id. The workspace binds
 // the gate when it builds, and refuses a name that the registry does not
-// contain under T. HasKey allocates the closure of the test over the key,
-// one allocation, and for a named handle the closure that binds it, two
-// allocations.
+// contain under T. The workspace leaves the gate unbound where no
+// registrant claims the namespace of the name and the plugin runs after a
+// capability that no plugin of the composition provides. An unbound gate
+// does not select a subject. HasKey allocates the closure of the test over
+// the key, one allocation, and for a named handle the closure that binds
+// it, two allocations.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return core.HasKey[T](k)
 }

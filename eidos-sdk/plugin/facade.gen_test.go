@@ -841,6 +841,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ErrUnclaimedNamespace", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.ErrUnclaimedNamespace, core.ErrUnclaimedNamespace, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("DirectiveProvider", func(t *testing.T) {
 		t.Parallel()
 
