@@ -4,6 +4,7 @@
 package debugweaver_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -84,6 +85,21 @@ func TestDebugweaver(t *testing.T) {
 			for _, m := range weave(t)[storeMock] {
 				expect.Empty(t, m.Body.Prologue.Items(), "the prologue of "+storeMock+"."+m.Name+" has no statement")
 			}
+		})
+
+		t.Run("runs in a composition without repogen", func(t *testing.T) {
+			t.Parallel()
+
+			p := debugweaver.New()
+			f := referencetest.New(t, referencetest.Spec{
+				Dir:      referencetest.Tree,
+				Packages: []string{catalogPackage},
+				Target:   golang.Target,
+				Plugins:  []plugin.Plugin{p},
+			})
+			res := f.Generate(t, p)
+			assert.NoError(t, res.Err, "the weaver runs without the registrant of its key")
+			assert.Empty(t, slices.Collect(res.Emit.Units()), "the gate does not select a subject")
 		})
 	})
 }
