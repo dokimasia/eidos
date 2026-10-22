@@ -68,6 +68,9 @@ import (
 //     and a family template that is not a slash-separated path inside a
 //     tree
 //   - an empty capability label and a nil key registration
+//   - a capability of [Builder.ProvidesIn] in a role other than the
+//     annotator role and the generator role, or in a role that the typed
+//     build lacks
 //   - a directive name in two wrappers, and explicit Kinds that leave out
 //     the kind of a rule under the wrapper other than an [OnEmit] rule
 //   - a [Gated] name that is not a kernel directive, a rule gated on two

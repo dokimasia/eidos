@@ -890,11 +890,12 @@ type OutputProvider = core.OutputProvider
 // directive of the target from them.
 type PolicyProvider = core.PolicyProvider
 
-// CapabilityProvider orders a plugin. It returns a priority for each role,
-// and the capabilities that order the plugins of one priority. The
-// workspace refuses a plugin that implements some of these methods and
-// lacks others, and names the methods that it lacks. A plugin that does
-// not implement CapabilityProvider runs at priority 0 in each role.
+// CapabilityProvider orders a plugin. It returns a priority and the
+// provided capabilities for each role, and the capabilities that order the
+// plugins of one priority. The workspace refuses a plugin that implements
+// some of these methods and lacks others, and names the methods that it
+// lacks. A plugin that does not implement CapabilityProvider runs at
+// priority 0 in each role.
 type CapabilityProvider = core.CapabilityProvider
 
 // OptionsProvider declares a typed options struct. Options returns a
