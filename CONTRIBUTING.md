@@ -11,7 +11,7 @@ one of those mechanisms, change the specification first.
 
 ## Setup
 
-You need Go 1.27.2 or later, ergon and pre-commit. `go.work` requires that Go
+You need Go 1.27.3 or later, ergon and pre-commit. `go.work` requires that Go
 version, and CI installs it from there.
 
 Install ergon with Homebrew, or with Go from source:

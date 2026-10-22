@@ -3,7 +3,7 @@
 
 module go.dokimi.dev/eidos/lang/protobuf
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9

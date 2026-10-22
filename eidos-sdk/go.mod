@@ -3,7 +3,7 @@
 
 module go.dokimi.dev/eidos/sdk
 
-go 1.27.2
+go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.2.0

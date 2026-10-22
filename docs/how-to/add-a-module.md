@@ -19,7 +19,7 @@ Before you start, install ergon and the git hooks, as
 
    ```sh
    mkdir eidos-<name>
-   printf 'module go.dokimi.dev/eidos/<name>\n\ngo 1.27.2\n' > eidos-<name>/go.mod
+   printf 'module go.dokimi.dev/eidos/<name>\n\ngo 1.27.3\n' > eidos-<name>/go.mod
    ```
 
 2. Add a `use` line to [`go.work`](../../go.work), in sorted order. ergon

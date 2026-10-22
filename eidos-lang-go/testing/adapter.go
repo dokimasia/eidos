@@ -35,7 +35,7 @@ const (
 	// goVersion is the language version that the scratch module declares.
 	// It is the version of the repository, because no one can build output
 	// that the toolchain of the repository cannot build.
-	goVersion = "1.27.2"
+	goVersion = "1.27.3"
 	// testSuffix ends the name of a test file, whose package the probe
 	// never joins.
 	testSuffix = "_test" + golang.Extension
