@@ -1157,10 +1157,11 @@ type MemberRespeller = core.MemberRespeller
 //
 // The settle respells the records of a family that claims its files.
 // The units of such a family have a [Unit.Template], and the template
-// reads the names of the target. The settle does not check a record for a
-// collision, and it does not rewrite a reference to the name of a record.
-// The layout qualifies a reference with a target into the file of a
-// record.
+// reads the names of the target. A record that the lowering replaces
+// passes its data in [Unit.Data] to each declaration that replaces it.
+// The settle does not check a record for a collision, and it does not
+// rewrite a reference to the name of a record. The layout qualifies a
+// reference with a target into the file of a record.
 //
 // The settle records whether a declaration that renders has an emitted
 // reference, or a type reference to a declaration of another language
@@ -1182,9 +1183,11 @@ type MemberRespeller = core.MemberRespeller
 // Settle rebuilds the store's per-kind index, one list per unit and
 // kind. The lowering allocates a new list for each unit in which the
 // hook refuses or replaces a declaration, and nothing for a hook that
-// keeps every declaration. The respell adds the plan of every declared
-// name and the tables that the references follow, each sized once to
-// the store. A nil backend settles the store without allocating.
+// keeps every declaration. A unit in which the hook replaces a record
+// with data also allocates a copy of its data. The respell adds the plan
+// of every declared name and the tables that the references follow, each
+// sized once to the store. A nil backend settles the store without
+// allocating.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	return core.Settle(e, b, facts, sink)
 }
