@@ -84,7 +84,7 @@ func TestRegistrygen(t *testing.T) {
 			expect.That(t, record.Origin).Equal(item, "the record derives from Item")
 			expect.Equal(
 				t,
-				units[0].Data[item],
+				units[0].Data[record],
 				any(
 					registrygen.Callee{
 						Package: registrygen.DefaultPackage,
@@ -105,8 +105,8 @@ func TestRegistrygen(t *testing.T) {
 			f := catalog(t, p)
 			units, _ := registries(t, f, p)
 			assert.Length(t, units, 1, "the package catalog has one registry")
-			item := f.Find(t, symbol.KindStruct, "", itemName).Identity()
-			assert.Equal(t, units[0].Data[item],
+			assert.Length(t, units[0].Decls, 1, "the registry has one record")
+			assert.Equal(t, units[0].Data[units[0].Decls[0]],
 				any(registrygen.Callee{Package: codecPackage, Name: codecName, Func: codecFunc}),
 				"the record of Item calls the function of the options")
 		})
@@ -120,8 +120,8 @@ func TestRegistrygen(t *testing.T) {
 			f := catalog(t, p)
 			units, _ := registries(t, f, p)
 			assert.Length(t, units, 1, "the package catalog has one registry")
-			item := f.Find(t, symbol.KindStruct, "", itemName).Identity()
-			assert.Equal(t, units[0].Data[item],
+			assert.Length(t, units[0].Decls, 1, "the registry has one record")
+			assert.Equal(t, units[0].Data[units[0].Decls[0]],
 				any(registrygen.Callee{Package: keywordPackage, Name: keywordName, Func: codecFunc}),
 				"go is a keyword, so the record refers to the package as go_")
 		})

@@ -288,7 +288,7 @@ func record(t *testing.T, dir, pkg string) recorded {
 		expect.That(t, u.Template).Equal(want, "the family claims its files through its template")
 		for _, d := range u.Decls {
 			record := d.(*emit.Enum)
-			into[record.Name] = u.Data[record.Origin].(enum.Surface)
+			into[record.Name] = u.Data[d].(enum.Surface)
 		}
 	}
 	return got

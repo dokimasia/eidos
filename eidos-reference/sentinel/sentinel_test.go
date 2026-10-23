@@ -234,7 +234,7 @@ func record(t *testing.T, dir, pkg string, o *sentinel.Options) map[string]senti
 		expect.That(t, u.Per).Equal(plugin.PerPackage, "the package has one file")
 		for _, d := range u.Decls {
 			origin, _ := emit.OriginOf(d)
-			got[origin.Name] = u.Data[origin].(sentinel.Subject)
+			got[origin.Name] = u.Data[d].(sentinel.Subject)
 		}
 	}
 	return got
