@@ -7,7 +7,6 @@ import (
 	"go/token"
 	"go/types"
 	"path"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -42,6 +41,14 @@ const (
 	// goPrefix opens a repository name that is not the package's,
 	// such as go-sqlite3.
 	goPrefix = "go-"
+)
+
+// The characters of the integer of a major-version path element.
+const (
+	// signMarks are the signs that can open the integer.
+	signMarks = "+-"
+	// decimalDigits are the digits of the integer.
+	decimalDigits = "0123456789"
 )
 
 // The escapes that make an assumed import name a qualifier.
@@ -234,14 +241,17 @@ func ImportName(imp *node.Import) (string, bool) {
 }
 
 // majorVersion reports whether a path element is a major-version
-// suffix: v followed by an integer.
+// suffix: v followed by an integer, which is an optional sign and one or
+// more decimal digits. It allocates nothing.
 func majorVersion(elem string) bool {
 	digits, versioned := strings.CutPrefix(elem, majorPrefix)
 	if !versioned {
 		return false
 	}
-	_, err := strconv.Atoi(digits)
-	return err == nil
+	if digits != "" && strings.IndexByte(signMarks, digits[0]) >= 0 {
+		digits = digits[1:]
+	}
+	return digits != "" && strings.TrimLeft(digits, decimalDigits) == ""
 }
 
 // notIdentifier reports whether a rune cannot continue a Go

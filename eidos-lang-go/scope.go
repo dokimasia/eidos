@@ -160,6 +160,113 @@ func (b Bindings) Candidates(pkg, spelling string) []symbol.Identity {
 	return out
 }
 
+// PackageBindings is the scope of the imports of the files of one Go
+// package, in file order. A file of the package resolves a qualifier
+// through them where its own imports do not bind the qualifier, so a
+// directive in one file can name a package that another file of the
+// package imports. An import binds the qualifier that [ImportName]
+// returns. A dot import and a blank import bind no qualifier, because a
+// dot import brings its names into its own file alone. A qualifier that
+// two files bind to different import paths binds each of those paths. A
+// nil file and a nil import record bind nothing, and a nil
+// PackageBindings binds nothing.
+//
+// # Concurrency
+//
+// A PackageBindings value is safe for concurrent use while no caller
+// changes its files.
+//
+// # Allocation contract
+//
+// Each method reads every import of the files and keeps no index, so its
+// cost grows with the imports of the package. [PackageBindings.Import]
+// allocates nothing, and [PackageBindings.Candidates] allocates the list
+// that it returns.
+type PackageBindings []*node.File
+
+// Import returns the import path that the files bind to a qualifier. It
+// reports false for a qualifier that no file binds, and for a qualifier
+// that two files bind to different paths. It allocates nothing.
+func (b PackageBindings) Import(qualifier string) (string, bool) {
+	path, n, conflict := b.bound(qualifier)
+	if conflict {
+		return "", false
+	}
+	return path, n > 0
+}
+
+// Candidates returns the declarations that a qualified spelling can refer
+// to through the imports of the files, as identities in [Lang] with a
+// package and a name and no kind. It strips the decoration of the spelling
+// as [Bindings.Candidates] does. The imports of a file take precedence, so
+// Candidates returns nothing for a spelling whose qualifier the imports of
+// file bind. Otherwise the one candidate is the import path that the files
+// bind to the qualifier. For a qualifier that two files bind to different
+// paths, Candidates returns one candidate for each path in file order and
+// reports ambiguous. A qualifier that no file binds has no candidate,
+// because the scope of a package reads the names of the imports alone and
+// does not probe the unaliased imports as the scope of a file does. A bare
+// spelling has no candidate, because a file resolves a bare name in its
+// package and in its own dot imports.
+//
+// # Allocation contract
+//
+// Candidates allocates the list that it returns once, and nothing for a
+// spelling without a candidate.
+func (b PackageBindings) Candidates(file Bindings, spelling string) (candidates []symbol.Identity, ambiguous bool) {
+	qualifier, name, qualified := strings.Cut(stripped(spelling), qualifierMark)
+	if !qualified {
+		return nil, false
+	}
+	if _, bound := file.Import(qualifier); bound {
+		return nil, false
+	}
+	path, n, conflict := b.bound(qualifier)
+	switch {
+	case n == 0:
+		return nil, false
+	case !conflict:
+		return []symbol.Identity{{Lang: Lang, Package: path, Name: name}}, false
+	}
+	out := make([]symbol.Identity, 0, n)
+	for _, f := range b {
+		if f == nil {
+			continue
+		}
+		for _, imp := range f.Imports {
+			if q, binds := ImportName(imp); !binds || q != qualifier {
+				continue
+			}
+			if id := (symbol.Identity{Lang: Lang, Package: imp.Path, Name: name}); !slices.Contains(out, id) {
+				out = append(out, id)
+			}
+		}
+	}
+	return out, true
+}
+
+// bound returns the import path of the first import of the files that
+// binds qualifier, the number of the imports that bind it, and whether two
+// of them bind different paths. It allocates nothing.
+func (b PackageBindings) bound(qualifier string) (first string, n int, conflict bool) {
+	for _, f := range b {
+		if f == nil {
+			continue
+		}
+		for _, imp := range f.Imports {
+			if name, binds := ImportName(imp); !binds || name != qualifier {
+				continue
+			}
+			if n == 0 {
+				first = imp.Path
+			}
+			conflict = conflict || imp.Path != first
+			n++
+		}
+	}
+	return first, n, conflict
+}
+
 // stripped returns the name inside the decoration of a type expression.
 // It returns empty for a spelling that refers to no single declaration,
 // such as a composite, a constraint term or an array whose bracket never

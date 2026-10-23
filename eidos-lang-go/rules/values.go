@@ -541,9 +541,11 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 // it needs a receiver. LiteralFor does not check the type of a name or a
 // call. A qualified name or call whose qualifier the file of s imports
 // from a package outside the view is a stand-in under the import path,
-// with the kind of a constant or a function. A name or a call under the
-// full import path of such a package is the same stand-in, whether the
-// file imports the package or not. Any other text is no value.
+// with the kind of a constant or a function. A qualifier that the file
+// does not bind takes the import of another file of the package. A name
+// or a call under the full import path of such a package is the same
+// stand-in, whether the file imports the package or not. Any other text
+// is no value.
 //
 // # Allocation contract
 //
@@ -556,7 +558,9 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 // stand-in. A name or a call that resolves in the view allocates the
 // bindings and the list of candidates of the resolution, four
 // allocations, and a qualified one the bindings a second time. A name or
-// a call under a full import path allocates neither.
+// a call under a full import path allocates neither. A qualifier that the
+// file does not bind adds the list of its candidates in the imports of
+// the package.
 func (r Rules) LiteralFor(
 	s rules.Scope,
 	ref *node.TypeRef,

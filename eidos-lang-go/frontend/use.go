@@ -16,6 +16,18 @@ import (
 // qualifierMark separates the qualifier of a qualified name from the name.
 const qualifierMark = "."
 
+// fileUses is a parsed file of a package, with what the uses of its
+// directives read once every file of the package has parsed: the bindings
+// of the imports of the file, the directives that the lowering of the file
+// attached, and the packages that the file uses. used is nil at full depth,
+// where no import is pruned.
+type fileUses struct {
+	file     *node.File
+	bindings golang.Bindings
+	attached []plugin.Attachment
+	used     map[string]bool
+}
+
 // recordUses records a use of the unit for each declaration outside the
 // package of a lowered file that a reference of the file can resolve to.
 // A reference is a named type of a declaration of the file, or a scalar or
@@ -78,6 +90,49 @@ func recordUses(
 			candidates(arg.Value.Text)
 			for _, elem := range arg.Value.List {
 				candidates(elem.Text)
+			}
+		}
+	}
+}
+
+// recordPackageUses records a use of the unit for each declaration outside
+// the package that an argument of a directive of a pending file can
+// resolve to through the imports of files, the files of the package. The
+// candidates of an argument are those of [golang.PackageBindings.Candidates],
+// so an argument whose qualifier the imports of its own file bind has none.
+// The package of each use joins the used packages of each pending file
+// that prunes, so a signature-only file keeps the import through which the
+// use resolves.
+//
+// # Allocation contract
+//
+// recordPackageUses allocates the list of the candidates of an argument
+// whose qualifier the imports of its own file do not bind and the imports
+// of another file bind, the uses that [plugin.SourceUnit.Use] records, and
+// the entries of the used packages.
+func recordPackageUses(u *plugin.SourceUnit, pkgPath string, files []*node.File, pending []fileUses) {
+	shared := golang.PackageBindings(files)
+	resolve := func(p fileUses, spelling string) {
+		candidates, _ := shared.Candidates(p.bindings, spelling)
+		for _, id := range candidates {
+			if id.Package == pkgPath {
+				continue
+			}
+			u.Use(id)
+			for _, q := range pending {
+				if q.used != nil {
+					q.used[id.Package] = true
+				}
+			}
+		}
+	}
+	for _, p := range pending {
+		for _, a := range p.attached {
+			for _, arg := range a.Raw.Args {
+				resolve(p, arg.Value.Text)
+				for _, elem := range arg.Value.List {
+					resolve(p, elem.Text)
+				}
 			}
 		}
 	}

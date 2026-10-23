@@ -18,8 +18,13 @@ import (
 	"go.dokimi.dev/eidos/sdk/rules"
 )
 
-// keywordPath is an import path whose last element is a Go keyword.
-const keywordPath = "example.com/shop/go"
+// These constants are import paths whose last element needs a rule of
+// its own: a Go keyword, and an element that starts with v and is not a
+// major version.
+const (
+	keywordPath     = "example.com/shop/go"
+	unversionedPath = "example.com/vol"
+)
 
 // nameCall is one name rule's call and the check of its result, which
 // the allocation test and the benchmark share.
@@ -251,8 +256,15 @@ func TestNames(t *testing.T) {
 				name: "returns the last element of a path with a go- prefix before it",
 				give: "example.com/go-kit/log", want: "log",
 			},
+			{
+				name: "returns the element before a signed major version element",
+				give: "example.com/jwt/v-5", want: "jwt",
+			},
 			{name: "returns a lone major version element unchanged", give: "v2", want: "v2"},
 			{name: "returns a last element named vendor unchanged", give: "example.com/vendor", want: "vendor"},
+			{name: "returns a last element of v and letters unchanged", give: unversionedPath, want: "vol"},
+			{name: "returns a last element of v alone unchanged", give: "example.com/v", want: "v"},
+			{name: "returns the v of a last element of v and a sign", give: "example.com/v+", want: "v"},
 			{
 				name: "returns a last element of letters outside ASCII unchanged",
 				give: "example.com/ünïcode",
@@ -349,6 +361,10 @@ func TestNamesAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { escaped = golang.Qualifier(keywordPath) }, 1,
 		"Qualifier allocates the escaped qualifier of a keyword")
 	assert.Equal(t, escaped, "go_", "Qualifier escapes go")
+	var assumed string
+	assert.MaxAllocs(t, func() { assumed = golang.AssumedName(unversionedPath) }, 0,
+		"AssumedName allocates nothing for a last element of v and letters")
+	assert.Equal(t, assumed, "vol", "AssumedName returns vol")
 }
 
 // BenchmarkNames measures the name rules the frontend and the rules

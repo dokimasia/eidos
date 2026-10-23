@@ -57,14 +57,16 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	if err != nil {
 		return err
 	}
+	members := u.Files()
 	st := &parseState{
 		fset:    token.NewFileSet(),
 		intern:  map[string]string{},
 		batches: map[string]*constBatch{},
 		named:   map[string]bool{},
 		place:   place,
+		members: len(members),
 	}
-	for _, ref := range u.Files() {
+	for _, ref := range members {
 		if err := f.parseFile(u, st, ref.Path); err != nil {
 			return err
 		}
@@ -91,6 +93,14 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		}
 		foldMethods(b.files)
 		stampConstValues(u, st.fset, b)
+		// The uses through the imports of the other files of the package
+		// read the imports before the prune of a signature-only file.
+		recordPackageUses(u, pkgPath, gb.Package(pkgPath).Files, b.uses)
+		for _, p := range b.uses {
+			if p.used != nil {
+				pruneImports(p.file, p.used)
+			}
+		}
 	}
 	for _, pkg := range gb.Packages() {
 		gb.StampModule(pkg, place.root.module, place.root.dir)
@@ -103,7 +113,8 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 // and one batch for each package. The constant evaluation runs once over
 // each batch, so a constant that refers to a type of a sibling file
 // evaluates. It also records the packages that a file inside the build
-// named, and the place where the package directory of the unit loads.
+// named, the place where the package directory of the unit loads, and the
+// number of the members of the unit.
 type parseState struct {
 	fset    *token.FileSet
 	intern  map[string]string
@@ -111,26 +122,36 @@ type parseState struct {
 	order   []string
 	named   map[string]bool
 	place   unitPlace
+	members int
 }
 
 // constBatch has the parsed and the lowered files of one package inside
 // the build, and the underlying shapes of its defined types. The parse
 // stamps them after the promotion of the package has replaced the types
-// that promote.
+// that promote. uses has the files with the directives whose arguments
+// resolve through the imports of the whole package, which the parse
+// records once every file of the package has parsed.
 type constBatch struct {
 	name        string
 	parsed      []*ast.File
 	files       []*node.File
 	underlyings []pendingUnderlying
+	uses        []fileUses
 }
 
 // batch returns the batch of a package, and creates it on the first call
-// for the package.
+// for the package. A new batch has room for a file of each member of the
+// unit, so its lists of files do not grow.
 func (st *parseState) batch(pkgPath, name string) *constBatch {
 	if b, held := st.batches[pkgPath]; held {
 		return b
 	}
-	b := &constBatch{name: name}
+	b := &constBatch{
+		name:   name,
+		parsed: make([]*ast.File, 0, st.members),
+		files:  make([]*node.File, 0, st.members),
+		uses:   make([]fileUses, 0, st.members),
+	}
 	st.batches[pkgPath] = b
 	st.order = append(st.order, pkgPath)
 	return b
@@ -232,17 +253,17 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
+	var used map[string]bool
 	if u.Depth() == plugin.DepthSignatures {
-		used := map[string]bool{}
-		recordUses(u, l, pkgPath, file, gb.Attachments()[attached:], used)
-		pruneImports(file, used)
-	} else {
-		recordUses(u, l, pkgPath, file, gb.Attachments()[attached:], nil)
+		used = map[string]bool{}
 	}
+	directives := gb.Attachments()[attached:]
+	recordUses(u, l, pkgPath, file, directives, used)
 	batch := st.batch(pkgPath, pkgName)
 	batch.parsed = append(batch.parsed, parsed)
 	batch.files = append(batch.files, file)
 	batch.underlyings = append(batch.underlyings, l.underlyings...)
+	batch.uses = append(batch.uses, fileUses{file: file, bindings: l.bindings, attached: directives, used: used})
 
 	// The sweep reads each comment that no declaration took, between
 	// declarations or above the package clause. Its tool directives are

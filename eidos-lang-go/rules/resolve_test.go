@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
@@ -29,6 +30,22 @@ const (
 	visFile    = "vis/a.go"
 )
 
+// The packages of the tree of the package scope cases, and the files of
+// their subjects. The package wide imports vol, v3 and yaml in one file, and
+// one and two under one alias in two files. The file of Bound imports two
+// under the name w, and another file imports vol under the name w. Its
+// external test package is wide_test.
+const (
+	widePath     = "wide"
+	wideTestPath = "wide" + golang.TestSuffix
+	volPath      = "wide/vol"
+	onePath      = "wide/one"
+	twoPath      = "wide/two"
+	wideFile     = "wide/a.go"
+	boundFile    = "wide/e.go"
+	wideTestFile = "wide/g_test.go"
+)
+
 // refusalPrefix pins the opening of every refusal the Go rules
 // return: the language's identity.
 const refusalPrefix = string(golang.Lang) + ": "
@@ -43,6 +60,11 @@ const (
 	// type: the list of the types that it searches and the member list of
 	// the walk.
 	memberAllocs = 2
+	// wideAllocs is a resolution through the import of another file of the
+	// package: the map of the scope of the subject's file, which imports
+	// nothing, and the list of the one candidate in the imports of the
+	// package.
+	wideAllocs = 1 + 1
 )
 
 // A directive names a declaration by a spelling, and the Go rules
@@ -188,11 +210,13 @@ func TestResolve(t *testing.T) {
 			{
 				name:    "returns an error for the assumed name of a dot import",
 				imports: []*node.Import{{Path: depPath, Wildcard: true}},
+				subject: target,
 				give:    "dep.Target", kind: directive.ResolveTypeInScope,
 			},
 			{
 				name:    "returns an error for the assumed name of a blank import",
 				imports: []*node.Import{{Path: depPath, Alias: golang.BlankAlias}},
+				subject: target,
 				give:    "dep.Target", kind: directive.ResolveTypeInScope,
 			},
 			{
@@ -302,6 +326,122 @@ func TestResolve(t *testing.T) {
 			})
 		}
 
+		subject := id(widePath, "Subject", symbol.KindStruct)
+		bound := id(widePath, "Bound", symbol.KindStruct)
+		tested := id(wideTestPath, "Tested", symbol.KindStruct)
+		widely := []struct {
+			name    string
+			subject symbol.Identity
+			file    string
+			give    string
+			kind    directive.ResolutionKind
+			want    symbol.Identity
+		}{
+			{
+				name:    "returns the variable that a qualifier names through the import of another file of the package",
+				subject: subject,
+				file:    wideFile,
+				give:    "vol.ErrTooLarge",
+				kind:    directive.ResolvePackageVar,
+				want:    id(volPath, "ErrTooLarge", symbol.KindVariable),
+			},
+			{
+				name:    "returns the variable of the import of the subject's file over the import of another file",
+				subject: bound, file: boundFile, give: "w.Err", kind: directive.ResolvePackageVar,
+				want: id(twoPath, "Err", symbol.KindVariable),
+			},
+			{
+				name:    "returns the variable that a qualifier names through the import of an internal test file",
+				subject: subject, file: wideFile, give: "fixture.Err", kind: directive.ResolvePackageVar,
+				want: id(onePath, "Err", symbol.KindVariable),
+			},
+			{
+				name:    "returns a stand-in named by the path that another file of the package imports",
+				subject: subject, file: wideFile, give: "yaml.Node", kind: directive.ResolveTypeInScope,
+				want: symbol.Identity{Lang: golang.Lang, Package: yamlPath, Name: "Node", Kind: symbol.KindAlias},
+			},
+			{
+				name:    "returns the function that a bare name declares in the external test package",
+				subject: subject, file: wideFile, give: "newSubject", kind: directive.ResolveCallableInScope,
+				want: id(wideTestPath, "newSubject", symbol.KindFunction),
+			},
+			{
+				name:    "returns the type that a bare name declares in the external test package",
+				subject: subject, file: wideFile, give: "Tested", kind: directive.ResolveTypeInScope,
+				want: tested,
+			},
+			{
+				name:    "returns the function of the package over the function of the external test package",
+				subject: subject, file: wideFile, give: "build", kind: directive.ResolveCallableInScope,
+				want: id(widePath, "build", symbol.KindFunction),
+			},
+		}
+		for _, tt := range widely {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := wideOver(t, tt.subject, tt.file)
+				got, err := r.Resolve(f.scope(tt.subject), tt.give, tt.kind, f.view)
+				assert.NoError(t, err, "the spelling resolves")
+				assert.Equal(t, got.(node.Declaration).Identity(), tt.want, "to the declaration it names")
+			})
+		}
+
+		widelyRefused := []struct {
+			name    string
+			subject symbol.Identity
+			file    string
+			give    string
+			kind    directive.ResolutionKind
+		}{
+			{
+				name:    "returns an error for a name that the import of the subject's file does not declare",
+				subject: bound, file: boundFile, give: "w.ErrTooLarge", kind: directive.ResolvePackageVar,
+			},
+			{
+				name:    "returns an error for a qualifier that only the package clause of an import of another file names",
+				subject: subject,
+				file:    wideFile,
+				give:    "node.Leaf",
+				kind:    directive.ResolveTypeInScope,
+			},
+			{
+				name:    "returns an error for a qualified name that no import of the package declares",
+				subject: subject, file: wideFile, give: "ghost.Missing", kind: directive.ResolvePackageVar,
+			},
+			{
+				name:    "returns an error for a bare name that neither the package nor its external test package declares",
+				subject: subject,
+				file:    wideFile,
+				give:    "missing",
+				kind:    directive.ResolveCallableInScope,
+			},
+			{
+				name:    "returns an error for a bare name of the package under test from its external test package",
+				subject: tested, file: wideTestFile, give: "Subject", kind: directive.ResolveTypeInScope,
+			},
+		}
+		for _, tt := range widelyRefused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := wideOver(t, tt.subject, tt.file)
+				_, err := r.Resolve(f.scope(tt.subject), tt.give, tt.kind, f.view)
+				assert.HasError(t, err, "the spelling names nothing at the kind")
+			})
+		}
+
+		t.Run("returns an error naming both paths of a qualifier that two other files bind", func(t *testing.T) {
+			t.Parallel()
+
+			f := wideOver(t, subject, wideFile)
+			_, err := r.Resolve(f.scope(subject), "alt.Err", directive.ResolvePackageVar, f.view)
+			assert.HasError(t, err, "the qualifier binds two packages")
+			expect.That(t, err.Error()).
+				Contains(onePath, "the refusal names the first path").
+				Contains(twoPath, "the refusal names the second path")
+		})
+
 		t.Run("returns an error naming the spelling nothing declares", func(t *testing.T) {
 			t.Parallel()
 
@@ -319,12 +459,22 @@ func TestResolve(t *testing.T) {
 			assert.HasPrefix(t, err.Error(), refusalPrefix, "every satellite's refusals open alike")
 		})
 
-		t.Run("returns an error for a qualified name from a subject without a file", func(t *testing.T) {
+		t.Run("returns the type that an import of the package binds for a subject without a file", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			_, err := r.Resolve(rules.Scope{Subject: row}, "dep.Target", directive.ResolveTypeInScope, f.view)
-			assert.HasError(t, err, "no import binds the qualifier")
+			got, err := r.Resolve(rules.Scope{Subject: row}, "dep.Target", directive.ResolveTypeInScope, f.view)
+			assert.NoError(t, err, "a file of the package binds the qualifier")
+			assert.Equal(t, got.(node.Declaration).Identity(), target, "to the type that the import binds")
+		})
+
+		t.Run("returns an error for a qualified name from a subject of a package outside the view", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			ghost := id("ghost.test/absent", "Row", symbol.KindStruct)
+			_, err := r.Resolve(rules.Scope{Subject: ghost}, "dep.Target", directive.ResolveTypeInScope, f.view)
+			assert.HasError(t, err, "no file of the view binds the qualifier")
 		})
 
 		t.Run("returns the field a name declares on the subject's type", func(t *testing.T) {
@@ -572,6 +722,103 @@ type Item struct {
 	}
 }
 
+// wideOver returns a fixture over the tree of the package scope cases, with
+// a tracked view over it and the file at path of the package of subject.
+func wideOver(tb assert.TB, subject symbol.Identity, path string) *fixture {
+	tb.Helper()
+
+	return viewOver(tb, rulestest.Loaded(tb, gofrontend.New(nil), wideTree()), subject, path)
+}
+
+// wideTree is the Go source of the package scope cases. Subject in a.go
+// imports nothing, and the other files of its package import what it names.
+// Bound in e.go imports two under the name w, which h.go binds to vol. The
+// package clause of v3 is node. The internal test file binds fixture, and
+// the external test package declares newSubject, Tested and a build of its
+// own beside the build of the package.
+func wideTree() fstest.MapFS {
+	return fstest.MapFS{
+		wideFile: {Data: []byte(`package wide
+
+// Subject names the declarations that other files of its package import.
+type Subject struct{}
+`)},
+		"wide/b.go": {Data: []byte(`package wide
+
+import (
+	"wide/v3"
+	"wide/vol"
+
+	"gopkg.in/yaml.v3"
+)
+
+var _, _, _ = vol.ErrTooLarge, node.Leaf{}, yaml.Node{}
+`)},
+		"wide/c.go": {Data: []byte(`package wide
+
+import alt "wide/one"
+
+var _ = alt.Err
+`)},
+		"wide/d.go": {Data: []byte(`package wide
+
+import alt "wide/two"
+
+var _ = alt.Err
+`)},
+		boundFile: {Data: []byte(`package wide
+
+import w "wide/two"
+
+// Bound names the declarations of its own import of w.
+type Bound struct{ T w.Thing }
+`)},
+		"wide/f_test.go": {Data: []byte(`package wide
+
+import fixture "wide/one"
+
+var _ = fixture.Err
+`)},
+		wideTestFile: {Data: []byte(`package wide_test
+
+import "wide"
+
+func newSubject() *wide.Subject { return &wide.Subject{} }
+
+func build() {}
+
+// Tested is a declaration of the external test package.
+type Tested struct{}
+`)},
+		"wide/h.go": {Data: []byte(`package wide
+
+import w "wide/vol"
+
+var _ = w.Err
+
+func build() {}
+`)},
+		"wide/vol/v.go": {Data: []byte(`package vol
+
+var ErrTooLarge, Err error
+`)},
+		"wide/one/o.go": {Data: []byte(`package one
+
+var Err error
+`)},
+		"wide/two/t.go": {Data: []byte(`package two
+
+var Err error
+
+type Thing struct{}
+`)},
+		"wide/v3/n.go": {Data: []byte(`package node
+
+type Leaf struct{}
+`)},
+	}
+}
+
 // fieldOf returns the identity of a field of a struct in a package.
 func fieldOf(path, host, name string) symbol.Identity {
 	return symbol.Identity{Lang: golang.Lang, Package: path, Owner: host, Name: name, Kind: symbol.KindField}
@@ -585,6 +832,9 @@ func resolveCalls(tb testing.TB) []allocCall {
 	f := loaded(tb)
 	r := gorules.New()
 	scope := f.scope(id(fxPath, "Row", symbol.KindStruct))
+	subject := id(widePath, "Subject", symbol.KindStruct)
+	w := wideOver(tb, subject, wideFile)
+	wideScope := w.scope(subject)
 	var (
 		got symbol.Symbol
 		err error
@@ -612,6 +862,14 @@ func resolveCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Resolve finds Target")
 				assert.Equal(tb, got.Kind(), symbol.KindStruct, "Resolve returns the struct")
+			},
+		},
+		{
+			name: "Resolve", caseName: "a variable through the import of another file", allocs: wideAllocs,
+			call: func() { got, err = r.Resolve(wideScope, "vol.ErrTooLarge", directive.ResolvePackageVar, w.view) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve finds ErrTooLarge")
+				assert.Equal(tb, got.Kind(), symbol.KindVariable, "Resolve returns the variable")
 			},
 		},
 	}

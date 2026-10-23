@@ -1225,12 +1225,14 @@ func TestValues(t *testing.T) {
 			})
 		}
 
-		t.Run("reports false for a name in a scope without a file", func(t *testing.T) {
+		t.Run("returns the name that an import of the package binds in a scope without a file", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			_, ok := gorules.New().LiteralFor(rules.Scope{Subject: rowID}, nil, "time.Second", f.view)
-			assert.False(t, ok, "no import binds the qualifier without the file")
+			got, ok := gorules.New().LiteralFor(rules.Scope{Subject: rowID}, nil, "time.Second", f.view)
+			assert.True(t, ok, "a file of the package binds the qualifier")
+			second := symbol.Identity{Lang: golang.Lang, Package: "time", Name: "Second", Kind: symbol.KindConstant}
+			assert.Equal(t, got, emit.Name(second), "the value refers to the stand-in of the constant")
 		})
 
 		t.Run("returns the name under a full import path in a file that does not import its package",

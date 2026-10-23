@@ -36,6 +36,14 @@ const (
 //     declares at one of the kinds is the declaration. The variant of an
 //     enumeration is a constant, because Go declares it as a constant of
 //     the package.
+//   - A qualifier that the imports of the subject's file do not bind
+//     resolves through the imports of every file of its package, with
+//     [golang.PackageBindings.Candidates]. A qualifier that two files bind
+//     to different packages names no declaration.
+//   - A bare name that neither the package of the subject nor a dot import
+//     of its file declares resolves in the external test package of the
+//     directory, the package at the path of the subject's package with
+//     [golang.TestSuffix].
 //   - A name under a full import path, such as
 //     example.com/shop/seed.Defaults, resolves in the package of that
 //     path, whether the file imports the package or not. The last dot
@@ -60,11 +68,15 @@ const (
 //
 // A resolution through the probe allocates the scope of the subject's
 // file and the list of candidates: four allocations for a file without a
-// dot import. A name under a full import path allocates neither. A member
-// resolution allocates the list of the types that it searches and what
-// the member walk allocates. A callable of a method subject resolves
-// among the members first, and through the probe where no member has the
-// name. A stand-in and a refusal allocate themselves.
+// dot import. A qualified name that the file does not bind also allocates
+// the list of its candidates in the imports of the package. A bare name
+// that the package does not declare looks in the external test package
+// and allocates nothing more. A name under a full import path allocates
+// no scope and no list of candidates. A member resolution allocates the
+// list of the types that it searches and what the member walk allocates.
+// A callable of a method subject resolves among the members first, and
+// through the probe where no member has the name. A stand-in and a
+// refusal allocate themselves.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -78,10 +90,14 @@ type resolver struct{}
 
 // InScope resolves a Go name to the first top-level declaration of one of
 // the kinds that the probe of the subject's file finds in the view. A
-// candidate whose package the view does not contain is skipped. A name
-// under a full import path resolves among the declarations of the package
-// of the path alone. InScope refuses a spelling that is not a Go name,
-// and a name that no candidate declares.
+// candidate whose package the view does not contain is skipped. A
+// qualified name that the file does not bind then resolves through the
+// imports of the files of the package, and a bare name in the external
+// test package of the directory. A name under a full import path resolves
+// among the declarations of the package of the path alone. InScope refuses
+// a spelling that is not a Go name, a qualifier that two files of the
+// package bind to different packages, and a name that no candidate
+// declares.
 func (resolver) InScope(scope rules.Scope, name string, kinds []symbol.Kind, v rules.View) (symbol.Symbol, error) {
 	if path, bare, full := fullName(name); full {
 		if pkg, held := v.PackageOf(packageIdentity(path)); held {
@@ -94,12 +110,31 @@ func (resolver) InScope(scope rules.Scope, name string, kinds []symbol.Kind, v r
 	if !goName(name) {
 		return nil, refuse("%s is not a Go name, so it names no declaration", name)
 	}
-	for _, c := range bindingsOf(scope.File).Candidates(scope.Subject.Package, name) {
-		pkg, held := v.PackageOf(packageIdentity(c.Package))
-		if !held {
-			continue
+	file := bindingsOf(scope.File)
+	for _, c := range file.Candidates(scope.Subject.Package, name) {
+		if sym := candidateIn(c, kinds, v); sym != nil {
+			return sym, nil
 		}
-		if sym := declared(pkg, c.Name, kinds); sym != nil {
+	}
+	if !strings.Contains(name, qualifierSep) {
+		external := symbol.Identity{Lang: golang.Lang, Package: scope.Subject.Package + golang.TestSuffix, Name: name}
+		if sym := candidateIn(external, kinds, v); sym != nil {
+			return sym, nil
+		}
+		return nil, refuse("no %s named %s is in scope of %s", kindList(kinds), name, scope.Subject)
+	}
+	candidates, ambiguous := packageBindings(scope, v).Candidates(file, name)
+	if ambiguous {
+		paths := make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			paths = append(paths, c.Package)
+		}
+		qualifier, _, _ := strings.Cut(name, qualifierSep)
+		joined := strings.Join(paths, " and ")
+		return nil, refuse("the files of %s bind %s to %s", scope.Subject.Package, qualifier, joined)
+	}
+	for _, c := range candidates {
+		if sym := candidateIn(c, kinds, v); sym != nil {
 			return sym, nil
 		}
 	}
@@ -157,6 +192,28 @@ func bindingsOf(f *node.File) golang.Bindings {
 	return golang.NewBindings(f.Imports)
 }
 
+// packageBindings returns the scope of the imports of the files of the
+// package of a subject. For a package that the view does not contain, it
+// returns nil, which binds nothing.
+func packageBindings(scope rules.Scope, v rules.View) golang.PackageBindings {
+	pkg, held := v.PackageOf(packageIdentity(scope.Subject.Package))
+	if !held {
+		return nil
+	}
+	return golang.PackageBindings(pkg.Files)
+}
+
+// candidateIn returns the top-level declaration of a candidate with one of
+// the kinds, and nil where the view does not contain the package of the
+// candidate or the package does not declare the name.
+func candidateIn(c symbol.Identity, kinds []symbol.Kind, v rules.View) symbol.Symbol {
+	pkg, held := v.PackageOf(packageIdentity(c.Package))
+	if !held {
+		return nil
+	}
+	return declared(pkg, c.Name, kinds)
+}
+
 // goName reports whether a spelling is a Go name: an identifier, two
 // identifiers joined by the qualifier's dot, or an identifier under a full
 // import path, which [fullName] reads. A decorated, an instantiated and a
@@ -181,13 +238,14 @@ func inView(path string, v rules.View) bool {
 
 // outsideView returns the identity of a qualified name whose qualifier the
 // file of the scope imports from a package that the view does not contain,
-// such as a package of the standard library or of a dependency. A name
-// under the full import path of such a package needs no import of the
-// file. The identity has the import path as its package and kind as its
-// kind, so a backend qualifies and imports it. outsideView reports false
-// for a bare name, for a qualifier that no import of the file binds, and
-// for a package in the view. It also reports false for a full import path
-// that [memberOf] reports.
+// such as a package of the standard library or of a dependency. Where the
+// file does not bind the qualifier, the import of another file of its
+// package does. A name under the full import path of such a package needs
+// no import of the file. The identity has the import path as its package
+// and kind as its kind, so a backend qualifies and imports it. outsideView
+// reports false for a bare name, for a qualifier that no file of the
+// package binds to one path, and for a package in the view. It also
+// reports false for a full import path that [memberOf] reports.
 func outsideView(scope rules.Scope, name string, kind symbol.Kind, v rules.View) (symbol.Identity, bool) {
 	path, bare, full := fullName(name)
 	if !full {
@@ -197,7 +255,9 @@ func outsideView(scope rules.Scope, name string, kind symbol.Kind, v rules.View)
 		}
 		var bound bool
 		if path, bound = bindingsOf(scope.File).Import(qualifier); !bound {
-			return symbol.Identity{}, false
+			if path, bound = packageBindings(scope, v).Import(qualifier); !bound {
+				return symbol.Identity{}, false
+			}
 		}
 		bare = rest
 	}

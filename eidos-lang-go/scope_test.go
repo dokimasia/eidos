@@ -24,6 +24,7 @@ const (
 	dotPath    = "example.test/fix/dot"
 	dottedPath = "example.test/fix/dotted"
 	yamlPath   = "gopkg.in/yaml.v3"
+	secondPath = "example.test/fix/second"
 	otherAlias = "ren"
 )
 
@@ -210,11 +211,125 @@ func TestScope(t *testing.T) {
 				[]symbol.Identity{at(ownPath, "Thing")}, "the zero Bindings probes the own package alone")
 		})
 	})
+
+	t.Run("PackageBindings", func(t *testing.T) {
+		t.Parallel()
+
+		b := golang.PackageBindings(packageFiles())
+
+		t.Run("Import", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				name      string
+				give      string
+				wantPath  string
+				wantBound bool
+			}{
+				{
+					name: "returns the path that a file of the package binds to a qualifier",
+					give: "yaml", wantPath: yamlPath, wantBound: true,
+				},
+				{
+					name: "returns the path that two files bind to a qualifier",
+					give: "api", wantPath: apiPath, wantBound: true,
+				},
+				{name: "reports false for a qualifier that two files bind to different paths", give: otherAlias},
+				{name: "reports false for the assumed name of a blank import", give: "blank"},
+				{name: "reports false for the assumed name of a wildcard import", give: "dot"},
+				{name: "reports false for a qualifier that no file binds", give: "ghost"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					path, bound := b.Import(tt.give)
+					assert.Equal(t, bound, tt.wantBound, "Import reports whether one path is bound to the qualifier")
+					assert.Equal(t, path, tt.wantPath, "Import returns the path that the files bind")
+				})
+			}
+
+			t.Run("reports false on a nil PackageBindings", func(t *testing.T) {
+				t.Parallel()
+
+				_, bound := golang.PackageBindings(nil).Import("api")
+				assert.False(t, bound, "a nil PackageBindings binds nothing")
+			})
+		})
+
+		t.Run("Candidates", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				name          string
+				give          string
+				want          []symbol.Identity
+				wantAmbiguous bool
+			}{
+				{
+					name: "returns the import path that a file of the package binds",
+					give: "yaml.Node", want: []symbol.Identity{at(yamlPath, "Node")},
+				},
+				{
+					name: "returns one candidate for a qualifier that two files bind to one path",
+					give: "api.User", want: []symbol.Identity{at(apiPath, "User")},
+				},
+				{
+					name:          "returns each path of a qualifier that two files bind to different paths",
+					give:          otherAlias + ".Thing",
+					want:          []symbol.Identity{at(otherPath, "Thing"), at(secondPath, "Thing")},
+					wantAmbiguous: true,
+				},
+				{name: "returns nothing for a qualifier that no file binds", give: "ghost.X"},
+				{
+					name: "returns the named type under a pointer to a slice",
+					give: "*[]api.User", want: []symbol.Identity{at(apiPath, "User")},
+				},
+				{name: "returns nothing for a bare name", give: "Thing"},
+				{name: "returns nothing for an empty spelling", give: ""},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					got, ambiguous := b.Candidates(golang.Bindings{}, tt.give)
+					assert.Equal(t, got, tt.want, "Candidates returns the candidates in file order")
+					assert.Equal(t, ambiguous, tt.wantAmbiguous, "Candidates reports a qualifier of two paths")
+				})
+			}
+
+			t.Run("returns nothing for a qualifier that the imports of the file bind", func(t *testing.T) {
+				t.Parallel()
+
+				got, _ := b.Candidates(golang.NewBindings([]*node.Import{{Path: secondPath, Alias: "api"}}), "api.User")
+				assert.Empty(t, got, "the import of the file takes precedence over the imports of the package")
+			})
+
+			t.Run("returns each path once for a qualifier that three files bind to two paths", func(t *testing.T) {
+				t.Parallel()
+
+				again := &node.File{Imports: []*node.Import{{Path: otherPath, Alias: otherAlias}}}
+				got, ambiguous := golang.PackageBindings(append(packageFiles(), again)).
+					Candidates(golang.Bindings{}, otherAlias+".Thing")
+				assert.Equal(t, got, []symbol.Identity{at(otherPath, "Thing"), at(secondPath, "Thing")},
+					"Candidates returns each path in the order of its first file")
+				assert.True(t, ambiguous, "Candidates reports a qualifier of two paths")
+			})
+
+			t.Run("returns nothing for an unbound qualifier on a nil PackageBindings", func(t *testing.T) {
+				t.Parallel()
+
+				got, _ := golang.PackageBindings(nil).Candidates(golang.Bindings{}, "api.User")
+				assert.Empty(t, got, "no file can declare the name")
+			})
+		})
+	})
 }
 
-// NewBindings allocates the map and the list of unaliased imports, Import
-// allocates nothing, and Candidates allocates the list that it returns. The
-// ordinary run checks these ceilings, because it runs no benchmark.
+// NewBindings allocates the map and the list of unaliased imports. Import
+// allocates nothing, and Candidates allocates the list that it returns, in
+// the scope of a file and in the scope of a package. The ordinary run
+// checks these ceilings, because it runs no benchmark.
 func TestScopeAllocs(t *testing.T) {
 	plain, b := plainImports(), golang.NewBindings(imports())
 	var (
@@ -237,6 +352,17 @@ func TestScopeAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { got = b.Candidates(ownPath, "ghost.X") }, candidatesAllocs,
 		"Candidates allocates the list of unaliased imports once")
 	assert.Length(t, got, 2, "Candidates probes both unaliased imports")
+
+	pb := golang.PackageBindings(packageFiles())
+	assert.MaxAllocs(t, func() { path, bound = pb.Import("yaml") }, 0, "PackageBindings.Import allocates nothing")
+	assert.True(t, bound, "PackageBindings.Import finds the bound name")
+	assert.Equal(t, path, yamlPath, "PackageBindings.Import returns the bound path")
+	assert.MaxAllocs(t, func() { got, _ = pb.Candidates(golang.Bindings{}, "api.User") }, candidatesAllocs,
+		"PackageBindings.Candidates allocates the list of one path once")
+	assert.Length(t, got, 1, "PackageBindings.Candidates returns the one path of the qualifier")
+	assert.MaxAllocs(t, func() { got, _ = pb.Candidates(golang.Bindings{}, otherAlias+".Thing") }, candidatesAllocs,
+		"PackageBindings.Candidates allocates the list of the paths of the qualifier once")
+	assert.Length(t, got, 2, "PackageBindings.Candidates returns both paths of the qualifier")
 }
 
 // BenchmarkScope measures the bindings that the frontend and the rules
@@ -276,6 +402,30 @@ func BenchmarkScope(b *testing.B) {
 		}
 		assert.Equal(b, got, []symbol.Identity{at(apiPath, "User")}, "Candidates returns the bound import")
 	})
+
+	b.Run("PackageBindings", func(b *testing.B) {
+		b.Run("Import", func(b *testing.B) {
+			bindings := golang.PackageBindings(packageFiles())
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var path string
+			for c.Loop() {
+				path, _ = bindings.Import("yaml")
+			}
+			assert.Equal(b, path, yamlPath, "Import returns the bound path")
+		})
+
+		b.Run("Candidates", func(b *testing.B) {
+			bindings := golang.PackageBindings(packageFiles())
+			c := bench.Start(b).MaxAllocs(candidatesAllocs)
+			defer c.End()
+			var got []symbol.Identity
+			for c.Loop() {
+				got, _ = bindings.Candidates(golang.Bindings{}, "api.User")
+			}
+			assert.Equal(b, got, []symbol.Identity{at(apiPath, "User")}, "Candidates returns the bound import")
+		})
+	})
 }
 
 // imports returns the import records of a file in source order. They are
@@ -296,6 +446,26 @@ func imports() []*node.Import {
 // They are two unaliased imports and one aliased import.
 func plainImports() []*node.Import {
 	return []*node.Import{{Path: apiPath}, {Path: otherPath, Alias: otherAlias}, {Path: yamlPath}}
+}
+
+// packageFiles returns the files of a package in file order. The first file
+// imports api and binds ren to other. The second imports yaml and api again,
+// with a dot import, a blank import and a nil import record. A nil file
+// follows. The last file binds ren to second, so two files bind ren to
+// different paths.
+func packageFiles() []*node.File {
+	return []*node.File{
+		{Imports: []*node.Import{{Path: apiPath}, {Path: otherPath, Alias: otherAlias}}},
+		{Imports: []*node.Import{
+			{Path: yamlPath},
+			{Path: apiPath},
+			{Path: dotPath, Wildcard: true},
+			{Path: blankPath, Alias: golang.BlankAlias},
+			nil,
+		}},
+		nil,
+		{Imports: []*node.Import{{Path: secondPath, Alias: otherAlias}}},
+	}
 }
 
 // at returns a candidate identity in Go with a package, a name and no kind.

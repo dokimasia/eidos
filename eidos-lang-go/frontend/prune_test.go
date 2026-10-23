@@ -4,7 +4,9 @@
 package frontend_test
 
 import (
+	"slices"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
@@ -80,6 +82,23 @@ func TestPrune(t *testing.T) {
 			src := "//go:build ignore\n\npackage p\n\nimport \"" + signatureImport + "\"\n\n" +
 				"// F takes a sig.T.\nfunc F(v sig.T) {}\n"
 			assert.Empty(t, importsAt(t, plugin.DepthSignatures, src), "an excluded file declares nothing")
+		})
+
+		t.Run("keeps an import that a directive of another file of the package names", func(t *testing.T) {
+			t.Parallel()
+
+			u := parsedSources(t, plugin.DepthSignatures, fstest.MapFS{
+				useFile: {Data: []byte("package p\n\nimport \"" + signatureImport + "\"\n\nfunc g() { sig.Do() }\n")},
+				siblingFile: {Data: []byte(
+					"package p\n\n// T is a table.\n//+fixture:gen:table of=sig.Row\ntype T struct{}\n",
+				)},
+			})
+			assert.Length(t, u.Graph().Packages(), 1, "one package declared")
+			files := u.Graph().Packages()[0].Files
+			index := slices.IndexFunc(files, func(f *node.File) bool { return f.Path == useFile })
+			assert.NotEqual(t, index, -1, "the file with the import parsed")
+			assert.Equal(t, importPaths(files[index]), []string{signatureImport},
+				"the directive of the other file resolves its qualifier through the import")
 		})
 	})
 }

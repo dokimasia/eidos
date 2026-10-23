@@ -4,6 +4,8 @@
 package frontend_test
 
 import (
+	"maps"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -15,8 +17,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// useFile is the one file of the use cases.
-const useFile = "p/a.go"
+// useFile is the one file of the use cases, and siblingFile is the second
+// file of its package in the cases of the package.
+const (
+	useFile     = "p/a.go"
+	siblingFile = "p/b.go"
+)
 
 // The names that the use cases refer to in the imported packages.
 const (
@@ -123,6 +129,53 @@ func TestUse(t *testing.T) {
 					assert.EquateEmpty())
 			})
 		}
+
+		// The first file of each package case imports sig and calls it in a
+		// function body, which is no use.
+		caller := "package p\n\nimport \"" + signatureImport + "\"\n\nfunc g() { sig.Do() }\n"
+		packaged := []struct {
+			name       string
+			giveSource string
+			want       []symbol.Identity
+		}{
+			{
+				name:       "records a use of the import of another file for a qualifier of a directive argument",
+				giveSource: "package p\n\n// T is a table.\n//+fixture:gen:table of=sig.Row\ntype T struct{}\n",
+				want:       []symbol.Identity{at(signatureImport, rowName)},
+			},
+			{
+				name: "records a use of the import of the file of a directive over the import of another file",
+				giveSource: "package p\n\nimport sig \"" + aliasedImport + "\"\n\n" +
+					"// T is a table.\n//+fixture:gen:table of=sig.Row\ntype T struct{}\n\nvar _ = sig.X\n",
+				want: []symbol.Identity{at(aliasedImport, rowName)},
+			},
+			{
+				name:       "does not record a use of the import of another file for a type of a declaration",
+				giveSource: "package p\n\n// T has a sig.T.\ntype T struct{ F sig.T }\n",
+			},
+		}
+		for _, tt := range packaged {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				u := parsedSources(t, plugin.DepthFull, fstest.MapFS{
+					useFile:     {Data: []byte(caller)},
+					siblingFile: {Data: []byte(tt.giveSource)},
+				})
+				assert.Equal(t, u.Uses(), tt.want, "the uses of the unit", assert.EquateEmpty())
+			})
+		}
+
+		t.Run("does not record a use of the package itself through another file", func(t *testing.T) {
+			t.Parallel()
+
+			directed := "package p\n\n// T is a table.\n//+fixture:gen:table of=self.Row\ntype T struct{}\n"
+			u := parsedSources(t, plugin.DepthFull, fstest.MapFS{
+				useFile:     {Data: []byte("package p\n\nimport self \"p\"\n\nvar _ = self.Row\n")},
+				siblingFile: {Data: []byte(directed)},
+			})
+			assert.Empty(t, u.Uses(), "a package does not use itself")
+		})
 	})
 }
 
@@ -131,11 +184,20 @@ func TestUse(t *testing.T) {
 func usesOf(tb testing.TB, depth plugin.Depth, src string) []symbol.Identity {
 	tb.Helper()
 
-	tree := fstest.MapFS{useFile: {Data: []byte(src)}}
+	return parsedSources(tb, depth, fstest.MapFS{useFile: {Data: []byte(src)}}).Uses()
+}
+
+// parsedSources parses the files of tree as one unit at a depth, in the
+// order of their paths, and returns the unit.
+func parsedSources(tb testing.TB, depth plugin.Depth, tree fstest.MapFS) *plugin.SourceUnit {
+	tb.Helper()
+
+	refs := make([]plugin.SourceRef, 0, len(tree))
+	for _, path := range slices.Sorted(maps.Keys(tree)) {
+		refs = append(refs, plugin.SourceRef{Path: path})
+	}
 	f := frontend.New(nil)
-	u := plugin.NewSourceUnit(
-		[]plugin.SourceRef{{Path: useFile}}, tree, depth, f.Syntax(), brand, diag.NewSink(), f.Name(),
-	)
-	assert.NoError(tb, f.Parse(tb.Context(), u), "the file parses")
-	return u.Uses()
+	u := plugin.NewSourceUnit(refs, tree, depth, f.Syntax(), brand, diag.NewSink(), f.Name())
+	assert.NoError(tb, f.Parse(tb.Context(), u), "the files parse")
+	return u
 }
