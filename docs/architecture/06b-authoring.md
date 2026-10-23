@@ -236,7 +236,9 @@ A family that declares a file template claims its files, and it takes
 records instead of declarations. `Out.Record(data, decls...)` places
 declarations with the data of their match. The family's template then
 writes each file from its records ([07-rendering.md](07-rendering.md)),
-such as a test file with a test of each subject.
+such as a test file with a test of each subject. Each record keeps the
+data of its own call, so a subject can have one test for each instance
+of a repeatable directive.
 
 Targets, stems and provenance derive from the subject and the
 family. `Mirror` copies a signature once, in the framework, so no
