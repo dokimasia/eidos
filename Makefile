@@ -5,9 +5,9 @@
 # targets as prerequisites of the targets below. CI runs make check-<language> per language. It
 # runs lint-common and lint-github in jobs of their own. Every target runs its tools through ergon
 # tool run, which installs the version that .ergon.yaml names. make help lists the targets in
-# groups. A line ##@ <name> starts a group: the common targets, the targets of the GitHub files,
-# then the targets of each language, and the targets of .ergon/local/Makefile after a line of its
-# own.
+# groups. A line ##@ <name> starts a group: the common targets, the targets of the GitHub files and
+# of spec, then the targets of each language, and the targets of .ergon/local/Makefile after a line
+# of its own.
 
 .DEFAULT_GOAL := check
 

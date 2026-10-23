@@ -4,7 +4,9 @@
 # OpenSSF Scorecard of a public repository, and the CodeQL analysis of each language that a
 # producer of ergon init contributes, which calls codeql.yml. ergon init renders this workflow only
 # when the key code-security of the section github of .ergon.yaml is true, because a private
-# repository needs GitHub Code Security for the analysis and the review.
+# repository needs GitHub Code Security for the analysis and the review. The steps that a producer
+# contributes to the review run before it. A step appends the package URLs of the repository's own
+# packages to ERGON_OWN_PACKAGES. The review leaves those packages out of its license check.
 
 name: Security
 
@@ -33,7 +35,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Set up Go
+        if: "hashFiles('go.work') != ''"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          cache: "false"
+          go-version-file: go.work
+      - name: Leave the modules of go.work out of the license check
+        if: "hashFiles('go.work') != ''"
+        run: |
+          own="$(go list -m -f '{{.Path}}' | jq -Rn '[inputs]')"
+          purls="$(go list -m -f '{{.GoMod}}' |
+            while IFS= read -r file; do go mod edit -json "$file"; done |
+            jq -r --argjson own "$own" '.Replace[]? | select(.New.Version == null)
+              | select(.Old.Path | IN($own[])) | "pkg:golang/" + .New.Path' |
+            sort -u | paste -sd , -)"
+          if [ -n "$purls" ]; then
+            echo "ERGON_OWN_PACKAGES=${ERGON_OWN_PACKAGES:+$ERGON_OWN_PACKAGES,}$purls" >> "$GITHUB_ENV"
+          fi
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          allow-dependencies-licenses: ${{ env.ERGON_OWN_PACKAGES }}
 
   # A scheduled run has no event payload with the visibility of the repository, so this job queries
   # the API of GitHub. The Scorecard runs only in a public repository.
