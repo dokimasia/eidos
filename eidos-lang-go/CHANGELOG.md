@@ -1,5 +1,23 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.4.0
+
+### Minor Changes
+
+- 1163699: Add `golang.PackageBindings` for the scope of the imports of the files of a Go package.
+- 1163699: Record the uses of a Go directive argument through the imports of every file of its package.
+- 1163699: Resolve a bare name of a Go directive argument in the external test package of its directory.
+- 1163699: Resolve a qualifier of a Go directive argument through the imports of the other files of its package.
+
+### Patch Changes
+
+- 1163699: Allocate each list of the files of a parsed Go package once.
+- 1163699: Fix `golang.AssumedName` to allocate nothing for a last element such as `vol`.
+- Updated dependencies [6f125b4, 1833bae]
+  - go.dokimi.dev/eidos/core@0.8.0
+  - go.dokimi.dev/eidos/sdk@0.6.0
+  - go.dokimi.dev/eidos/lang@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

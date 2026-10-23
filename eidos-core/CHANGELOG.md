@@ -1,5 +1,15 @@
 # go.dokimi.dev/eidos/core
 
+## 0.8.0
+
+### Minor Changes
+
+- 6f125b4: **Breaking:** Key `plugin.Unit.Data` by the record that `Out.Record` placed.
+
+### Patch Changes
+
+- 6f125b4: Fix `Out.Record` to keep the data of each record where two records of a unit have one origin.
+
 ## 0.7.0
 
 ### Minor Changes
