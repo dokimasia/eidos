@@ -29,8 +29,7 @@ type claimView struct {
 }
 
 // fileRecord is one declaration of a claimed file, with the data that
-// its plugin attached to the declaration's origin, nil where it attached
-// none.
+// its plugin attached to the declaration, nil where it attached none.
 type fileRecord struct {
 	Decl symbol.Symbol
 	Data any
@@ -97,8 +96,7 @@ func (f *frame) claimed(g *plugin.File, c claim) bool {
 			if _, header := d.(*emit.File); header {
 				continue
 			}
-			origin, _ := emit.OriginOf(d)
-			view.Records = append(view.Records, fileRecord{Decl: d, Data: u.Data[origin]})
+			view.Records = append(view.Records, fileRecord{Decl: d, Data: u.Data[d]})
 		}
 	}
 	clear(f.placed)

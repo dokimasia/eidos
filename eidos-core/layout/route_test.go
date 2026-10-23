@@ -1140,10 +1140,10 @@ func TestRoute(t *testing.T) {
 			t.Parallel()
 
 			u := stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))
-			u.Data = map[symbol.Identity]any{storeID: storeData}
+			u.Data = map[symbol.Symbol]any{u.Decls[0]: storeData}
 			files, _ := newFixture(u).route(t)
 			assert.Length(t, files, 1, "one file routes")
-			assert.Equal(t, files[0].Units[0].Data, map[symbol.Identity]any{storeID: storeData},
+			assert.Equal(t, files[0].Units[0].Data, map[symbol.Symbol]any{u.Decls[0]: storeData},
 				"the data of the record is kept")
 		})
 
@@ -1151,16 +1151,16 @@ func TestRoute(t *testing.T) {
 			t.Parallel()
 
 			row := stubOf(rowFile, storePkg, generated(rowID, "RowStub"))
-			row.Data = map[symbol.Identity]any{rowID: rowData}
+			row.Data = map[symbol.Symbol]any{row.Decls[0]: rowData}
 			suite := unitOf(stubgen, families()[stubgen][2], storePkg, coretest.PackageID(storePkg),
 				generated(storeID, "StoreSuite"))
-			suite.Data = map[symbol.Identity]any{storeID: storeData, rowID: storeData}
+			suite.Data = map[symbol.Symbol]any{suite.Decls[0]: storeData}
 			f := newFixture(row, suite).
 				on(rowID, written(stubDirective, 1, string(directive.ReservedTag), tagPkg))
 			files, _ := f.route(t)
 			assert.Length(t, files, 1, "both units route to the package's file")
-			assert.Equal(t, files[0].Units[0].Data, map[symbol.Identity]any{rowID: rowData, storeID: storeData},
-				"the data joins both units', and the entry of the earlier unit is kept")
+			want := map[symbol.Symbol]any{row.Decls[0]: rowData, suite.Decls[0]: storeData}
+			assert.Equal(t, files[0].Units[0].Data, want, "the data joins the data of both units")
 		})
 
 		t.Run("returns no origins for a unit whose declarations have none", func(t *testing.T) {

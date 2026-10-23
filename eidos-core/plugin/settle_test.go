@@ -31,13 +31,15 @@ const (
 )
 
 // The documentation of the name key, the name that the override cases
-// write, the settled name of row in a kept file, and the mark that a
-// member convention puts before the name of a member.
+// write, the settled name of row in a kept file, the mark that a member
+// convention puts before the name of a member, and the data of a record
+// that the lowering cases replace.
 const (
 	nameDoc      = "a declaration's name in the test target"
 	overrideName = "Record"
 	keptRow      = "KeptRow"
 	memberMark   = "m"
+	stateData    = "a record of state"
 )
 
 // nestedState is the enum state that the struct box declares. Its flat
@@ -485,6 +487,34 @@ func TestSettle(t *testing.T) {
 			settled(t, e, lowering(splitAlias))
 			_, held = e.Ref(alias)
 			assert.False(t, held, "the lowered alias has none after it")
+		})
+
+		t.Run("passes the data of a record to each declaration that replaces it", func(t *testing.T) {
+			t.Parallel()
+
+			record := &emit.Alias{Origin: settleOrigin("state", symbol.KindEnum), Name: "state"}
+			u := settleUnit("svc", "svc/a.src", record)
+			u.Data = map[symbol.Symbol]any{record: stateData}
+			e := storeOf(t, u)
+			settled(t, e, lowering(splitAlias))
+			for u := range e.Units() {
+				assert.Length(t, u.Decls, 2, "the record lowers into two declarations")
+				expect.Equal(t, u.Data[u.Decls[0]], any(stateData), "the struct has the data of the record")
+				expect.Equal(t, u.Data[u.Decls[1]], any(stateData), "the constant has the data of the record")
+			}
+		})
+
+		t.Run("leaves the data of the caller unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			record := &emit.Alias{Origin: settleOrigin("state", symbol.KindEnum), Name: "state"}
+			u := settleUnit("svc", "svc/a.src", record)
+			data := map[symbol.Symbol]any{record: stateData}
+			u.Data = data
+			e := storeOf(t, u)
+			settled(t, e, lowering(splitAlias))
+			assert.Equal(t, data, map[symbol.Symbol]any{record: stateData},
+				"the settle passes the data in a copy of the map")
 		})
 
 		t.Run("keeps the declaration a lowering returns nil for", func(t *testing.T) {

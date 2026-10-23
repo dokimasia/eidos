@@ -38,10 +38,13 @@ const (
 )
 
 // The record fixture: the plugin that records each struct into a family
-// that claims its files, and the family's file template.
+// that claims its files, the family's file template, and the data of two
+// calls that record one struct.
 const (
 	recordPlugin  plugin.ID = "recorder"
 	claimTemplate string    = "test.tmpl"
+	firstData     string    = "first"
+	secondData    string    = "second"
 )
 
 // The tags of the invocation fixture's families beside its primary
@@ -731,13 +734,15 @@ func TestEmitter(t *testing.T) {
 			out.Record(m.Struct.Name, &emit.Struct{Origin: m.Struct.Identity(), Name: "Test" + m.Struct.Name})
 		}
 
-		t.Run("attaches the data to the origin of each declaration", func(t *testing.T) {
+		t.Run("attaches the data to each declaration", func(t *testing.T) {
 			t.Parallel()
 
 			_, alpha, beta := fixtureGraph(t)
-			assert.Equal(t, recorded(t, recordName).Data, map[symbol.Identity]any{
-				alpha.ID: alpha.Name, beta.ID: beta.Name,
-			}, "each origin has the data of its record")
+			u := recorded(t, recordName)
+			assert.Length(t, u.Decls, 2, "the unit has a record of each struct")
+			assert.Equal(t, u.Data, map[symbol.Symbol]any{
+				u.Decls[0]: alpha.Name, u.Decls[1]: beta.Name,
+			}, "each record has the data of its call")
 		})
 
 		t.Run("places the declarations as Append does", func(t *testing.T) {
@@ -752,15 +757,30 @@ func TestEmitter(t *testing.T) {
 			assert.Equal(t, recorded(t, recordName).Template, claimTemplate, "the unit has the family's template")
 		})
 
-		t.Run("keeps the data of the first record of an origin", func(t *testing.T) {
+		t.Run("keeps the data of each record of an origin", func(t *testing.T) {
 			t.Parallel()
 
-			_, alpha, _ := fixtureGraph(t)
 			twice := func(m *eidos.StructMatch, out *eidos.Out) {
-				out.Record("first", &emit.Struct{Origin: m.Struct.Identity(), Name: "First" + m.Struct.Name})
-				out.Record("second", &emit.Struct{Origin: m.Struct.Identity(), Name: "Second" + m.Struct.Name})
+				out.Record(firstData, &emit.Struct{Origin: m.Struct.Identity(), Name: "First" + m.Struct.Name})
+				out.Record(secondData, &emit.Struct{Origin: m.Struct.Identity(), Name: "Second" + m.Struct.Name})
 			}
-			assert.Equal(t, recorded(t, twice).Data[alpha.ID], "first", "the first record of the origin applies")
+			u := recorded(t, twice)
+			assert.Length(t, u.Decls, 4, "the unit has two records of each struct")
+			expect.Equal(t, u.Data[u.Decls[0]], any(firstData), "the first record has the data of the first call")
+			expect.Equal(t, u.Data[u.Decls[1]], any(secondData), "the second record has the data of the second call")
+		})
+
+		t.Run("keeps the data of the first call for a declaration that two calls place", func(t *testing.T) {
+			t.Parallel()
+
+			again := func(m *eidos.StructMatch, out *eidos.Out) {
+				d := &emit.Struct{Origin: m.Struct.Identity(), Name: "Shared" + m.Struct.Name}
+				out.Record(firstData, d)
+				out.Record(secondData, d)
+			}
+			u := recorded(t, again)
+			assert.Length(t, u.Decls, 4, "the unit places each declaration of each call")
+			assert.Equal(t, u.Data[u.Decls[0]], any(firstData), "the first call in canonical match order applies")
 		})
 
 		t.Run("records no data for no declarations", func(t *testing.T) {

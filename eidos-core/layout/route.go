@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -893,25 +894,25 @@ func (r *router) insideFrom(unit int, decls []symbol.Symbol, out []symbol.Identi
 	return out
 }
 
-// dataOf returns the data of the records of a batch by origin. For a
+// dataOf returns the data of the records of a batch by record. For a
 // batch of one unit it returns the data of that unit. For a batch of
-// several units it merges their data, and where two units have data for
-// one origin, the data of the earlier unit applies. It returns nil where
-// no contributing unit has data, and it allocates the merged map alone.
-func (r *router) dataOf(b *batch) map[symbol.Identity]any {
+// several units it merges their data, because a record belongs to one
+// unit. It returns nil where no contributing unit has data, and it
+// allocates the merged map alone.
+func (r *router) dataOf(b *batch) map[symbol.Symbol]any {
 	if len(b.more) == 0 {
 		return r.units[b.first].Data
 	}
-	var out map[symbol.Identity]any
+	var out map[symbol.Symbol]any
 	merge := func(unit int) {
-		for origin, v := range r.units[unit].Data {
-			if out == nil {
-				out = make(map[symbol.Identity]any, len(r.units[unit].Data))
-			}
-			if _, set := out[origin]; !set {
-				out[origin] = v
-			}
+		data := r.units[unit].Data
+		if len(data) == 0 {
+			return
 		}
+		if out == nil {
+			out = make(map[symbol.Symbol]any, len(data))
+		}
+		maps.Copy(out, data)
 	}
 	merge(b.first)
 	for _, unit := range b.more {

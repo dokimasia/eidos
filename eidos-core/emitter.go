@@ -564,14 +564,14 @@ func (o *Out) Append(decls ...symbol.Symbol) {
 }
 
 // Record places emit declarations under the subject of the handle as
-// [Out.Append] does, and attaches data to the origin of each of them,
-// for a family that claims its files through [plugin.Output.Template].
-// The file template of the family reads each declaration as a record,
-// with the data of its origin beside it. Where two calls attach data to
-// one origin of a unit, the data of the first call in canonical match
-// order applies. A call without declarations does nothing and records
-// nothing. It buffers as Append does, and the flush allocates the map of
-// data of the unit.
+// [Out.Append] does, and attaches data to each of them, for a family that
+// claims its files through [plugin.Output.Template]. The file template of
+// the family reads each declaration as a record, with the data of the
+// call that placed it. Two records of one origin each keep the data of
+// their own call. A declaration that two calls place keeps the data of
+// the first call in canonical match order. A call without declarations
+// does nothing and records nothing. It buffers as Append does, and the
+// flush allocates the map of data of the unit.
 func (o *Out) Record(data any, decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
@@ -755,7 +755,7 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 		})
 		decls := make([]symbol.Symbol, 0, len(acc.places))
 		var (
-			data     map[symbol.Identity]any
+			data     map[symbol.Symbol]any
 			subjects map[symbol.Identity]symbol.Identity
 			inside   []symbol.Identity
 		)
@@ -779,11 +779,11 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 			if p.data == nil {
 				continue
 			}
-			if _, attached := data[origin]; !attached {
+			if _, attached := data[p.decl]; !attached {
 				if data == nil {
-					data = map[symbol.Identity]any{}
+					data = map[symbol.Symbol]any{}
 				}
-				data[origin] = p.data
+				data[p.decl] = p.data
 			}
 		}
 		origins := originsOf(acc.places)

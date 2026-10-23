@@ -154,10 +154,11 @@ type MemberRespeller interface {
 //
 // The settle respells the records of a family that claims its files.
 // The units of such a family have a [Unit.Template], and the template
-// reads the names of the target. The settle does not check a record for a
-// collision, and it does not rewrite a reference to the name of a record.
-// The layout qualifies a reference with a target into the file of a
-// record.
+// reads the names of the target. A record that the lowering replaces
+// passes its data in [Unit.Data] to each declaration that replaces it.
+// The settle does not check a record for a collision, and it does not
+// rewrite a reference to the name of a record. The layout qualifies a
+// reference with a target into the file of a record.
 //
 // The settle records whether a declaration that renders has an emitted
 // reference, or a type reference to a declaration of another language
@@ -179,9 +180,11 @@ type MemberRespeller interface {
 // Settle rebuilds the store's per-kind index, one list per unit and
 // kind. The lowering allocates a new list for each unit in which the
 // hook refuses or replaces a declaration, and nothing for a hook that
-// keeps every declaration. The respell adds the plan of every declared
-// name and the tables that the references follow, each sized once to
-// the store. A nil backend settles the store without allocating.
+// keeps every declaration. A unit in which the hook replaces a record
+// with data also allocates a copy of its data. The respell adds the plan
+// of every declared name and the tables that the references follow, each
+// sized once to the store. A nil backend settles the store without
+// allocating.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	return settle(e, b, facts, sink, nil, nil)
 }
@@ -299,15 +302,22 @@ func unitPos(u *Unit) position.Pos { return position.Pos{File: u.Key} }
 
 // lowerAll rewrites every declaration through the lowering hook. A
 // refusal withholds the declaration under a positioned finding, and
-// an output with another origin is a defect and returns. A unit whose
+// an output with another origin is a defect and returns. A record that
+// the hook replaces passes its data to each declaration that replaces it.
+// The data moves in a copy of the map of the unit, because the caller
+// can hold the map of the unit beside the store. A unit whose
 // declarations all lower to nil keeps its list, so a lowering that keeps
 // every declaration allocates nothing. The first refusal or replacement
 // in a unit allocates the unit's new list, with the declarations before
-// it.
+// it, and the first replacement of a record with data allocates the copy
+// of the map.
 func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 	for i := range e.units {
 		u := &e.units[i]
-		var lowered []symbol.Symbol
+		var (
+			lowered []symbol.Symbol
+			data    map[symbol.Symbol]any
+		)
 		for j, d := range u.Decls {
 			out, err := l.Lower(d)
 			if err == nil && out == nil {
@@ -336,9 +346,21 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 				}
 			}
 			lowered = append(lowered, out...)
+			if v, held := u.Data[d]; held {
+				if data == nil {
+					data = maps.Clone(u.Data)
+				}
+				delete(data, d)
+				for _, o := range out {
+					data[o] = v
+				}
+			}
 		}
 		if lowered != nil {
 			u.Decls = lowered
+		}
+		if data != nil {
+			u.Data = data
 		}
 	}
 	return nil

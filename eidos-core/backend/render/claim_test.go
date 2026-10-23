@@ -20,9 +20,12 @@ import (
 )
 
 // The claimed file's fixture: the data that the emitter attaches to its
-// record, and the import that a template records.
+// record, a second record of the same origin with its data, and the
+// import that a template records.
 const (
 	recordData   = "sampled"
+	againName    = "Resample"
+	againData    = "resampled"
 	testingPkg   = "testing"
 	recordsRange = "{{range .Records}}"
 	rangeEnd     = "{{end}}"
@@ -45,6 +48,19 @@ func TestClaim(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, body, "case "+handleName+" "+recordData+"\n",
 				"the template writes the file from the record and its data")
+		})
+
+		t.Run("renders each record of one origin with the data of the record", func(t *testing.T) {
+			t.Parallel()
+
+			u := claimedUnit(handleName, recordData, emit.Body{})
+			again := &emit.Function{Origin: coretest.Struct(coretest.StorePath, handleName).ID, Name: againName}
+			u.Decls = append(u.Decls, again)
+			u.Data[again] = againData
+			body, sink := renderClaim(t, claimTree(recordsRange+"case {{.Decl.Name}} {{.Data}}\n"+rangeEnd), u)
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, body, "case "+handleName+" "+recordData+"\ncase "+againName+" "+againData+"\n",
+				"the template reads the data of each record")
 		})
 
 		t.Run("renders nil data for a record that the plugin attached none to", func(t *testing.T) {
@@ -174,12 +190,12 @@ func TestClaim(t *testing.T) {
 
 // claimedUnit returns a per-source unit of the emitter's family that
 // claims its files through [fileTpl], with one function record of the
-// name and the body. A non-nil data is the data of the record's origin.
+// name and the body. A non-nil data is the data of the record.
 func claimedUnit(name string, data any, body emit.Body) plugin.Unit {
 	u := fn(storeKey, name, body)
 	u.Template = fileTpl
 	if data != nil {
-		u.Data = map[symbol.Identity]any{coretest.Struct(coretest.StorePath, name).ID: data}
+		u.Data = map[symbol.Symbol]any{u.Decls[0]: data}
 	}
 	return u
 }

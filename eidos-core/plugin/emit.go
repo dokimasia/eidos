@@ -133,10 +133,11 @@ type Unit struct {
 	// for the template, which the settle respells, and no reference,
 	// collision check or export reads them as declarations of the file.
 	Template string
-	// Data contains the data that the plugin of the unit attached to the
-	// declarations of each origin. The file template reads it beside each
-	// record. It is nil for a unit whose plugin attached none.
-	Data map[symbol.Identity]any
+	// Data contains the data that the plugin of the unit attached to each
+	// record, keyed by the record. The file template reads the data of each
+	// record beside it, so two records of one origin read data of their
+	// own. It is nil for a unit whose plugin attached none.
+	Data map[symbol.Symbol]any
 	// Inside are the origins whose declarations test the package of the
 	// unit from inside, sorted and distinct, in a unit of a family that
 	// states [Output.External], such as the check of an unexported
