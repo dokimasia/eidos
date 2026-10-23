@@ -4,7 +4,7 @@ title: The Go frontend loads the packages that a load uses
 status: Accepted
 date: 2026-10-21
 supersedes: none
-superseded-by: none
+superseded-by: ADR-0102
 rfc: none
 ---
 

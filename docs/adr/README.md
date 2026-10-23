@@ -116,7 +116,8 @@ way.
 | [0095](0095-a-typescript-sample-constructs-its-class.md) | A TypeScript sample constructs its class and sets every required property of its interface | Accepted |
 | [0096](0096-a-typescript-file-has-the-spaces-and-quotes-of-its-formatters.md) | A TypeScript file has the spaces and the quotes of Biome and Prettier | Accepted |
 | [0097](0097-a-go-file-has-the-format-of-gofumpt-and-golines.md) | A Go file has the format of gofumpt and golines | Accepted |
-| [0098](0098-the-go-frontend-loads-the-packages-that-a-load-uses.md) | The Go frontend loads the packages that a load uses | Accepted |
+| [0098](0098-the-go-frontend-loads-the-packages-that-a-load-uses.md) | The Go frontend loads the packages that a load uses | Accepted, superseded in part by [0102](0102-the-go-rules-resolve-a-directive-argument-in-the-scope-of-its-package.md) |
 | [0099](0099-a-reference-with-a-target-resolves-to-a-record.md) | A reference with a target resolves to a record | Accepted |
 | [0100](0100-the-workspace-leaves-a-gate-on-a-key-of-an-absent-owner-unbound.md) | The workspace leaves a gate on a key of an absent owner unbound | Accepted |
 | [0101](0101-a-plugin-with-both-roles-provides-a-capability-in-one-role.md) | A plugin with both roles provides a capability in one role | Accepted |
+| [0102](0102-the-go-rules-resolve-a-directive-argument-in-the-scope-of-its-package.md) | The Go rules resolve a directive argument in the scope of its package | Accepted |

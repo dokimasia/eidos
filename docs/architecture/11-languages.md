@@ -231,6 +231,16 @@ not load. A one-file tree that reads `runtime.GOOS` in a value loads no
 package of the standard library. The rules write the value with a
 stand-in for `runtime`.
 
+The Go rules resolve a directive argument in the scope of the file of
+its subject, and then in the scope of its package. A qualifier that the
+imports of the file do not bind takes the import of another file of the
+package. A qualifier that two files bind to different paths resolves to
+no declaration. A bare name that the package and the dot imports of the
+file do not declare resolves in the external test package of the
+directory. The frontend records the uses of an argument in the same
+scope, so a signature-only file keeps an import that a directive of
+another file names.
+
 The TypeScript and Python frontends mark an overload signature with
 `Overload`, and the callable of its name without the mark is the
 implementation. The render writes the declarations of a TypeScript file
