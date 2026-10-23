@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.0.8
+
+### Patch Changes
+
+- Updated dependencies [6f125b4, 1833bae]
+  - go.dokimi.dev/eidos/core@0.8.0
+  - go.dokimi.dev/eidos/sdk@0.6.0
+
 ## 0.0.7
 
 ### Patch Changes

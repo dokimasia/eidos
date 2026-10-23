@@ -1,5 +1,16 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.6.0
+
+### Minor Changes
+
+- 1833bae: **Breaking:** Key `plugin.Unit.Data` of the SDK by the record that `Out.Record` placed.
+
+### Patch Changes
+
+- Updated dependencies [6f125b4]
+  - go.dokimi.dev/eidos/core@0.8.0
+
 ## 0.5.0
 
 ### Minor Changes
