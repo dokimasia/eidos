@@ -383,9 +383,10 @@ func TestEmit(t *testing.T) {
 			assert.Length(t, got, 1, "the family has one unit")
 			assert.Equal(t, got[0].Template, testTemplate, "the unit has the family's file template")
 			assert.Length(t, got[0].Decls, 1, "the unit has the record of Transfer")
+			record := got[0].Decls[0]
 			assert.Equal(
 				t,
-				executed(t, "{{.Data.Subject}}|{{.Data.Directive.level}}", got[0].Decls[0], got[0].Data[transferID]),
+				executed(t, "{{.Data.Subject}}|{{.Data.Directive.level}}", record, got[0].Data[record]),
 				"Transfer|warn",
 				"the record has the data of its match",
 			)
@@ -550,7 +551,7 @@ func TestEmit(t *testing.T) {
 
 			units := recordUnits(t)
 			assert.Length(t, units, 1, "the family has one unit for the one source file")
-			assert.Equal(t, executed(t, "{{.Data.Subject}}", nil, units[0].Data[ledgerID]), ledgerName,
+			assert.Equal(t, executed(t, "{{.Data.Subject}}", nil, recordData(units[0], ledgerID)), ledgerName,
 				"the record of the interface has the data of its match")
 		})
 
@@ -559,7 +560,7 @@ func TestEmit(t *testing.T) {
 
 			units := recordUnits(t)
 			assert.Length(t, units, 1, "the family has one unit for the one source file")
-			assert.Equal(t, executed(t, "{{.Data.Subject}}", nil, units[0].Data[entryID]), entryName,
+			assert.Equal(t, executed(t, "{{.Data.Subject}}", nil, recordData(units[0], entryID)), entryName,
 				"the record of the struct has the data of its match")
 		})
 
@@ -980,6 +981,17 @@ func recordUnits(tb testing.TB) []plugin.Unit {
 		out = append(out, u)
 	}
 	return out
+}
+
+// recordData returns the data of the record of u whose origin is origin,
+// and nil where u has no such record.
+func recordData(u plugin.Unit, origin symbol.Identity) any {
+	for _, d := range u.Decls {
+		if of, _ := emit.OriginOf(d); of == origin {
+			return u.Data[d]
+		}
+	}
+	return nil
 }
 
 // codes returns the code of each finding that res reported, in the order

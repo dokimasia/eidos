@@ -119,7 +119,7 @@ func TestOptions(t *testing.T) {
 			assert.Length(t, units, 1, "the family has one unit for the one source file")
 			assert.Equal(
 				t,
-				executed(t, "{{if .Data.Options}}set{{else}}unset{{end}}", nil, units[0].Data[ledgerID]),
+				executed(t, "{{if .Data.Options}}set{{else}}unset{{end}}", nil, recordData(units[0], ledgerID)),
 				"unset",
 				"the data of a plugin without options has no options",
 			)
