@@ -9,7 +9,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/dokimasia/gqlparser/v2 v2.0.0-20261020103051-349414ad49ed
 	github.com/pelletier/go-toml/v2 v2.4.3
-	go.dokimi.dev/assert v0.2.0
+	go.dokimi.dev/assert v0.3.1
 	go.dokimi.dev/eidos/lang v0.3.0
 	go.dokimi.dev/eidos/sdk v0.5.0
 	go.yaml.in/yaml/v3 v3.0.5
