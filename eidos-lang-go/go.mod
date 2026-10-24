@@ -7,7 +7,7 @@ go 1.27.3
 
 require (
 	github.com/golangci/golines v0.16.0
-	go.dokimi.dev/assert v0.2.0
+	go.dokimi.dev/assert v0.3.1
 	go.dokimi.dev/eidos/lang v0.3.0
 	go.dokimi.dev/eidos/sdk v0.5.0
 	golang.org/x/mod v0.42.0
