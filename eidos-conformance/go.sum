@@ -84,8 +84,8 @@ github.com/tree-sitter/tree-sitter-ruby v0.23.1 h1:T/NKHUA+iVbHM440hFx+lzVOzS4dV
 github.com/tree-sitter/tree-sitter-ruby v0.23.1/go.mod h1:kUS4kCCQloFcdX6sdpr8p6r2rogbM6ZjTox5ZOQy8cA=
 github.com/tree-sitter/tree-sitter-rust v0.24.2 h1:NL4nF67ib21RMzzfvkmXlVwe45vvhW10DVyO+D0z/W0=
 github.com/tree-sitter/tree-sitter-rust v0.24.2/go.mod h1:hfeGWic9BAfgTrc7Xf6FaOAguCFJRo3RBbs7QJ6D7MI=
-go.dokimi.dev/assert v0.2.0 h1:g0gJpU6Zu9Nyb/gxCniz4znBEVksOjahgaLL7IgcNeo=
-go.dokimi.dev/assert v0.2.0/go.mod h1:NeZvtoRhjUZSooEp8kN1mMakVUowb+EDKFR/YOUey2w=
+go.dokimi.dev/assert v0.7.0 h1:v1UhGt9YgBgkM9GY7wHSJnadd9jLta/UlF/C5FSVjVo=
+go.dokimi.dev/assert v0.7.0/go.mod h1:NeZvtoRhjUZSooEp8kN1mMakVUowb+EDKFR/YOUey2w=
 go.stealthscale.io/cli v0.4.0 h1:qJYk3Q+Aa9COxiJoShLMhRMNyiPJchDnK7Cxxsqs33g=
 go.stealthscale.io/cli v0.4.0/go.mod h1:w7GqdYhhdgdg6RhRO5dgGH/2g4u58BRsncVxfqqties=
 go.stealthscale.io/cli/yaml v0.1.3 h1:XwFwLUnRZgR7tk+RtkFDsJDwCVAg+Ohp1VKIhREQMJg=

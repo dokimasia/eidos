@@ -11,7 +11,7 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0
 	github.com/tree-sitter/tree-sitter-java v0.23.5
 	github.com/tree-sitter/tree-sitter-rust v0.24.2
-	go.dokimi.dev/assert v0.2.0
+	go.dokimi.dev/assert v0.7.0
 	go.dokimi.dev/eidos/sdk v0.5.0
 )
 

@@ -6,6 +6,6 @@ module go.dokimi.dev/eidos/core
 go 1.27.3
 
 require (
-	go.dokimi.dev/assert v0.2.0
+	go.dokimi.dev/assert v0.7.0
 	golang.org/x/sys v0.49.0
 )
