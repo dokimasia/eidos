@@ -237,9 +237,24 @@ imports of the file do not bind takes the import of another file of the
 package. A qualifier that two files bind to different paths resolves to
 no declaration. A bare name that the package and the dot imports of the
 file do not declare resolves in the external test package of the
-directory. The frontend records the uses of an argument in the same
-scope, so a signature-only file keeps an import that a directive of
-another file names.
+directory. It then resolves in the external test package of the
+directory of the route of the subject, where a plugin writes its tests
+under `out`. The path of that package is the path of the package joined
+with the route below the directory of the file. The frontend records the
+uses of an argument in the same scope, so a signature-only file keeps an
+import that a directive of another file names.
+
+`golang.CheckReference` returns the reason that Go code of a package
+cannot refer to a declaration. It refuses these declarations:
+
+- a declaration of the external test package of another directory
+- a declaration of an internal package of a tree that does not contain
+  the code
+- an unexported declaration of another package
+
+The Go backend checks each import with it. The layout calls it through
+`spell.Importable` for each reference of a routed declaration, and the
+rules decide `Bound.Importable` through it.
 
 A signature-only parse of the Go frontend keeps an unexported type that
 an exported type of its package embeds or names as the target of an
@@ -473,6 +488,8 @@ backend.New(name, target, syntax).
     Funcs(helpersFor).           // func(*ImportSet) FuncMap, per 07
     Naming(spellFilename).       // word, tag and file-key stem join per target
     Packages(packageAt).         // the package a file at a routed path declares
+    ImportRule(importable).      // the references that a file of a package
+                                 // cannot refer to
     Scaffold(spellStmt).         // the neutral statement vocabulary
     Imports(renderImports).      // grouping/sorting are language facts
     Finalise(format.Source).

@@ -92,8 +92,8 @@ type SourceRules interface {
 A handler reaches the kernel's walks through the bound `Rules()` on
 its match: `CallableOf`, `TypeOf`, `FieldTypeOf`, `MembersOf`,
 `Satisfies`, `Implementers`, `SamplesOf`, `ZeroValue`, `LiteralFor`,
-`Witnesses`, `Tag`, `SentinelName`, `SentinelBase` and `ErrorContract`,
-over the invocation's tracked view.
+`Witnesses`, `Tag`, `SentinelName`, `SentinelBase`, `ErrorContract` and
+`Importable`, over the invocation's tracked view.
 Every read that a projection makes records on that invocation. A value
 is safe for concurrent use, because it has no state of its own.
 
@@ -233,6 +233,12 @@ classification resolves against it
 ([12-shape-catalog.md](12-shape-catalog.md)), and the kernel's Link
 step consults it when it resolves type spellings to canonical
 identities after Load ([02-symbol-model.md](02-symbol-model.md)).
+
+The scope of a directive param has the directory of the route of the
+output of the plugin that registered the schema of the directive, as the
+layout routes that output ([18-routing-and-layout.md](18-routing-and-layout.md)).
+A language can resolve a name in the package of that directory, because
+the generated code that refers to the name is there.
 
 The kernel performs the walk of each kind in `rules.Resolve`. A
 language passes the walk a `rules.Resolver`, which returns the four
@@ -382,14 +388,15 @@ derived.
 ## Tier 2: declared by satisfying, found by asserting
 
 A language declares an optional capability by implementing the
-interface. The bound rules wrap six capabilities: `Tag`,
-`SentinelName`, `SentinelBase`, `ErrorContract`, `FieldTypeOf` and
-`Witnesses`. A handler reads them through methods that report false for
-a language without the capability. A consumer of any other capability asserts
-for it. When the assertion fails, the consumer reports once and
-generates nothing. It does not build a projection on a default that
-nobody chose. If these were required instead, a language without the
-concept would have to return by refusing.
+interface. The bound rules wrap seven capabilities: `Tag`,
+`SentinelName`, `SentinelBase`, `ErrorContract`, `Importable`,
+`FieldTypeOf` and `Witnesses`. A handler reads them through methods that
+report false for a language without the capability. `Importable` returns
+nil for such a language, because the language restricts no reference. A
+consumer of any other capability asserts for it. When the assertion
+fails, the consumer reports once and generates nothing. It does not build
+a projection on a default that nobody chose. If these were required
+instead, a language without the concept would have to return by refusing.
 
 The contract shapes, pinned to the same standard as Tier 1:
 
@@ -412,6 +419,9 @@ type TextRules interface {
 }
 type ContextRules interface {
     Context(sym symbol.Symbol, v View) (ParamView, bool) // the context that a signature does not state
+}
+type ImportRules interface {
+    Importable(pkg symbol.Identity, ref *node.TypeRef) error // why the code of pkg cannot refer to ref
 }
 type TagRules interface {
     Tag(f *node.Field, key string) (string, bool)
@@ -465,6 +475,7 @@ field is the projection.
 | `ResultRules` | the value and the failure of a result type, which `CallableOf` splits into two views of a return under the result-type error model | Rust `Result<T, E>` |
 | `TextRules` | the value of a text that an author states for a text type, which `View.Authored` asks for in place of a string literal | Rust `String::from("a")`, and the character literal of `char` |
 | `ContextRules` | the context of a call that a signature does not state, which `CallableOf` puts first among the parameters | the context of every protobuf rpc, which every gRPC binding passes to a handler |
+| `ImportRules` | whether the code of a package can refer to the referent of a reference, which a generator checks before it records a declaration into a file of that package | Go internal packages, external test packages and unexported names |
 | `TagRules` | stringly per-field tags | Go struct tags |
 | `WellKnownRules` | the well-known identity of a type of the standard library, which the fold reads before it classifies a target | Go `time.Time` and `time.Duration` |
 | `ShapeRules` | the shape of the values of a reference to a declared type, which the fold reads after `WellKnownRules` and before it classifies a target. The fold takes the folded type arguments of the reference as the children of a structural shape without children, and the first argument alone as the child of a stream, because a generator states the types that it receives and returns after the type that it yields | GraphQL custom scalars with a `@specifiedBy` URL of the table of scalars, the builtins and the generic classes of Python's typeshed, and `Literal` |

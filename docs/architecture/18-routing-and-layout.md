@@ -76,6 +76,12 @@ handle that the handler of an interface writes then arrives beside the
 double of the interface. The subject is the origin of the routing in
 every step of the resolution pass.
 
+Validation reads the same overrides from the raw directives of a subject
+and of its package, through `layout.RouteDir`, because the layout runs
+after validation. The scope in which a directive param resolves has the
+directory of the route of the output of the plugin of the directive
+([03-projection.md](03-projection.md)).
+
 ## The resolution pass
 
 Layout runs once per plan, after the settle and before the render,
@@ -136,7 +142,15 @@ decides it.
    to the file, such as `./thing.maker`. The layout refuses the
    referencing declaration under `UnemittedReference` where the plan
    does not emit the referent of an emitted reference.
-8. **Names.** Each settled file-level name occurs once in the namespace
+8. **Imports.** A backend whose target restricts the references of a file
+   implements the role `plugin.ImportChecker`. The layout calls it for
+   each reference of each routed declaration, with the package of the
+   file, after step 7 qualified the reference. A Go file imports no
+   internal package of another tree and no external test package, and
+   refers to no unexported name of another package. The layout refuses a
+   declaration with a reference that its file cannot refer to under
+   `UnimportableReference`, and the file keeps its other declarations.
+9. **Names.** Each settled file-level name occurs once in the namespace
    of its file and its receiver, and a record does not collide with a
    name. The layout reports the declarations of one name as one
    `CollidingNames` Error, positioned at the second declaration with the
@@ -313,6 +327,7 @@ carrier line of the directive that caused them:
 | EID-0054 | `UnderivedPackage` | a reference into a file whose package the target derives none for, or a bound reference whose binder derives no package |
 | EID-0070 | `UntranslatedReference` | a translated reference to a declaration that the plan does not emit, or a bound reference in a plan whose backend has no binder |
 | EID-0081 | `UnemittedReference` | an emitted reference to a declaration that the plan does not emit |
+| EID-0082 | `UnimportableReference` | a reference that the file of the referencing declaration cannot import under the import rule of the target |
 | EID-0031 | `CollidingNames` | two file-level declarations of one namespace and receiver with one settled name |
 
 A refused declaration is left out, and the rest of its file renders.

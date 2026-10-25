@@ -4,7 +4,7 @@ title: The Go rules resolve a directive argument in the scope of its package
 status: Accepted
 date: 2026-10-23
 supersedes: ADR-0098
-superseded-by: none
+superseded-by: ADR-0106
 rfc: none
 ---
 
