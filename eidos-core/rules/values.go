@@ -11,8 +11,9 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// aliasDepth bounds the alias chain that the shape of an authored value
-// and [Unaliased] follow, so an alias cycle in a broken source ends.
+// aliasDepth bounds the alias chain that the shape of an authored value,
+// [Unaliased] and the member walk follow, so an alias cycle in a broken
+// source ends.
 const aliasDepth = 8
 
 // Sample is one value of a type that a generated check writes, or the

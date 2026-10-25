@@ -37,6 +37,10 @@ const (
 	// field.
 	nameField  = "name"
 	countField = "count"
+	// keyName is a defined type that the package of a fixture declares
+	// methods for, and keyedName is the struct that embeds it.
+	keyName   = "Key"
+	keyedName = "Keyed"
 )
 
 // promotedMethods is the number of methods that the base of [promoted]
@@ -84,10 +88,11 @@ const (
 	// the first group of the memo and the shapes of the element and of the
 	// list. Bytes has no list of children.
 	foldBytesAllocs = 3
-	// membersAllocs is a member walk of a struct that embeds one type. It
-	// allocates the members that it returns and the path of the one
-	// contributor that it descends into. The working storage of the walk
-	// comes from a pool.
+	// membersAllocs is a member walk of a struct that embeds one type, a
+	// struct or a defined type. It allocates the members that it returns
+	// and the path of the one contributor that it descends into. The
+	// working storage of the walk comes from a pool, and the methods of a
+	// defined type are the declarations of its package.
 	membersAllocs = 2
 	// linearisedAllocs is a member walk under ShadowLinearise of a struct
 	// that extends two types with the same methods. It allocates the
@@ -717,7 +722,8 @@ func foldedBinding(tb assert.TB) (rules.Bound, *node.TypeRef) {
 // fixture, with what the call allocates. Each check reads what the last
 // call returned, so a call that measured a refusal fails. The binding
 // has folded the reference that the calls read, and MembersOf walks the
-// struct that [promoted] returns. [foldedBinding] measures TypeOf.
+// structs that [promoted], [linearised] and [aliased] return.
+// [foldedBinding] measures TypeOf.
 func boundCalls(tb assert.TB) []allocCall {
 	tb.Helper()
 
@@ -725,6 +731,7 @@ func boundCalls(tb assert.TB) []allocCall {
 	promoting, embedder := promoted(tb, rules.ShadowPromote)
 	overriding, extender := promoted(tb, rules.ShadowOverride)
 	linearising, mixer := linearised(tb)
+	defining, keyed := aliased(tb)
 	source, view := scripted(), b.View()
 	intRef, strRef := builtin(intSpelling), builtin(strSpelling)
 	b.TypeOf(intRef)
@@ -748,6 +755,7 @@ func boundCalls(tb assert.TB) []allocCall {
 		promotes  rules.MemberSet
 		overrides rules.MemberSet
 		linears   rules.MemberSet
+		defines   rules.MemberSet
 		sample    rules.Sample
 		name      string
 		witnesses []*node.TypeRef
@@ -802,6 +810,14 @@ func boundCalls(tb assert.TB) []allocCall {
 			call: func() { linears, _ = linearising.MembersOf(mixer) },
 			check: func(tb assert.TB) {
 				assert.Length(tb, linears.Members, promotedMethods, "MembersOf takes each method from the first base")
+			},
+		},
+		{
+			name: "MembersOf", caseName: "through a defined type", allocs: membersAllocs,
+			call: func() { defines, _ = defining.MembersOf(keyed) },
+			check: func(tb assert.TB) {
+				assert.Length(tb, defines.Members, promotedMethods,
+					"MembersOf promotes every method of the defined type")
 			},
 		},
 		{
@@ -911,6 +927,26 @@ func linearised(tb assert.TB) (rules.Bound, *node.Struct) {
 		Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowLinearise,
 	}}
 	return rules.NewBound(source, v, nil), derived
+}
+
+// aliased returns a binding over a struct that embeds a defined type over
+// int, and the struct. The package of the defined type declares the
+// [promotedMethods] methods of [promoted] for it, outside its declaration,
+// as a Go package declares the methods of a defined type.
+func aliased(tb assert.TB) (rules.Bound, *node.Struct) {
+	tb.Helper()
+
+	key := coretest.Alias(svcPath, keyName)
+	key.Defined, key.Target = true, builtin(intSpelling)
+	keyed := coretest.Struct(svcPath, keyedName)
+	keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+	decls := make([]symbol.Symbol, 0, promotedMethods+2)
+	decls = append(decls, key, keyed)
+	for i := range promotedMethods {
+		decls = append(decls, method(svcPath, keyName, "M"+strconv.Itoa(i)))
+	}
+	b, _, _ := boundOver(tb, coretest.Frozen(tb, coretest.Package(svcPath, decls...)))
+	return b, keyed
 }
 
 // byteList returns a list of the eight-bit unsigned scalar that

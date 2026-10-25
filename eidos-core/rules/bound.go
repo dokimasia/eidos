@@ -129,16 +129,31 @@ func (b Bound) FieldTypeOf(f *node.Field) TypeShape {
 }
 
 // MembersOf walks a type's effective member set under the language's
-// [MemberPolicy], and reports false for a symbol that is not a type.
+// [MemberPolicy]. It reports false for a symbol without member lists of
+// its own. An alias has none.
+//
+// A contributor whose declaration is an alias contributes these members at
+// the depth of the alias:
+//   - the methods that the package of the alias declares outside every type
+//     with the name of the alias as their owner, as Go declares the methods
+//     of a defined type
+//   - for a transparent alias, what its target contributes
+//   - for a defined type, the fields and the embeds of a struct under it,
+//     or every member of an interface under it
+//
+// A defined type has none of the methods that the type under it declares.
+// A builtin or an array under it contributes nothing more.
 //
 // # Allocation contract
 //
 // MembersOf allocates the members it returns, the gaps it returns, and
 // the path of each contributor it descends into. A contributor with type
-// arguments allocates the members it restates. The walk's working
-// storage, the linearizations of [ShadowLinearise] included, comes from
-// a pool. A walk of a struct that embeds one type allocates two: the
-// members and the one path.
+// arguments allocates the members it restates, and so does a contributor
+// whose declaration is a generic alias. The walk's working storage, the
+// linearizations of [ShadowLinearise] included, comes from a pool. A walk
+// of a struct that embeds one type allocates two: the members and the one
+// path. A defined type costs the same, because its methods are the
+// declarations of its package.
 func (b Bound) MembersOf(sym symbol.Symbol) (MemberSet, bool) { return b.membersOf(sym) }
 
 // SamplesOf returns two distinct values of a type. The values an

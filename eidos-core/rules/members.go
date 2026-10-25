@@ -52,13 +52,16 @@ type GapReason uint8
 
 const (
 	// GapUnresolved is a contributor whose reference has no target, or
-	// a target the view does not contain.
+	// a target the view does not contain. The walk applies the same rule
+	// to the target of an alias.
 	GapUnresolved GapReason = iota + 1
 	// GapNotMembered is a contributor that is not a type with
-	// members.
+	// members. An inline body under an alias and a structural type under
+	// a transparent alias report it too.
 	GapNotMembered
 	// GapCyclic is a contributor already on the path, or one past
-	// the depth budget.
+	// the depth budget. A chain of aliases reports it too where the chain
+	// names a declaration on the path or passes eight aliases.
 	GapCyclic
 	// GapGeneric is a contributor whose type arguments differ in number
 	// from the type parameters of its declaration.
@@ -361,7 +364,8 @@ func (t membered) contributors(c Contribution) []*node.TypeRef {
 
 // descend follows one contributor, recording a gap where it cannot. A
 // contributor in the host's language walks under the host's policy, and
-// one in another language under that language's own.
+// one in another language under that language's own. A contributor whose
+// declaration is an alias follows through [walk.descendAlias].
 func (w *walk) descend(
 	host membered, ref *node.TypeRef, policy MemberPolicy, source SourceRules,
 	through []symbol.Identity, depth, budget int, viaOptional bool,
@@ -381,6 +385,10 @@ func (w *walk) descend(
 	decl, held := w.b.view.Lookup(target.Target)
 	if !held {
 		w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: GapUnresolved})
+		return
+	}
+	if alias, isAlias := decl.(*node.Alias); isAlias && alias != nil {
+		w.descendAlias(host, ref, target, alias, policy, source, through, depth, viaOptional)
 		return
 	}
 	inner, is := memberedOf(decl)
@@ -410,6 +418,173 @@ func (w *walk) descend(
 	copy(path, through)
 	path[len(through)] = target.Target
 	w.visit(inner, policy, next, path, depth+1, viaOptional || ref.Form == symbol.FormOptional, ref)
+}
+
+// descendAlias follows a contributor whose declaration is an alias. Each
+// member that the alias contributes has the depth and the path of the
+// alias. The alias contributes the methods that [walk.recordOwn] records. A
+// transparent alias then contributes what its target contributes. An alias
+// at the target continues the chain. A defined type contributes the fields
+// and the embeds of a struct under it, or every member of an interface
+// under it. It contributes none of the methods that the type under it
+// declares. Under [ShadowLinearise] the walk records the declaration under
+// the alias as the one base of the alias, so the linearization of the root
+// contains the owner of every member that the alias contributes. A chain of
+// more than [aliasDepth] aliases reports as a cycle.
+func (w *walk) descendAlias(
+	host membered, ref, target *node.TypeRef, alias *node.Alias, policy MemberPolicy, source SourceRules,
+	through []symbol.Identity, depth int, viaOptional bool,
+) {
+	next := source
+	if alias.ID.Lang != source.Lang() {
+		next = w.b.forLang(alias.ID.Lang)
+		policy = next.Members()
+	}
+	path := make([]symbol.Identity, len(through)+1)
+	copy(path, through)
+	path[len(through)] = alias.ID
+	viaOptional = viaOptional || ref.Form == symbol.FormOptional
+	w.visiting[alias.ID] = true
+	defer delete(w.visiting, alias.ID)
+	var (
+		under *node.TypeRef
+		decl  symbol.Symbol
+	)
+	at, args, defined, followed := alias, target.Args, false, false
+	for range aliasDepth {
+		if len(args) != len(at.TypeParams) {
+			w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: GapGeneric})
+			return
+		}
+		if !defined {
+			w.recordOwn(at, args, path, depth+1, viaOptional, ref)
+		}
+		defined = defined || at.Defined
+		under = Substitute(at.Target, at.TypeParams, args)
+		var reason GapReason
+		if decl, reason = w.targetOf(under, defined, next); reason != 0 {
+			w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: reason})
+			return
+		}
+		chained, isAlias := decl.(*node.Alias)
+		if !isAlias {
+			followed = true
+			break
+		}
+		at, args = chained, under.Args
+	}
+	if !followed {
+		w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: GapCyclic})
+		return
+	}
+	inner, is := memberedOf(decl)
+	switch {
+	case !is && decl != nil && !defined:
+		w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: GapNotMembered})
+		return
+	case !is:
+		return
+	}
+	if defined {
+		switch decl.(type) {
+		case *node.Struct:
+			inner = membered{id: inner.id, fields: inner.fields, embeds: inner.embeds, params: inner.params}
+		case *node.Interface:
+		default:
+			return
+		}
+	}
+	if len(under.Args) > 0 || len(inner.params) > 0 {
+		bound, ok := bind(inner, under)
+		if !ok {
+			w.gaps = append(w.gaps, Gap{Host: host.id, Contributor: ref, Reason: GapGeneric})
+			return
+		}
+		inner = bound
+	}
+	if _, met := w.lineages[alias.ID]; w.linear && !met {
+		start := len(w.bases)
+		w.bases = append(w.bases, inner.id)
+		w.lineages[alias.ID] = lineage{bases: span{start: start, end: len(w.bases)}}
+	}
+	w.visit(inner, policy, next, path, depth+1, viaOptional, ref)
+}
+
+// targetOf returns the declaration that the target of an alias names, or
+// the reason of a gap where the walk cannot follow the target:
+//   - GapCyclic for a declaration on the path
+//   - GapUnresolved for a declaration that the view does not contain, and
+//     for a reference without a target
+//   - GapNotMembered for an alias without a target, for an inline body, and
+//     for a structural type under a transparent alias
+//
+// Under a defined type it returns a nil declaration and a zero reason for
+// two kinds of target: a builtin that the language classifies as a scalar,
+// a boolean, a text, bytes or the top type, and a structural type other
+// than an inline body. A defined type has no member of such a type.
+func (w *walk) targetOf(under *node.TypeRef, defined bool, source SourceRules) (symbol.Symbol, GapReason) {
+	switch {
+	case under == nil:
+		return nil, GapNotMembered
+	case under.Form == symbol.FormNamed && !under.Target.IsZero():
+		if w.visiting[under.Target] {
+			return nil, GapCyclic
+		}
+		decl, held := w.b.view.Lookup(under.Target)
+		if !held {
+			return nil, GapUnresolved
+		}
+		return decl, 0
+	case under.Form == symbol.FormNamed:
+		switch source.Builtin(under, w.b.view).Form {
+		case symbol.FormScalar, symbol.FormBool, symbol.FormText, symbol.FormBytes, symbol.FormDynamic:
+			if defined {
+				return nil, 0
+			}
+		default:
+			// A well-known reference and an opaque name can have members
+			// that the walk cannot read.
+		}
+		return nil, GapUnresolved
+	case under.Form == symbol.FormInline || !defined:
+		return nil, GapNotMembered
+	default:
+		return nil, 0
+	}
+}
+
+// recordOwn records the methods of an alias. They are the methods that the
+// package of the alias declares outside every type with the name of the
+// alias as their owner, as Go declares the methods of a defined type. A
+// contributor with type arguments binds them into a copy of each method.
+// recordOwn records nothing for an alias whose package the view does not
+// contain.
+func (w *walk) recordOwn(
+	alias *node.Alias, args []*node.TypeRef, path []symbol.Identity, depth int, viaOptional bool, via *node.TypeRef,
+) {
+	pkg, held := w.b.view.PackageOf(alias.ID)
+	if !held {
+		return
+	}
+	for _, f := range pkg.Files {
+		if f == nil {
+			continue
+		}
+		for _, decl := range f.Decls {
+			m, isMethod := decl.(*node.Method)
+			if !isMethod || m == nil || m.Name == "" || m.ID.Owner != alias.Name {
+				continue
+			}
+			if len(args) > 0 {
+				c := *m
+				c.Params = substituteParams(m.Params, alias.TypeParams, args)
+				c.Returns = substituteReturns(m.Returns, alias.TypeParams, args)
+				m = &c
+			}
+			member := Member{Symbol: m, Owner: alias.ID, Through: path, Depth: depth, ViaOptional: viaOptional}
+			w.record(m.Name, member, via)
+		}
+	}
 }
 
 // namedUnder returns the named reference a structural one wraps in

@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
@@ -331,6 +332,7 @@ func TestMembers(t *testing.T) {
 			t.Parallel()
 
 			alias := coretest.Alias(svcPath, "Named")
+			alias.Target = &node.TypeRef{Spelling: "struct{ id int }", Form: symbol.FormInline}
 			loopA := coretest.Struct(svcPath, "A")
 			loopB := coretest.Struct(svcPath, "B")
 			loopA.Embeds = []*node.Embed{embedding(svcPath, "B")}
@@ -346,10 +348,292 @@ func TestMembers(t *testing.T) {
 			set, _ := b.MembersOf(host)
 			assert.Equal(t, reasons(set), []rules.GapReason{
 				rules.GapUnresolved, rules.GapUnresolved, rules.GapNotMembered, rules.GapCyclic,
-			}, "an untargeted reference, a missing target, an alias, and a loop each name their reason")
+			}, "an untargeted reference, a missing target, an alias of an inline body, and a loop each name their reason")
 			assert.False(t, set.Complete(), "so the set is incomplete")
 			assert.Equal(t, set.Gaps[0].Host, coretest.ID(svcPath, "Host", symbol.KindStruct),
 				"each gap names the host that wrote the contributor")
+		})
+
+		beneath := []struct {
+			name       string
+			giveTarget *node.TypeRef
+			wantGaps   []rules.GapReason
+		}{
+			{
+				name: "promotes the methods of an embedded defined type over an array",
+				giveTarget: &node.TypeRef{
+					Spelling: "[16]byte", Form: symbol.FormArray, Length: 16, Elems: []*node.TypeRef{builtin("byte")},
+				},
+			},
+			{
+				name: "promotes the methods of an embedded defined type over a list",
+				giveTarget: &node.TypeRef{
+					Spelling: "[]byte", Form: symbol.FormList, Elems: []*node.TypeRef{builtin("byte")},
+				},
+			},
+			{
+				name:       "promotes the methods of an embedded defined type over an integer",
+				giveTarget: builtin(intSpelling),
+			},
+			{
+				name:       "promotes the methods of an embedded defined type over a string",
+				giveTarget: builtin(strSpelling),
+			},
+			{
+				name:       "reports GapUnresolved for a defined type over a name that the language does not classify",
+				giveTarget: builtin("elsewhere.Thing"),
+				wantGaps:   []rules.GapReason{rules.GapUnresolved},
+			},
+			{
+				name:       "reports GapUnresolved for a defined type over a declaration that the view does not contain",
+				giveTarget: named(svcPath, "Missing", symbol.KindStruct),
+				wantGaps:   []rules.GapReason{rules.GapUnresolved},
+			},
+		}
+		for _, tt := range beneath {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				key := coretest.Alias(svcPath, keyName)
+				key.Defined, key.Target = true, tt.giveTarget
+				keyed := coretest.Struct(svcPath, keyedName)
+				keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+				pkg := coretest.Package(svcPath, key, method(svcPath, keyName, "Len"), keyed)
+				b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+				set, _ := b.MembersOf(keyed)
+				assert.Equal(t, names(set), []string{"Len"}, "the method that the package declares for Key promotes")
+				expect.Equal(t, set.Members[0].Owner, key.ID, "Key owns the method")
+				expect.Equal(t, set.Members[0].Through, []symbol.Identity{key.ID},
+					"the method arrives through the embed of Key")
+				expect.Equal(t, reasons(set), tt.wantGaps,
+					"the walk reports a gap where it cannot follow the type under Key", assert.EquateEmpty())
+			})
+		}
+
+		t.Run("promotes the fields and the embeds of the struct under an embedded defined type", func(t *testing.T) {
+			t.Parallel()
+
+			inner := coretest.Struct(svcPath, "Inner")
+			inner.Methods = []*node.Method{method(svcPath, "Inner", "Close")}
+			base := coretest.Struct(svcPath, baseName)
+			base.Fields = []*node.Field{field(svcPath, baseName, "id", builtin(intSpelling))}
+			base.Methods = []*node.Method{method(svcPath, baseName, "ID")}
+			base.Embeds = []*node.Embed{embedding(svcPath, "Inner")}
+			key := coretest.Alias(svcPath, keyName)
+			key.Defined, key.Target = true, named(svcPath, baseName, symbol.KindStruct)
+			keyed := coretest.Struct(svcPath, keyedName)
+			keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			pkg := coretest.Package(svcPath, inner, base, key, method(svcPath, keyName, "Reset"), keyed)
+			b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+			set, _ := b.MembersOf(keyed)
+			assert.Equal(t, names(set), []string{"Reset", "id", "Close"},
+				"Key promotes its method, the field of Base and the method of Inner, without the method of Base")
+			expect.Equal(t, set.Members[1].Owner, base.ID, "Base declares the field")
+			expect.Equal(t, set.Members[1].Through, []symbol.Identity{key.ID},
+				"the field arrives through the embed of Key")
+			expect.Equal(t, set.Members[1].Depth, 1, "the field is at the depth of Key")
+			expect.Equal(t, set.Members[2].Depth, 2, "the method of Inner is one embed further down")
+			expect.True(t, set.Complete(), "the walk follows every contributor")
+		})
+
+		t.Run("promotes the methods of the interface under an embedded defined type", func(t *testing.T) {
+			t.Parallel()
+
+			reader := iface(svcPath, "Reader")
+			reader.Methods = []*node.Method{method(svcPath, "Reader", "Read")}
+			key := coretest.Alias(svcPath, keyName)
+			key.Defined, key.Target = true, named(svcPath, "Reader", symbol.KindInterface)
+			keyed := coretest.Struct(svcPath, keyedName)
+			keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, reader, key, keyed)))
+			set, _ := b.MembersOf(keyed)
+			assert.Equal(t, names(set), []string{"Read"},
+				"a defined type over an interface has the methods of the interface")
+			expect.Equal(t, set.Members[0].Owner, reader.ID, "Reader declares the method")
+			expect.True(t, set.Complete(), "the walk follows every contributor")
+		})
+
+		t.Run("promotes no method of the enum under an embedded defined type", func(t *testing.T) {
+			t.Parallel()
+
+			phase := coretest.Enum(svcPath, "Phase", "Open")
+			phase.Methods = []*node.Method{method(svcPath, "Phase", "String")}
+			key := coretest.Alias(svcPath, keyName)
+			key.Defined, key.Target = true, named(svcPath, "Phase", symbol.KindEnum)
+			keyed := coretest.Struct(svcPath, keyedName)
+			keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			pkg := coretest.Package(svcPath, phase, key, method(svcPath, keyName, "Len"), keyed)
+			b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+			set, _ := b.MembersOf(keyed)
+			assert.Equal(t, names(set), []string{"Len"}, "a defined type has none of the methods of the type under it")
+			expect.True(t, set.Complete(), "an enum declares no field or embed for a defined type over it")
+		})
+
+		t.Run("promotes the members of the target of an embedded transparent alias", func(t *testing.T) {
+			t.Parallel()
+
+			base := coretest.Struct(svcPath, baseName)
+			base.Fields = []*node.Field{field(svcPath, baseName, "id", builtin(intSpelling))}
+			base.Methods = []*node.Method{method(svcPath, baseName, "ID")}
+			key := coretest.Alias(svcPath, keyName)
+			key.Target = named(svcPath, baseName, symbol.KindStruct)
+			keyed := coretest.Struct(svcPath, keyedName)
+			keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			pkg := coretest.Package(svcPath, base, key, method(svcPath, keyName, "Reset"), keyed)
+			b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+			set, _ := b.MembersOf(keyed)
+			assert.Equal(t, names(set), []string{"Reset", "id", "ID"},
+				"the alias promotes the method that the package declares for it and every member of Base")
+			expect.Equal(t, set.Members[2].Owner, base.ID, "Base declares its method")
+			expect.Equal(t, set.Members[2].Through, []symbol.Identity{key.ID},
+				"the method of Base arrives through the embed of the alias")
+			expect.True(t, set.Complete(), "the walk follows every contributor")
+		})
+
+		t.Run("promotes the members of a defined type that an embedded transparent alias names", func(t *testing.T) {
+			t.Parallel()
+
+			base := coretest.Struct(svcPath, baseName)
+			base.Fields = []*node.Field{field(svcPath, baseName, "id", builtin(intSpelling))}
+			base.Methods = []*node.Method{method(svcPath, baseName, "ID")}
+			copied := coretest.Alias(svcPath, "Copy")
+			copied.Defined, copied.Target = true, named(svcPath, baseName, symbol.KindStruct)
+			key := coretest.Alias(svcPath, keyName)
+			key.Target = named(svcPath, "Copy", symbol.KindAlias)
+			keyed := coretest.Struct(svcPath, keyedName)
+			keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			pkg := coretest.Package(svcPath, base, copied, method(svcPath, "Copy", "Reset"), key, keyed)
+			b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+			set, _ := b.MembersOf(keyed)
+			assert.Equal(t, names(set), []string{"Reset", "id"},
+				"the alias promotes the method of Copy and the field of Base, without the method of Base")
+			expect.Equal(t, set.Members[0].Owner, copied.ID, "Copy owns its method")
+			expect.Equal(t, set.Members[1].Through, []symbol.Identity{key.ID},
+				"the field arrives through the embed of the alias")
+		})
+
+		// boxedWalk walks Holder, which embeds the alias Boxed[U] = Box[U]
+		// with args, where Box[T] declares the field item of type T.
+		boxedWalk := func(t *testing.T, args ...*node.TypeRef) rules.MemberSet {
+			t.Helper()
+
+			box, boxT := genericStruct(svcPath, "Box", "T")
+			box.Fields = []*node.Field{field(svcPath, "Box", "item", boxT)}
+			boxed := coretest.Alias(svcPath, "Boxed")
+			param := coretest.MemberID(svcPath, "Boxed", "U", symbol.KindTypeParam)
+			boxed.TypeParams = []*node.TypeParam{{ID: param, Name: "U"}}
+			boxed.Target = named(svcPath, "Box", symbol.KindStruct)
+			boxed.Target.Args = []*node.TypeRef{{Spelling: "U", Target: param}}
+			holder := coretest.Struct(svcPath, "Holder")
+			ref := named(svcPath, "Boxed", symbol.KindAlias)
+			ref.Args = args
+			holder.Embeds = []*node.Embed{{Ref: ref}}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, box, boxed, holder)))
+			set, _ := b.MembersOf(holder)
+			return set
+		}
+
+		t.Run("binds the arguments of an embedded generic alias", func(t *testing.T) {
+			t.Parallel()
+
+			set := boxedWalk(t, builtin(intSpelling))
+			assert.Equal(t, names(set), []string{"item"}, "the field of Box arrives through the alias")
+			assert.Equal(t, set.Members[0].Symbol.(*node.Field).Type.Spelling, intSpelling,
+				"with the argument of the alias in place of the parameter of Box")
+		})
+
+		t.Run("reports GapGeneric for an alias whose arguments differ in number from its parameters",
+			func(t *testing.T) {
+				t.Parallel()
+
+				set := boxedWalk(t, builtin(intSpelling), builtin(strSpelling))
+				assert.Equal(t, reasons(set), []rules.GapReason{rules.GapGeneric},
+					"two arguments do not bind one parameter")
+			})
+
+		spelled := []struct {
+			name       string
+			giveTarget *node.TypeRef
+			want       []rules.GapReason
+		}{
+			{
+				name:       "reports GapUnresolved for a transparent alias of a reference without a target",
+				giveTarget: builtin(intSpelling),
+				want:       []rules.GapReason{rules.GapUnresolved},
+			},
+			{
+				name: "reports GapNotMembered for a transparent alias of a list",
+				giveTarget: &node.TypeRef{
+					Spelling: "[]byte", Form: symbol.FormList, Elems: []*node.TypeRef{builtin("byte")},
+				},
+				want: []rules.GapReason{rules.GapNotMembered},
+			},
+			{
+				name:       "reports GapNotMembered for a transparent alias of a function",
+				giveTarget: named(svcPath, "F", symbol.KindFunction),
+				want:       []rules.GapReason{rules.GapNotMembered},
+			},
+		}
+		for _, tt := range spelled {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				key := coretest.Alias(svcPath, keyName)
+				key.Target = tt.giveTarget
+				keyed := coretest.Struct(svcPath, keyedName)
+				keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+				pkg := coretest.Package(svcPath, coretest.Function(svcPath, "F"), key, keyed)
+				b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+				set, _ := b.MembersOf(keyed)
+				assert.Equal(t, reasons(set), tt.want, "the walk does not read the members of the target of the alias")
+			})
+		}
+
+		t.Run("reports GapCyclic for a defined type over the walked struct", func(t *testing.T) {
+			t.Parallel()
+
+			tree := coretest.Struct(svcPath, "Tree")
+			tree.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			key := coretest.Alias(svcPath, keyName)
+			key.Defined, key.Target = true, named(svcPath, "Tree", symbol.KindStruct)
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, tree, key)))
+			set, _ := b.MembersOf(tree)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapCyclic}, "the struct under Key is on the path")
+		})
+
+		t.Run("reports GapCyclic for a chain of aliases that names its first alias", func(t *testing.T) {
+			t.Parallel()
+
+			first := coretest.Alias(svcPath, "First")
+			first.Target = named(svcPath, "Second", symbol.KindAlias)
+			second := coretest.Alias(svcPath, "Second")
+			second.Target = named(svcPath, "First", symbol.KindAlias)
+			host := coretest.Struct(svcPath, "Host")
+			host.Embeds = []*node.Embed{embedOf(svcPath, "First", symbol.KindAlias)}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, first, second, host)))
+			set, _ := b.MembersOf(host)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapCyclic},
+				"the target of Second is the alias on the path")
+		})
+
+		t.Run("orders the target of an alias base in the C3 order under ShadowLinearise", func(t *testing.T) {
+			t.Parallel()
+
+			other, foo := extending("Other", true), extending("Foo", true)
+			base := coretest.Alias(svcPath, baseName)
+			base.Target = named(svcPath, "Foo", symbol.KindStruct)
+			both := coretest.Struct(svcPath, "Both")
+			both.Extends = []*node.TypeRef{
+				named(svcPath, "Other", symbol.KindStruct), named(svcPath, baseName, symbol.KindAlias),
+			}
+			v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, other, foo, base, both)))
+			b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+				Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowLinearise,
+			}}, v, nil)
+			set, _ := b.MembersOf(both)
+			assert.Equal(t, names(set), []string{"Run"}, "one Run remains")
+			assert.Equal(t, set.Members[0].Owner, other.ID,
+				"the Run of Other, which comes before the target of Base in the order of Python")
 		})
 
 		t.Run("stops at the depth budget", func(t *testing.T) {
@@ -793,6 +1077,14 @@ func TestMembers(t *testing.T) {
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			_, is := b.MembersOf(coretest.Function(svcPath, "F"))
 			assert.False(t, is, "a function has no members")
+		})
+
+		t.Run("reports false for an alias", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			_, is := b.MembersOf(coretest.Alias(svcPath, keyName))
+			assert.False(t, is, "an alias has no member lists of its own")
 		})
 
 		t.Run("counts depth from the host", func(t *testing.T) {
