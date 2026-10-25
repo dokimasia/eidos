@@ -511,6 +511,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Placed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Placed](), reflect.TypeFor[core.Placed](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("Selection", func(t *testing.T) {
 		t.Parallel()
 
@@ -1038,6 +1048,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.AnnotatorContext](), reflect.TypeFor[core.AnnotatorContext](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Placer", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Placer](), reflect.TypeFor[core.Placer](), "the facade aliases the kernel's type")
 		})
 	})
 

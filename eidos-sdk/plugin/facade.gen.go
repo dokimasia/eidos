@@ -509,6 +509,22 @@ type EmitRef = core.EmitRef
 // [MatchKey.Compare] allocates nothing.
 type MatchKey = core.MatchKey
 
+// Placed is the result of one preview of a route: the package of the file
+// into which the layout routes the declarations of a unit, and what the
+// preview read to derive it. A [Placer] returns it, and [Invocation.Placed]
+// lists the previews of a call. A journal records the reads as the edges
+// that the layout reads to place a file, so a warm run executes the call
+// again where the package can change.
+//
+// # Concurrency
+//
+// A Placed is a value, and any number of goroutines may read one.
+//
+// # Allocation contract
+//
+// [Placed.Compare] does not allocate.
+type Placed = core.Placed
+
 // Selection restricts a phase call to what a warm run executes again.
 //
 // The authoring surface honours it. A rule that is not emit-phase runs
@@ -1011,6 +1027,17 @@ type WorkspaceCheck = core.WorkspaceCheck
 // Turn are the arbitration rank fields of every stamp made under
 // this call.
 type AnnotatorContext = core.AnnotatorContext
+
+// Placer is the role of the layout of a plan that previews a route for a
+// generator of the plan: the package of the file into which the layout
+// routes the declarations of a unit, before the generator records them.
+// The handle of a typed generator reads it through its method Package.
+//
+// # Concurrency
+//
+// A Placer is safe for concurrent use, because a phase call can run its
+// invocations on more than one worker.
+type Placer = core.Placer
 
 // GeneratorContext is what one Generate call may touch. Its Index
 // and Reader are scoped to the plan's sources, and Emit is the plan's
