@@ -5,6 +5,7 @@ package frontend_test
 
 import (
 	"fmt"
+	"io/fs"
 	"slices"
 	"strings"
 	"testing"
@@ -65,6 +66,15 @@ func TestParse(t *testing.T) {
 			assert.NoError(t, err, "the unit parses")
 			assert.Equal(t, importPaths(onlyFile(t, gb)), []string{"vendor/" + vendoredPath},
 				"the go command reads the standard library's module imports from its vendor tree")
+		})
+
+		t.Run("returns the error of a member that the unit cannot read", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontend.New(nil)
+			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: "p/gone.go"}}, fstest.MapFS{}, plugin.DepthFull,
+				f.Syntax(), brand, diag.NewSink(), f.Name())
+			assert.ErrorIs(t, f.Parse(t.Context(), u), fs.ErrNotExist, "the parse returns the error of the read")
 		})
 
 		t.Run("tells an alias from a defined type", func(t *testing.T) {

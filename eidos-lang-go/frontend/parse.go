@@ -196,20 +196,18 @@ func (f *goFrontend) readFile(u *plugin.SourceUnit, st *parseState, filePath str
 	}
 	m := memberFile{path: filePath, src: src}
 	m.parsed, m.err = parser.ParseFile(st.fset, filePath, src, parseMode|parser.ImportsOnly)
-	if m.parsed == nil || m.parsed.Name == nil || !m.parsed.Package.IsValid() {
-		return m, nil
+	if m.parsed != nil && m.parsed.Name != nil && m.parsed.Package.IsValid() {
+		m.built = constraintOf(m.parsed, filePath)
+		m.excluded = m.built != nil && !m.built.Eval(f.satisfies)
+		if !m.excluded {
+			m.parsed, m.err = parser.ParseFile(st.fset, filePath, src, parseMode)
+		}
 	}
-	m.built = constraintOf(m.parsed, filePath)
-	m.excluded = m.built != nil && !m.built.Eval(f.satisfies)
-	if !m.excluded {
-		m.parsed, m.err = parser.ParseFile(st.fset, filePath, src, parseMode)
-	}
-	if m.parsed == nil || m.parsed.Name == nil || !m.parsed.Package.IsValid() {
-		return m, nil
-	}
-	m.pkgPath, m.pkgName = st.place.importPath, m.parsed.Name.Name
-	if strings.HasSuffix(m.pkgName, golang.TestSuffix) {
-		m.pkgPath += golang.TestSuffix
+	if m.parsed != nil && m.parsed.Name != nil && m.parsed.Package.IsValid() {
+		m.pkgPath, m.pkgName = st.place.importPath, m.parsed.Name.Name
+		if strings.HasSuffix(m.pkgName, golang.TestSuffix) {
+			m.pkgPath += golang.TestSuffix
+		}
 	}
 	return m, nil
 }
@@ -361,15 +359,13 @@ func keptTypes(members []memberFile) map[string]map[string]bool {
 				continue
 			}
 			for _, spec := range gen.Specs {
-				s, isType := spec.(*ast.TypeSpec)
-				if !isType {
-					continue
-				}
-				if _, declared := byName[s.Name.Name]; !declared {
-					byName[s.Name.Name] = s
-				}
-				if ast.IsExported(s.Name.Name) {
-					queue = append(queue, pending{pkgPath: m.pkgPath, spec: s})
+				if s, isType := spec.(*ast.TypeSpec); isType {
+					if _, declared := byName[s.Name.Name]; !declared {
+						byName[s.Name.Name] = s
+					}
+					if ast.IsExported(s.Name.Name) {
+						queue = append(queue, pending{pkgPath: m.pkgPath, spec: s})
+					}
 				}
 			}
 		}
