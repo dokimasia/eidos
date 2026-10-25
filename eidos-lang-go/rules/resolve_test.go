@@ -45,6 +45,7 @@ const (
 	wideFile     = "wide/a.go"
 	boundFile    = "wide/e.go"
 	wideTestFile = "wide/g_test.go"
+	volFile      = "wide/vol/v.go"
 )
 
 // The routes of the package scope cases: a directory below the directory of
@@ -477,6 +478,20 @@ func TestResolve(t *testing.T) {
 			})
 		}
 
+		t.Run("returns the function of the external test package of a route above the subject's directory",
+			func(t *testing.T) {
+				t.Parallel()
+
+				volErr := id(volPath, "Err", symbol.KindVariable)
+				f := wideOver(t, volErr, volFile)
+				scope := f.scope(volErr)
+				scope.Route = widePath
+				got, err := r.Resolve(scope, "newSubject", directive.ResolveCallableInScope, f.view)
+				assert.NoError(t, err, "the spelling resolves")
+				assert.Equal(t, got.(node.Declaration).Identity(), id(wideTestPath, "newSubject", symbol.KindFunction),
+					"to the declaration it names")
+			})
+
 		routedRefused := []struct {
 			name  string
 			route string
@@ -897,7 +912,7 @@ var _ = w.Err
 
 func build() {}
 `)},
-		"wide/vol/v.go": {Data: []byte(`package vol
+		volFile: {Data: []byte(`package vol
 
 var ErrTooLarge, Err error
 `)},

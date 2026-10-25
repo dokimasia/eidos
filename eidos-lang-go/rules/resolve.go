@@ -6,8 +6,8 @@ package rules
 import (
 	"fmt"
 	"go/token"
+	"io/fs"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -22,7 +22,7 @@ import (
 
 // qualifierSep separates a package qualifier from the name it qualifies,
 // and a full import path from the name under it. pathSep separates the
-// elements of an import path.
+// elements of an import path and of a workspace path.
 const (
 	qualifierSep = "."
 	pathSep      = "/"
@@ -210,22 +210,33 @@ func bindingsOf(f *node.File) golang.Bindings {
 }
 
 // routeTests returns the path of the external test package of the
-// directory of the route of scope: the path of the package of the subject's
-// directory joined with the route below the directory of the subject's
-// file, with [golang.TestSuffix]. It reports false for a scope without a
-// route or without a file, for a route that is the directory of the file,
-// whose external test package InScope reads already, and for a file outside
-// the workspace root. routeTests allocates the path.
+// directory of the route of scope, with [golang.TestSuffix]. The route and
+// the directory of the subject's file are slash paths relative to the
+// workspace root. routeTests moves up from the directory and from the path
+// of the package of the directory, one element at a time, until the
+// directory contains the route. It then joins the rest of the route to the
+// path of the package. It reports false for a scope without a route or
+// without a file, for a route that is the directory of the file, whose
+// external test package InScope reads already, and for a file outside the
+// workspace root. routeTests allocates the path.
 func routeTests(scope rules.Scope) (string, bool) {
 	if scope.Route == "" || scope.File == nil {
 		return "", false
 	}
-	rel, err := filepath.Rel(filepath.FromSlash(path.Dir(scope.File.Pos.File)), filepath.FromSlash(scope.Route))
-	if err != nil || rel == "." {
+	dir := path.Dir(scope.File.Pos.File)
+	if dir == scope.Route || !fs.ValidPath(dir) {
 		return "", false
 	}
-	dir := strings.TrimSuffix(scope.Subject.Package, golang.TestSuffix)
-	return path.Join(dir, filepath.ToSlash(rel)) + golang.TestSuffix, true
+	pkg, below := strings.TrimSuffix(scope.Subject.Package, golang.TestSuffix), scope.Route
+	for dir != "." {
+		rest, inside := strings.CutPrefix(scope.Route, dir)
+		if inside && (rest == "" || strings.HasPrefix(rest, pathSep)) {
+			below = strings.TrimPrefix(rest, pathSep)
+			break
+		}
+		dir, pkg = path.Dir(dir), path.Dir(pkg)
+	}
+	return path.Join(pkg, below) + golang.TestSuffix, true
 }
 
 // packageBindings returns the scope of the imports of the files of the
