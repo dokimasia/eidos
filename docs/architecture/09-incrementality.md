@@ -170,6 +170,14 @@ source scopes of the names of its files, each origin's name override,
 the residents of each directory a target placed one of its files in,
 the files of the package of each per-package unit, and the modules.
 
+An invocation that previews a route through `Out.Package` reads the
+same routing edges for the file of the preview: the declaration edges
+of the origin and of the package of the origin, the residents of the
+directory of the file, the modules, and the files of the package of a
+per-package family. The read record of the invocation lists them. A
+generator can leave a unit without a file after the preview, and then no
+group reads the directory.
+
 On a warm run, per plan, a group is dirty in each of these cases:
 
 - A contributing invocation's read record meets the dirty set, or the

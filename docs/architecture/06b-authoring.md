@@ -532,6 +532,25 @@ if s.Visibility != symbol.VisibilityPublic {
 out.Append(check)
 ```
 
+A handler reads the package of the routed file of a handle through
+`Out.Package` before it records a declaration. The layout of the plan
+previews the route of the subject of the handle: the routing directives
+on the subject and on its package, and the configuration of the plan.
+Under `out`, the package is the package of the directory of the route,
+so the handler passes it to `Bound.Importable` and leaves out a
+declaration that the file cannot refer to. After `Out.Internal`, the
+package is the package of the internal test file of the family. A warm
+run executes the invocation again where an edit can change the package
+([18-routing-and-layout.md](18-routing-and-layout.md)).
+
+```go
+out := e.File(TagTest)
+test, err := out.Package() // shapetest_test under out path=shapetest/
+if err == nil && m.Rules().Importable(test, factory) == nil {
+    out.Record(data, check)
+}
+```
+
 ## The lowering guarantee
 
 This is the layer boundary's contract. Every rule set lowers to the
@@ -645,6 +664,7 @@ func (e *Emitter) PlanFile(tag ...Tag) *Out                // per plan
 func (o *Out) Append(decls ...symbol.Symbol)               // declarations of the file
 func (o *Out) Record(data any, decls ...symbol.Symbol)     // records of a claimed family, with their data
 func (o *Out) Internal() *Out                              // later placements test their package from inside
+func (o *Out) Package() (symbol.Identity, error)           // the package of the routed file, before the handler records
 func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] // one slot's write view
 func (v SlotView[T]) Append(values ...T)                   // names a weaver among the contributors
 func (e *Emitter) JoinName(tail, head string) string       // head, then tail raised

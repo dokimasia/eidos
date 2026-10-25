@@ -281,6 +281,38 @@ where `Home` returns an error or the target has no source file in the
 workspace. A plan whose backend has no binder refuses it under
 `UntranslatedReference`.
 
+## A preview of a route
+
+A generator records its declarations before the layout derives the
+package of their file. `Out.Package` returns that package before the
+generator records, so a generator passes the package of its routed file
+to `Bound.Importable` and leaves out a declaration that the file cannot
+refer to ([06b-authoring.md](06b-authoring.md)).
+
+The layout of the plan previews the route through `layout.NewPlacer`.
+Each generator call of a plan that writes files receives the placer in
+`plugin.GeneratorContext.Placer`. A preview applies the steps of `Route`
+to one declaration that takes the routing of the subject of the handle:
+
+1. the override on the subject and on its package, and the configuration
+   of the plan for the family
+2. the filename of a unit of the family for the key of the handle,
+   without declarations
+3. the package rule of the target over the placement of the file, with
+   the residents of its directory, the modules and the import base
+
+The internal mark of a handle selects the internal test file of a family
+whose `External` is true. A preview does not read the header of the
+file, because the generators place the `emit.File` of a file in the same
+phase. `Route` reports an override whose path is a file for two or more
+families of the subject when it routes the store. A preview does not
+report it.
+
+The invocation records the edges that a group reads to place its files
+for each of its previews, so a warm run executes the invocation again
+where the package can change
+([09-incrementality.md](09-incrementality.md)).
+
 ## The source file of a routed file
 
 A routed file whose every unit derives from one source file has the
