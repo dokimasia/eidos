@@ -75,8 +75,10 @@ const platformWidth = 0
 // DeriveSamples derives the two distinguishable values of a type:
 //   - the pair of a builtin from the fixed table, and two floats for a
 //     complex number, which Go converts to it
-//   - the pair of a defined type as a conversion of the pair of its
-//     underlying type
+//   - the pair of a defined type over a slice, an array or a map as
+//     composites of the defined type, which do not spell the underlying
+//     type, and the pair of any other defined type as a conversion of the
+//     pair of its underlying type
 //   - the pair of an enumeration as conversions of the exact values of
 //     its first two variants with distinct values, each typed as a literal
 //     of its underlying type, or else as conversions of the pair of its
@@ -155,19 +157,8 @@ func (r Rules) derive(
 	case symbol.FormOptional:
 		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
 		return addressed(sample), addressed(alternate)
-	case symbol.FormList, symbol.FormArray:
-		sample, alternate := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
-		t := rules.EmitRef(ref)
-		return rules.Lift(sample, elements(t)), rules.Lift(alternate, elements(t))
-	case symbol.FormMap:
-		key, otherKey := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
-		value, _ := r.partPair(symbol.Identity{}, child(ref, 1), hint, v, depth+1)
-		if !key.OK() || !otherKey.OK() || !value.OK() {
-			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
-		}
-		t := rules.EmitRef(ref)
-		return rules.Of(emit.Composite(t, emit.KeyedEntry(key.Value, value.Value))),
-			rules.Of(emit.Composite(t, emit.KeyedEntry(otherKey.Value, value.Value)))
+	case symbol.FormList, symbol.FormArray, symbol.FormMap:
+		return r.compositePair(ref, ref, hint, v, depth)
 	case symbol.FormNamed:
 		if _, known := r.WellKnown(ref.Target); ref.Target.IsZero() || known {
 			return r.builtinPair(ref, hint)
@@ -191,6 +182,33 @@ func (r Rules) derive(
 	default:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
+}
+
+// compositePair derives the pair of the slice, the array or the map ref as
+// composites of the type typed: ref itself, or a defined type over ref.
+// The pair of a slice or an array differs in its one element, and the pair
+// of a map in the key of its one entry. A composite of a defined type does
+// not spell ref, whose spelling is the source text of the package of the
+// defined type.
+func (r Rules) compositePair(
+	ref, typed *node.TypeRef,
+	hint string,
+	v rules.View,
+	depth int,
+) (rules.Sample, rules.Sample) {
+	if ref.Form == symbol.FormMap {
+		key, otherKey := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
+		value, _ := r.partPair(symbol.Identity{}, child(ref, 1), hint, v, depth+1)
+		if !key.OK() || !otherKey.OK() || !value.OK() {
+			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
+		}
+		t := rules.EmitRef(typed)
+		return rules.Of(emit.Composite(t, emit.KeyedEntry(key.Value, value.Value))),
+			rules.Of(emit.Composite(t, emit.KeyedEntry(otherKey.Value, value.Value)))
+	}
+	sample, alternate := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
+	t := rules.EmitRef(typed)
+	return rules.Lift(sample, elements(t)), rules.Lift(alternate, elements(t))
 }
 
 // funcPair derives the pair of a function type as two functions that
@@ -282,10 +300,14 @@ func (r Rules) declaredPair(
 		if d.Target == nil {
 			return rules.RefusedPair(rules.RefusedNoLiteral)
 		}
-		sample, alternate := r.derive(rules.Substitute(d.Target, d.TypeParams, ref.Args), hint, v, depth+1)
-		if !d.Defined {
-			return sample, alternate
+		target := rules.Substitute(d.Target, d.TypeParams, ref.Args)
+		switch {
+		case !d.Defined:
+			return r.derive(target, hint, v, depth+1)
+		case target.Form == symbol.FormList || target.Form == symbol.FormArray || target.Form == symbol.FormMap:
+			return r.compositePair(target, ref, hint, v, depth+1)
 		}
+		sample, alternate := r.derive(target, hint, v, depth+1)
 		t := rules.EmitRef(ref)
 		return rules.Lift(sample, converted(t)), rules.Lift(alternate, converted(t))
 	case *node.Enum:
@@ -414,13 +436,14 @@ func exactConstant(text string) (constant.Value, bool) {
 // ZeroValue returns the zero value of a type as Go spells it:
 //   - nil for a pointer, a slice, a map, a function, a channel, an
 //     interface, an inline interface included, and unsafe.Pointer
-//   - an empty composite for a struct, an inline struct and an array
+//   - an empty composite for a struct, an inline struct, an array and a
+//     defined type over an array
 //   - the builtin zeros at the width of the builtin, and 0 for a complex
 //     number
 //   - the zeros of time.Time and time.Duration from the builtin table,
 //     with or without a target
-//   - a conversion of the underlying zero for a defined type and for an
-//     enumeration
+//   - a conversion of the underlying zero for any other defined type and
+//     for an enumeration
 //
 // It reports false for a spelling that the rules cannot place. The zero
 // of a builtin allocates nothing, and a composite or a conversion
@@ -466,8 +489,11 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		}
 		return emit.Conversion(rules.EmitRef(ref), inner), true
 	case *node.Alias:
-		if d.Target == nil {
+		switch {
+		case d.Target == nil:
 			return emit.Value{}, false
+		case d.Defined && d.Target.Form == symbol.FormArray:
+			return emit.Composite(rules.EmitRef(ref)), true
 		}
 		inner, ok := r.ZeroValue(d.Target, v)
 		if !ok || !d.Defined {

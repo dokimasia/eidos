@@ -5,17 +5,32 @@ package rules_test
 
 import (
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
 	golang "go.dokimi.dev/eidos/lang/go"
+	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
+	"go.dokimi.dev/eidos/sdk/rulestest"
 	"go.dokimi.dev/eidos/sdk/symbol"
+)
+
+// The tree of the defined composite cases: the package dep declares Digest,
+// a defined type over an array whose length is a constant of dep, and
+// Index, a defined type over a map.
+const (
+	digestFile   = "fx/dep/d.go"
+	digestType   = "Digest"
+	indexType    = "Index"
+	digestSource = "package dep\n\n// Size is the length of a Digest.\nconst Size = 16\n\n" +
+		"// Digest is a digest of Size bytes.\ntype Digest [Size]byte\n\n" +
+		"// Index maps a name to a count.\ntype Index map[string]int\n"
 )
 
 // The spellings the value cases name: Go builtins, standard-library
@@ -591,18 +606,46 @@ func TestValues(t *testing.T) {
 			expect.Equal(t, a, other, "the alternate sets another int")
 		})
 
-		t.Run("returns conversions of the pair at the type argument for a generic defined type", func(t *testing.T) {
+		t.Run("returns a composite of a generic defined slice type with an element at its type argument",
+			func(t *testing.T) {
+				t.Parallel()
+
+				items := &node.TypeRef{
+					Spelling: itemsType, Target: id(fxPath, itemsType, symbol.KindAlias),
+					Args: []*node.TypeRef{builtin(intSpelling)},
+				}
+				s, _ := pairOf(t, loaded(t), items, "")
+				assert.Equal(t, s,
+					emit.Composite(rules.EmitRef(items), emit.Element(emit.Literal(emit.LiteralInt, derivedInt))),
+					"the sample is a composite of Items[int] with one int")
+			})
+
+		t.Run("returns composites of a defined array type whose length is a constant of its package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := digested(t)
+				digest := ref(depPath, digestType, symbol.KindAlias)
+				s, a := pairOf(t, f, digest, "")
+				element, other := pairOf(t, f, builtin(byteSpelling), "")
+				expect.Equal(t, s, emit.Composite(rules.EmitRef(digest), emit.Element(element)),
+					"the sample is a composite of Digest, which does not spell the length")
+				expect.Equal(t, a, emit.Composite(rules.EmitRef(digest), emit.Element(other)),
+					"the alternate is a composite of Digest with the other byte")
+			})
+
+		t.Run("returns composites of a defined map type with one entry", func(t *testing.T) {
 			t.Parallel()
 
-			items := &node.TypeRef{
-				Spelling: itemsType, Target: id(fxPath, itemsType, symbol.KindAlias),
-				Args: []*node.TypeRef{builtin(intSpelling)},
-			}
-			s, _ := pairOf(t, loaded(t), items, "")
-			assert.Equal(t, s.Kind, emit.ValueConversion, "the sample converts to Items[int]")
-			assert.Equal(t, s.Inner.Kind, emit.ValueComposite, "a slice of the type argument")
-			assert.Length(t, s.Inner.Fields, 1, "with one element")
-			assert.Equal(t, s.Inner.Fields[0].Value, emit.Literal(emit.LiteralInt, derivedInt), "an int")
+			f := digested(t)
+			index := ref(depPath, indexType, symbol.KindAlias)
+			s, a := pairOf(t, f, index, "")
+			key, otherKey := pairOf(t, f, builtin(stringSpelling), "")
+			value, _ := pairOf(t, f, builtin(intSpelling), "")
+			expect.Equal(t, s, emit.Composite(rules.EmitRef(index), emit.KeyedEntry(key, value)),
+				"the sample is a composite of Index, which does not spell the map")
+			expect.Equal(t, a, emit.Composite(rules.EmitRef(index), emit.KeyedEntry(otherKey, value)),
+				"the alternate is a composite of Index with the other key")
 		})
 
 		t.Run("returns floats for complex128", func(t *testing.T) {
@@ -876,6 +919,16 @@ func TestValues(t *testing.T) {
 				assert.Equal(t, got, tt.want, "Go's zero value")
 			})
 		}
+
+		t.Run("returns the empty composite of a defined array type", func(t *testing.T) {
+			t.Parallel()
+
+			digest := ref(depPath, digestType, symbol.KindAlias)
+			got, ok := gorules.New().ZeroValue(digest, digested(t).view)
+			assert.True(t, ok, "the zero derives")
+			assert.Equal(t, got, emit.Composite(rules.EmitRef(digest)),
+				"the zero is Digest{}, which does not spell the length")
+		})
 
 		unplaced := []struct {
 			name string
@@ -1335,6 +1388,15 @@ func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Valu
 	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
 	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
 	return sample.Value, alternate.Value
+}
+
+// digested returns a fixture over the tree of the defined composite cases,
+// with a tracked view over it.
+func digested(tb assert.TB) *fixture {
+	tb.Helper()
+
+	f := rulestest.Loaded(tb, gofrontend.New(nil), fstest.MapFS{digestFile: {Data: []byte(digestSource)}})
+	return viewOver(tb, f, id(depPath, digestType, symbol.KindAlias), digestFile)
 }
 
 // refusalOf returns the refusal of a reference's sample.
