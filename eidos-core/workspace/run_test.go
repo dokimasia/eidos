@@ -1541,6 +1541,61 @@ func TestRun(t *testing.T) {
 			assert.NotNil(t, seen.File, "the rules are asked in the subject's file")
 		})
 
+		// routed runs the composition over Alpha in alpha.go with the raw
+		// instances on Alpha and on its package, and returns the scope in
+		// which the rules resolve the param of the ref directive.
+		routed := func(t *testing.T, onAlpha, onPackage []directive.Raw) rules.Scope {
+			t.Helper()
+
+			var bound symbol.Identity
+			var seen rules.Scope
+			w, err := pointing(&bound).Rules(native{scope: &seen}).Build()
+			assert.NoError(t, err, "the composition composes")
+			s := coretest.Struct(coretest.StorePath, "Alpha")
+			s.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+			pkg := coretest.Package(coretest.StorePath, s)
+			pkg.Files[0].Pos = position.Pos{File: "alpha.go", Line: 1, Col: 1}
+			g := store.New()
+			assert.NoError(t, g.AddPackage(pkg), "the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(s.Identity(), onAlpha), "the directives of Alpha attach")
+			if len(onPackage) > 0 {
+				assert.NoError(t, g.AttachDirectives(pkg.ID, onPackage), "the directives of the package attach")
+			}
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			assert.False(t, report.Sink.Failed(), "nothing is reported")
+			return seen
+		}
+
+		t.Run("asks the rules in the route that the directive of the plugin states", func(t *testing.T) {
+			t.Parallel()
+
+			ref := rawRef("Alpha", 2)
+			out := directive.RawArg{Key: string(directive.ReservedOut), Value: directive.RawValue{Text: "kit/"}}
+			ref.Args = append(ref.Args, out)
+			assert.Equal(t, routed(t, []directive.Raw{ref}, nil).Route, "kit",
+				"the scope has the directory of the reserved out key")
+		})
+
+		t.Run("asks the rules in the route of the kernel out directive of the package", func(t *testing.T) {
+			t.Parallel()
+
+			out := directive.Raw{
+				Name: directive.KernelOut,
+				Args: []directive.RawArg{{Key: string(directive.OutPath), Value: directive.RawValue{Text: "kit/"}}},
+				Pos:  position.Pos{File: "alpha.go", Line: 1, Col: 1},
+			}
+			assert.Equal(t, routed(t, []directive.Raw{rawRef("Alpha", 2)}, []directive.Raw{out}).Route, "kit",
+				"the scope has the directory of the out directive of the package")
+		})
+
+		t.Run("asks the rules without a route for a subject without an out directive", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, routed(t, []directive.Raw{rawRef("Alpha", 2)}, nil).Route, "",
+				"the output of the plugin is in the directory of the subject")
+		})
+
 		t.Run("returns ErrRunFailed for a reference the rules bind to nothing", func(t *testing.T) {
 			t.Parallel()
 

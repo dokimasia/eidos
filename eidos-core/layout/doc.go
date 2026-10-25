@@ -8,14 +8,23 @@
 // It reads four inputs in fixed precedence: the families each plugin
 // declares, the plan's [Policy], the refinements of its [Config], and
 // the overrides an author wrote on a declaration's origin. The target
-// takes part through two backend surfaces: a [plugin.FileSpeller]
-// splits units and spells filenames, and a [plugin.Packager] names the
-// package a file at a routed path declares. The result is the plan's
-// [plugin.File] list, which the render pass renders as it stands.
+// takes part through the roles of its backend:
+//
+//   - a [plugin.FileSpeller] splits units and spells filenames;
+//   - a [plugin.Packager] names the package a file at a routed path
+//     declares;
+//   - a [plugin.Binder] returns the package of a bound reference;
+//   - a [plugin.ImportChecker] refuses a declaration whose file cannot
+//     refer to one of its references.
+//
+// The result is the plan's [plugin.File] list, which the render pass
+// renders unchanged.
 //
 // [Residents] and [Modules] read the source tree a package rule
 // consults, once per run from the frozen graph and the fact store, so
-// every plan routes against one view of it.
+// every plan routes against one view of it. [RouteDir] reads the route of
+// the output of a plugin for a subject from the raw directives, with the
+// precedence of [Route], for the validation that runs before the layout.
 //
 // [ParsePolicy] parses the name of a [Policy] in a configuration, which is
 // the name that [Policy.String] returns.
@@ -59,7 +68,10 @@
 // reference has a target and has [emit.TypeRef.Emitted] set. It refers to
 // a declaration of the plan as a translated reference does, and its
 // target can be in any language. Route marks a bare reference that it
-// qualifies into another package as emitted.
+// qualifies into another package as emitted. Where the input has an import
+// rule, Route checks each reference of each declaration after it qualifies
+// the reference, and refuses a declaration whose file cannot refer to one
+// of its references.
 //
 // # Findings
 //
@@ -67,11 +79,11 @@
 // [diag.PhaseLayout], and leaves the refused declarations out of the
 // files it returns: [UndeclaredFamily], [UnknownTag],
 // [AmbiguousOverride], [NoDestination], [EscapingPath],
-// [PathCollision], [UnderivedPackage], [UntranslatedReference] and
-// [UnemittedReference]. A
-// contradiction in the configuration is a fault [Config.Check] returns
-// at Build, and never a finding. [Describe] names a declaration in these
-// findings, and the workspace names a file's first declaration with it.
+// [PathCollision], [UnderivedPackage], [UntranslatedReference],
+// [UnemittedReference] and [UnimportableReference]. A contradiction in
+// the configuration is a fault [Config.Check] returns at Build, and never
+// a finding. [Describe] names a declaration in these findings, and the
+// workspace names a file's first declaration with it.
 //
 // # Dependency position
 //

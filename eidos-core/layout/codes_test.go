@@ -59,6 +59,10 @@ func TestCodes(t *testing.T) {
 			name: "UnemittedReference", code: layout.UnemittedReference, spelt: "EID-0081",
 			meaning: "an emitted reference refers to a declaration that the plan does not emit",
 		},
+		{
+			name: "UnimportableReference", code: layout.UnimportableReference, spelt: "EID-0082",
+			meaning: "a reference refers to a declaration that the file of the referencing declaration cannot import",
+		},
 	}
 	for _, tt := range codes {
 		t.Run(tt.name, func(t *testing.T) {

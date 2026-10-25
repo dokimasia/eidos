@@ -77,6 +77,30 @@ func (h *homes) Home(_ symbol.Identity, schema plugin.Placement) (symbol.Identit
 	return dirPackage(path.Join(dir, h.sub)), nil
 }
 
+// closedPkg is the package that the import rule of the cases closes to
+// every file of another package.
+const closedPkg = "example.com/closed"
+
+// gates is the import rule of the cases. A file of another package cannot
+// refer to a reference whose package is closed, and gates records the
+// package of each file that it is asked about.
+type gates struct {
+	closed string
+	asked  []symbol.Identity
+}
+
+var _ plugin.ImportChecker = (*gates)(nil)
+
+// Importable records file, and returns an error for a reference to the
+// closed package from a file of another package.
+func (g *gates) Importable(file symbol.Identity, ref *emit.TypeRef) error {
+	g.asked = append(g.asked, file)
+	if ref.Package != "" && ref.Package == g.closed && file.Package != g.closed {
+		return errors.New("layout_test: " + ref.Package + " is closed to the package " + file.Package)
+	}
+	return nil
+}
+
 // keptFiles is the name table of kept files over a list of entries: what
 // a warm run hands the layout of part of a plan. InScope lists the records
 // of a scope, and the other lookups leave every record out.
@@ -702,6 +726,86 @@ func TestReference(t *testing.T) {
 				coretest.AssertCodes(t, sink, tt.want)
 			})
 		}
+
+		t.Run("reports UnimportableReference for a reference that the file of the declaration cannot import",
+			func(t *testing.T) {
+				t.Parallel()
+
+				closed := &emit.TypeRef{Spelling: rowName, Package: closedPkg}
+				f := newFixture(stubOf(storeFile, storePkg,
+					generated(storeID, "StoreStub", &emit.Field{Name: "row", Type: closed}),
+					generated(storeID, "StoreView")))
+				f.packager, f.imports = directories{}, &gates{closed: closedPkg}
+				files, sink := f.route(t)
+				assert.Equal(t, layoutOf(files), []string{referringPath + ": StoreView"},
+					"the file keeps the declaration whose references it can import")
+				coretest.AssertCodes(t, sink, layout.UnimportableReference)
+				for d := range sink.All() {
+					assert.Equal(t, d.Pos, at(storeFile), "the finding is at the referencing declaration's origin")
+				}
+			})
+
+		t.Run("reports one UnimportableReference for two references of one declaration", func(t *testing.T) {
+			t.Parallel()
+
+			row := &emit.TypeRef{Spelling: rowName, Package: closedPkg}
+			next := &emit.TypeRef{Spelling: rowName, Package: closedPkg}
+			f := newFixture(stubOf(storeFile, storePkg, generated(storeID, "StoreStub",
+				&emit.Field{Name: "row", Type: row}, &emit.Field{Name: "next", Type: next})))
+			f.packager, f.imports = directories{}, &gates{closed: closedPkg}
+			files, sink := f.route(t)
+			assert.Empty(t, files, "the referencing declaration is refused")
+			coretest.AssertCodes(t, sink, layout.UnimportableReference)
+		})
+
+		t.Run("asks the import rule with the package of the routed file", func(t *testing.T) {
+			t.Parallel()
+
+			rule := &gates{}
+			f := newFixture(referring(&emit.TypeRef{Spelling: "string"})).
+				on(storeID, written(stubDirective, 1, keyOut, "fakes/"))
+			f.packager, f.imports = directories{}, rule
+			_, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, rule.asked, []symbol.Identity{dirPackage(fakesDir)},
+				"the rule reads the package of the file")
+		})
+
+		t.Run("reports UnimportableReference for a bare reference that it qualifies into a closed package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := newFixture(referring(&emit.TypeRef{Spelling: rowStubName}), rowStub()).
+					on(rowID, written(stubDirective, 1, keyOut, "fakes/"))
+				f.packager, f.imports = directories{}, &gates{closed: fakesDir}
+				files, sink := f.route(t)
+				assert.Equal(t, layoutOf(files), []string{fakesDir + "/row_stub.go: RowStub"},
+					"the referencing declaration is refused")
+				coretest.AssertCodes(t, sink, layout.UnimportableReference)
+			})
+
+		t.Run("checks no reference of a declaration that another finding refused", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowName, Package: closedPkg})).
+				on(storeID, written(stubDirective, 1, keyOut, "/fakes/"))
+			f.packager, f.imports = directories{}, &gates{closed: closedPkg}
+			files, sink := f.route(t)
+			assert.Empty(t, files, "the escaping declaration is refused")
+			coretest.AssertCodes(t, sink, layout.EscapingPath)
+		})
+
+		t.Run("checks no reference of a file whose package derives none", func(t *testing.T) {
+			t.Parallel()
+
+			rule := &gates{closed: closedPkg}
+			f := newFixture(referring(&emit.TypeRef{Spelling: rowName, Package: closedPkg}))
+			f.packager, f.imports = directories{refuse: storePkg}, rule
+			files, sink := f.route(t)
+			assert.Equal(t, layoutOf(files), []string{referringPath + ": StoreStub"}, "the declaration keeps its file")
+			coretest.AssertCodes(t, sink)
+			assert.Empty(t, rule.asked, "the rule reads no file without a package")
+		})
 	})
 }
 

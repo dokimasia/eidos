@@ -86,9 +86,15 @@ type SourceRules interface {
 
 // Scope is the place where a spelling is read. Subject is the declaration
 // that has the spelling, and the imports of File qualify the spelling.
+// Route is the workspace-relative directory into which the output of the
+// plugin that registered the schema of the directive of the spelling moves
+// for the subject, as the layout routes that output, and empty where no
+// route moves it. A language can resolve a name in the package of that
+// directory, because the generated code that refers to the name is there.
 type Scope struct {
 	Subject symbol.Identity
 	File    *node.File
+	Route   string
 }
 
 // ParamRole classifies a callable's parameter.

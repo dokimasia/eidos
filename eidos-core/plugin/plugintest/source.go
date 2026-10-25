@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/load"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
@@ -123,7 +124,8 @@ func Loaded(tb assert.TB, s Source) *Fixture {
 					raws = append(raws, r)
 				}
 			}
-			typed := directive.Validate(id, raws, schemas, f.Keys, scopedResolver(tb, f.Rules, view, pkg, d), sink)
+			resolve := scopedResolver(tb, f.Rules, view, g, schemas, pkg, d)
+			typed := directive.Validate(id, raws, schemas, f.Keys, resolve, sink)
 			if len(typed) > 0 {
 				f.Validated(tb, id, typed...)
 			}
@@ -164,21 +166,28 @@ func schemasOf(tb assert.TB, plugins []plugin.Plugin) *directive.Registry {
 // scopedResolver returns the resolver through which validation binds the
 // reference params of decl, a declaration of pkg. The resolver binds a
 // name through the rules of the language of the subject, in the scope of
-// the file of decl and over view, as a run binds it. It returns an error
-// for a language without rules and for a name that the rules do not
-// resolve. It stops the test where pkg has no file at the position of
-// decl, and where a name resolves to a symbol without an identity.
+// the file of decl and over view, as a run binds it. The scope has the
+// directory into which the output of the plugin that registered the schema
+// of the directive moves for the subject, as [layout.RouteDir] reads it
+// from the raw directives of g and the schemas. It returns an error for a language
+// without rules and for a name that the rules do not resolve. It stops the
+// test where pkg has no file at the position of decl, and where a name
+// resolves to a symbol without an identity.
 func scopedResolver(
-	tb assert.TB, rs *rules.Registry, view rules.View, pkg *node.Package, decl node.Declaration,
+	tb assert.TB, rs *rules.Registry, view rules.View, g *store.Graph, schemas *directive.Registry,
+	pkg *node.Package, decl node.Declaration,
 ) directive.Resolver {
-	return func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
+	return func(subject symbol.Identity, name string, kind directive.ResolutionKind, owner string) (symbol.Identity, error) {
 		src, held := rs.For(subject.Lang)
 		if !held {
 			return symbol.Identity{}, fmt.Errorf("plugintest: no rules are registered for %s", subject.Lang)
 		}
 		at := slices.IndexFunc(pkg.Files, func(file *node.File) bool { return file.Pos.File == decl.Position().File })
 		assert.NotEqual(tb, at, -1, "the package of "+subject.String()+" has the file of the subject")
-		sym, err := src.Resolve(rules.Scope{Subject: subject, File: pkg.Files[at]}, name, kind, view)
+		scope := rules.Scope{Subject: subject, File: pkg.Files[at]}
+		scope.Route, _ = layout.RouteDir(scope.File.Pos.File, g.DirectivesOf(subject),
+			g.DirectivesOf(subject.PackageIdentity()), plugin.ID(owner), schemas)
+		sym, err := src.Resolve(scope, name, kind, view)
 		if err != nil {
 			return symbol.Identity{}, err
 		}

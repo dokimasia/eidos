@@ -209,6 +209,23 @@ func (b Bound) SentinelBase(ident string) (string, bool) {
 	return names.SentinelBase(ident)
 }
 
+// Importable returns the reason that the code of the package pkg cannot
+// refer to the referent of ref, and nil where it can, through the rules of
+// the bound language. A generator calls it before it records a
+// declaration with ref into a file of pkg, such as a method of another
+// package whose signature refers to an internal package. For a reference
+// whose target is a function, the result states whether the code can call
+// the function. Importable returns nil for a nil reference and where the
+// language does not implement [ImportRules]. It allocates what the
+// Importable of the language allocates.
+func (b Bound) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
+	imports, declared := b.source.(ImportRules)
+	if !declared || ref == nil {
+		return nil
+	}
+	return imports.Importable(pkg, ref)
+}
+
 // ErrorContract returns the contract of decl as an error type, through
 // the rules of the language of decl. It reports false where decl is not a
 // declaration, where it is not an error type, and where those rules do not

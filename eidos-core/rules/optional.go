@@ -138,6 +138,17 @@ type ContextRules interface {
 	Context(sym symbol.Symbol, v View) (ParamView, bool)
 }
 
+// ImportRules is the optional capability of a language that restricts the
+// declarations that the code of a package can refer to. Go code imports no
+// internal package of another tree and no external test package, and refers
+// to no unexported name of another package. [Bound.Importable] calls it.
+type ImportRules interface {
+	// Importable returns the reason that the code of the package pkg cannot
+	// refer to the referent of ref, and nil where it can. It checks each
+	// reference inside ref too, such as the element of a list.
+	Importable(pkg symbol.Identity, ref *node.TypeRef) error
+}
+
 // TagRules reads a language's per-field tags.
 type TagRules interface {
 	// Tag returns a field's tag value under a key, and reports false

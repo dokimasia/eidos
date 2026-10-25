@@ -6,6 +6,7 @@ package plugin
 import (
 	"strings"
 
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -118,6 +119,25 @@ type Packager interface {
 // PackageRule is a target's package rule in the form a backend kit
 // declares it: the function [Packager.PackageAt] runs.
 type PackageRule func(p Placement) (symbol.Identity, error)
+
+// ImportChecker is the role of a target whose language restricts the
+// declarations that a file can refer to. A Go file imports no internal
+// package of another tree and no external test package, and refers to no
+// unexported name of another package. The layout refuses a declaration with
+// a reference that the file of the declaration cannot refer to, and keeps
+// the other declarations of the file. A target without the role restricts
+// no reference.
+type ImportChecker interface {
+	// Importable returns the reason that a file of the package file cannot
+	// refer to the referent of the named reference ref, and nil where it
+	// can. The layout calls it once for each reference of a declaration,
+	// with the package that the reference has after the layout qualified it.
+	Importable(file symbol.Identity, ref *emit.TypeRef) error
+}
+
+// ImportRule is a target's import rule in the form a backend kit declares
+// it: the function [ImportChecker.Importable] runs.
+type ImportRule func(file symbol.Identity, ref *emit.TypeRef) error
 
 // NameScoper is the role of a target whose file-level names share one
 // namespace across the files of different packages. A protobuf file is a

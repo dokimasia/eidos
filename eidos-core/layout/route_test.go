@@ -176,6 +176,7 @@ type fixture struct {
 	speller   plugin.FileSpeller
 	packager  plugin.Packager
 	binder    plugin.Binder
+	imports   plugin.ImportChecker
 	residents map[string][]plugin.Resident
 	modules   []plugin.Module
 	others    plugin.Names
@@ -236,6 +237,7 @@ func (f *fixture) input(tb testing.TB) (layout.Input, *diag.Sink) {
 		Speller:    f.speller,
 		Packager:   f.packager,
 		Binder:     f.binder,
+		Imports:    f.imports,
 		Index:      ix,
 		Directives: registry(tb),
 		Modules:    f.modules,
@@ -286,7 +288,8 @@ func (spelling) FileName(u plugin.Unit) string {
 
 // lean is the benchmark's target: one file per unit, named by its
 // source stem and its family word in one allocation, as a target's
-// spelling costs at least.
+// spelling costs at least. Its import rule admits every reference
+// without an allocation.
 type lean struct{}
 
 // SplitUnit returns the unit whole.
@@ -296,6 +299,9 @@ func (lean) SplitUnit(u plugin.Unit) []plugin.Unit { return []plugin.Unit{u} }
 func (lean) FileName(u plugin.Unit) string {
 	return strings.TrimSuffix(path.Base(u.Key), ".go") + "_" + u.Word + ".go"
 }
+
+// Importable returns nil for every reference.
+func (lean) Importable(symbol.Identity, *emit.TypeRef) error { return nil }
 
 // perDecl is a target that writes each declaration in a file of its
 // own, named after the declaration.
@@ -1341,8 +1347,9 @@ func TestRouteAllocs(t *testing.T) {
 }
 
 // BenchmarkRoute measures one plan's routing: per-source units beside
-// their sources, each file's package named by the target. No
-// declaration allocates.
+// their sources, each file's package named by the target. The layout
+// checks the references of every declaration against the import rule of
+// the target. No declaration allocates.
 func BenchmarkRoute(b *testing.B) {
 	b.Run("Route", func(b *testing.B) {
 		b.Run("the canonical corpus of 200,000 declarations", func(b *testing.B) {
@@ -1565,7 +1572,7 @@ func benchInput(tb testing.TB, packages int) layout.Input {
 	ix, err := plugin.NewIndex(g, meta.NewFacts(meta.NewRegistry()), nil, nil)
 	assert.NoError(tb, err, "the index builds")
 	return layout.Input{
-		Emit: e, Outputs: families(), Speller: lean{}, Packager: directories{}, Index: ix,
+		Emit: e, Outputs: families(), Speller: lean{}, Packager: directories{}, Imports: lean{}, Index: ix,
 		Sink: diag.NewSink(),
 	}
 }

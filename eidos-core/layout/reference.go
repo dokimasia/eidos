@@ -348,3 +348,51 @@ func (r *router) relocated() bool {
 	}
 	return false
 }
+
+// importable refuses each routed declaration with a reference that the file
+// of the declaration cannot refer to, as the import rule of the input
+// decides. It runs after [router.qualify], so the rule reads the package that
+// a reference has in its file. It checks no declaration that a finding
+// refused, and no file whose package derives none. An input without an
+// import rule checks nothing. importable allocates nothing beyond what the
+// rule allocates and what a refusal reports.
+func (r *router) importable() {
+	if r.in.Imports == nil {
+		return
+	}
+	for fi := range r.files {
+		f := &r.files[fi]
+		if f.reason != nil {
+			continue
+		}
+		for ui := range f.file.Units {
+			u := &f.file.Units[ui]
+			for _, d := range u.Decls {
+				if !r.isRefused(d) {
+					r.importableDecl(d, u, f)
+				}
+			}
+		}
+	}
+}
+
+// importableDecl refuses the declaration d of the unit u under
+// [UnimportableReference] at the first of its references that the file f
+// cannot refer to, and reports the reason of the import rule. It reports
+// once for a declaration.
+func (r *router) importableDecl(d symbol.Symbol, u *plugin.Unit, f *building) {
+	for s := range emit.All(d) {
+		t, ref := s.(*emit.TypeRef)
+		if !ref {
+			continue
+		}
+		if err := r.in.Imports.Importable(f.file.Pkg, t); err != nil {
+			origin, _ := emit.OriginOf(d)
+			r.errorf(UnimportableReference, r.positionOf(origin, u), nil,
+				"%s references %s, which the file %s of the package %s cannot import, and is refused: %v",
+				Describe(d), t.Spelling, f.file.Path, f.file.Pkg.Package, err)
+			r.refused[d] = struct{}{}
+			return
+		}
+	}
+}

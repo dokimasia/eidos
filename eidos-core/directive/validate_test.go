@@ -891,7 +891,7 @@ func TestValidate(t *testing.T) {
 			t.Parallel()
 
 			row := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Row", Kind: symbol.KindStruct}
-			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(symbol.Identity, string, directive.ResolutionKind, string) (symbol.Identity, error) {
 				return row, nil
 			}
 			sink := diag.NewSink()
@@ -909,10 +909,25 @@ func TestValidate(t *testing.T) {
 			assert.Equal(t, value.Target, row, "the value is the identity that the resolver binds")
 		})
 
+		t.Run("asks the resolver without a plugin for the identity of a set", func(t *testing.T) {
+			t.Parallel()
+
+			asked := "unasked"
+			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind, owner string) (symbol.Identity, error) {
+				asked = owner
+				return symbol.Identity{Lang: "golang", Package: "svc/store", Name: name, Kind: symbol.KindStruct}, nil
+			}
+			sink := diag.NewSink()
+			raws := []directive.Raw{parse(t, "meta set="+targetKey+" value=Row", 1)}
+			got := directive.Validate(validationSubject, raws, sealed(t), keyed(t), resolve, sink)
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.Equal(t, asked, "", "the kernel registers the schema of meta")
+		})
+
 		t.Run("reports UnresolvedReference for the identity of a set that does not resolve", func(t *testing.T) {
 			t.Parallel()
 
-			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(symbol.Identity, string, directive.ResolutionKind, string) (symbol.Identity, error) {
 				return symbol.Identity{}, errMissingType
 			}
 			sink := diag.NewSink()
@@ -934,7 +949,7 @@ func TestValidate(t *testing.T) {
 
 			row := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Row", Kind: symbol.KindStruct}
 			col := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Col", Kind: symbol.KindStruct}
-			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind, _ string) (symbol.Identity, error) {
 				if name == row.Name {
 					return row, nil
 				}
@@ -960,7 +975,7 @@ func TestValidate(t *testing.T) {
 		t.Run("reports UnresolvedReference for an unresolved element of an identity list", func(t *testing.T) {
 			t.Parallel()
 
-			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(symbol.Identity, string, directive.ResolutionKind, string) (symbol.Identity, error) {
 				return symbol.Identity{}, errMissingType
 			}
 			sink := diag.NewSink()
@@ -1348,7 +1363,7 @@ func TestValidate(t *testing.T) {
 
 			var askedKind directive.ResolutionKind
 			var askedSubject symbol.Identity
-			resolve := func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(subject symbol.Identity, name string, kind directive.ResolutionKind, _ string) (symbol.Identity, error) {
 				askedSubject, askedKind = subject, kind
 				return field(name), nil
 			}
@@ -1365,10 +1380,26 @@ func TestValidate(t *testing.T) {
 			assert.Equal(t, fields.List[0].Ref, "id", "the spelling is kept beside the target")
 		})
 
+		t.Run("asks the resolver with the plugin that registered the schema", func(t *testing.T) {
+			t.Parallel()
+
+			var asked string
+			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind, owner string) (symbol.Identity, error) {
+				asked = owner
+				return field(name), nil
+			}
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "indexer:index btree fields=[id]", 1)},
+				sealed(t, fullSchema()), keyed(t), resolve, sink)
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.Equal(t, asked, "indexer", "the resolver reads the plugin of the directive")
+		})
+
 		t.Run("reports UnresolvedReference with the resolver's reason", func(t *testing.T) {
 			t.Parallel()
 
-			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind, _ string) (symbol.Identity, error) {
 				return symbol.Identity{}, errors.New("no field named " + name)
 			}
 			sink := diag.NewSink()
@@ -1396,7 +1427,7 @@ func TestValidate(t *testing.T) {
 		t.Run("never asks the resolver for a metadata key", func(t *testing.T) {
 			t.Parallel()
 
-			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+			resolve := func(symbol.Identity, string, directive.ResolutionKind, string) (symbol.Identity, error) {
 				return symbol.Identity{}, errors.New("asked")
 			}
 			sink := diag.NewSink()

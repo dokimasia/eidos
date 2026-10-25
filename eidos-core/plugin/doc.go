@@ -74,12 +74,15 @@
 //
 // A plan's layout routes its settled units into [File] values: a
 // workspace-relative path, the package the file declares, and the
-// units it assembles. Two target surfaces state the language's part
-// of the routing. [FileSpeller] splits a unit into the files the
-// target writes and spells each filename, and [Packager] names the
-// package a file at a routed path declares, from a [Placement] the
-// run derives from the graph and the fact store. The render pass
-// renders the routed files it receives in [RenderContext.Files].
+// units it assembles. The target states the language's part of the
+// routing. [FileSpeller] splits a unit into the files the target writes
+// and spells each filename, and [Packager] names the package a file at a
+// routed path declares, from a [Placement] the run derives from the
+// graph and the fact store. A target whose language restricts the
+// references of a file implements [ImportChecker], so the layout refuses
+// a declaration whose file cannot refer to one of its references. The
+// render pass renders the routed files it receives in
+// [RenderContext.Files].
 //
 // # The hub
 //

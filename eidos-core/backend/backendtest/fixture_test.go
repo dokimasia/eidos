@@ -4,6 +4,7 @@
 package backendtest_test
 
 import (
+	"errors"
 	"io/fs"
 	"testing"
 	"testing/fstest"
@@ -29,6 +30,20 @@ const (
 	narrowWidth plugin.Choice    = "narrow"
 	wideWidth   plugin.Choice    = "wide"
 )
+
+// closedPkg is the package that the import rule of the routing case closes
+// to every file.
+const closedPkg = "example.com/closed"
+
+// family is a plugin that declares the per-plan family index and runs no
+// rule, so the layout of a fixture routes a unit of the family.
+type family struct{}
+
+// Name returns the name of the plugin of the unit of the routing case.
+func (family) Name() plugin.ID { return "gen" }
+
+// Outputs returns the per-plan family index.
+func (family) Outputs() []plugin.Output { return []plugin.Output{{Per: plugin.PerPlan, Word: "index"}} }
 
 // The fixture is the plan in the form that the renderer receives. Every
 // check renders through the context of the fixture, so no check
@@ -85,6 +100,31 @@ func TestFixture(t *testing.T) {
 			assert.NoError(t, err, "the layout routes the store")
 			expect.Empty(t, got.Files, "the layout refuses the unit of a family that no plugin of the plan declares")
 			coretest.AssertCodes(t, sink, layout.UndeclaredFamily)
+		})
+
+		t.Run("routes the store through the import rule of the backend", func(t *testing.T) {
+			t.Parallel()
+
+			index := &emit.Struct{Name: "Index"}
+			index.Fields.Append(&emit.Field{Name: "row", Type: &emit.TypeRef{Spelling: "Row", Package: closedPkg}})
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(plugin.Unit{
+				Plugin: "gen", Per: plugin.PerPlan, Word: "index", Decls: []symbol.Symbol{index},
+			}), "the unit of gen is added")
+			refusal := errors.New("backendtest_test: no file imports the closed package")
+			b := wellBuilder(t).Coverage(total(nil)).ImportRule(func(_ symbol.Identity, ref *emit.TypeRef) error {
+				if ref.Package == closedPkg {
+					return refusal
+				}
+				return nil
+			}).Build()
+			sink := diag.NewSink()
+			assert.NoError(t, plugin.Settle(e, b, nil, sink), "the store settles")
+			f := &backendtest.Fixture{Emit: e, Layout: plugintest.New(t).Layout(t, family{})}
+			got, err := f.Context(b, sink)
+			assert.NoError(t, err, "the layout routes the store")
+			expect.Empty(t, got.Files, "the layout refuses the declaration whose file cannot import its reference")
+			coretest.AssertCodes(t, sink, layout.UnimportableReference)
 		})
 
 		t.Run("returns the error of the layout for an input that it cannot route", func(t *testing.T) {

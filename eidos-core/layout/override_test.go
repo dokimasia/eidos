@@ -32,6 +32,110 @@ var (
 func TestOverride(t *testing.T) {
 	t.Parallel()
 
+	t.Run("RouteDir", func(t *testing.T) {
+		t.Parallel()
+
+		schemas := directive.NewRegistry()
+		assert.Total(t, schemas.Register, append(directive.Kernel(),
+			directive.Schema{Plugin: string(stubgen), Name: "stub", Doc: "marks a declaration stubgen stubs"},
+			directive.Schema{Plugin: string(docgen), Name: "doc", Doc: "marks a declaration docgen documents"},
+		), "the schemas of the kernel and of the fixture register")
+		tests := []struct {
+			name        string
+			giveFile    string
+			giveSubject []string
+			givePackage []string
+			givePlugin  plugin.ID
+			want        string
+			wantRouted  bool
+		}{
+			{
+				name:        "returns the directory of the reserved out key of a directive of the plugin",
+				giveSubject: []string{"stub out=fakes/"}, givePlugin: stubgen, want: fakesDir, wantRouted: true,
+			},
+			{
+				name:        "returns the directory of the kernel out directive of the subject",
+				giveSubject: []string{"out path=fakes/"}, givePlugin: stubgen, want: fakesDir, wantRouted: true,
+			},
+			{
+				name:        "returns the directory of the reserved out key over the kernel out directive",
+				giveSubject: []string{"out path=other/", "stub out=fakes/"}, givePlugin: stubgen,
+				want: fakesDir, wantRouted: true,
+			},
+			{
+				name:        "returns the directory of the kernel out directive of the package",
+				givePackage: []string{"out path=fakes/"}, givePlugin: stubgen, want: fakesDir, wantRouted: true,
+			},
+			{
+				name:        "returns the directory of a path that names a file",
+				giveSubject: []string{"stub out=fakes/row_stub.go"}, givePlugin: stubgen,
+				want: fakesDir, wantRouted: true,
+			},
+			{
+				name:        "returns the directory of the first instance in source order",
+				giveSubject: []string{"stub out=fakes/", "stub out=other/"}, givePlugin: stubgen,
+				want: fakesDir, wantRouted: true,
+			},
+			{
+				name:        "returns the directory of the kernel out directive alone for a directive of the kernel",
+				giveSubject: []string{"stub out=other/", "out path=fakes/"}, want: fakesDir, wantRouted: true,
+			},
+			{
+				name: "reports false for a subject without a path", giveSubject: []string{"stub"}, givePlugin: stubgen,
+			},
+			{
+				name:        "reports false for the reserved out key of a directive of another plugin",
+				giveSubject: []string{"doc out=other/"}, givePlugin: stubgen,
+			},
+			{
+				name:        "reports false for an instance of a spelling that no schema claims",
+				giveSubject: []string{"ghost out=other/"}, givePlugin: stubgen,
+			},
+			{
+				name:        "reports false for a path that leaves the workspace root",
+				giveSubject: []string{"stub out=../../../x/"}, givePlugin: stubgen,
+			},
+			{
+				name: "reports false for a subject of a dependency store", giveFile: depFile,
+				giveSubject: []string{"stub out=fakes/"}, givePlugin: stubgen,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				file := tt.giveFile
+				if file == "" {
+					file = storeFile
+				}
+				got, routed := layout.RouteDir(file, parsed(t, tt.giveSubject...), parsed(t, tt.givePackage...),
+					tt.givePlugin, schemas)
+				assert.Equal(t, routed, tt.wantRouted, "whether a route moves the output")
+				assert.Equal(t, got, tt.want, "the directory of the route")
+			})
+		}
+
+		t.Run("returns the directory of the kernel out directive past a negated instance of the plugin",
+			func(t *testing.T) {
+				t.Parallel()
+
+				subject := parsed(t, "stub out=other/", "out path=fakes/")
+				subject[0].Negated = true
+				got, routed := layout.RouteDir(storeFile, subject, nil, stubgen, schemas)
+				assert.True(t, routed, "the kernel out directive moves the output")
+				assert.Equal(t, got, fakesDir, "the negated instance routes nothing")
+			})
+
+		t.Run("returns the directory of the kernel out directive alone without a registry", func(t *testing.T) {
+			t.Parallel()
+
+			subject := parsed(t, "stub out=other/", "out path=fakes/")
+			got, routed := layout.RouteDir(storeFile, subject, nil, stubgen, nil)
+			assert.True(t, routed, "the kernel out directive moves the output")
+			assert.Equal(t, got, fakesDir, "no instance is a directive of the plugin")
+		})
+	})
+
 	t.Run("Route", func(t *testing.T) {
 		t.Parallel()
 
@@ -482,6 +586,20 @@ func TestOverride(t *testing.T) {
 				"the unit's key decides")
 		})
 	})
+}
+
+// parsed returns the raw instances of the payloads, in their order, and
+// fails the test where a payload does not parse.
+func parsed(tb testing.TB, payloads ...string) []directive.Raw {
+	tb.Helper()
+
+	raws := make([]directive.Raw, 0, len(payloads))
+	for _, payload := range payloads {
+		raw, err := directive.Parse(payload)
+		assert.NoError(tb, err, "the payload "+payload+" parses")
+		raws = append(raws, raw)
+	}
+	return raws
 }
 
 // storeStub returns stubgen's primary unit of store.go with one stub

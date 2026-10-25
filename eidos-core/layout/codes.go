@@ -82,3 +82,14 @@ var UnemittedReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  81,
 	Meaning: "an emitted reference refers to a declaration that the plan does not emit",
 })
+
+// UnimportableReference reports a reference that the file of the
+// referencing declaration cannot refer to under the import rule of the
+// target, such as a reference of a Go file to an internal package of another
+// tree. The finding is at the origin of the referencing declaration. The
+// referencing declaration is refused, and the file keeps its other
+// declarations.
+var UnimportableReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  82,
+	Meaning: "a reference refers to a declaration that the file of the referencing declaration cannot import",
+})

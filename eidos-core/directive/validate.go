@@ -23,13 +23,16 @@ const (
 )
 
 // Resolver binds one source reference param: what a spelling
-// names from a subject, at a resolution kind. The workspace
+// names from a subject, at a resolution kind. owner is the plugin
+// that registered the schema of the directive, and empty for a
+// schema of the kernel, so a resolver can read the route that the
+// output of that plugin takes for the subject. The workspace
 // derives it from the registered rules and a view minted over the
 // sealed graph for validation. The view records its reads with the
 // validation, so a warm run validates a subject again only after its
 // directives or a declaration that it read changed. An error names
 // what was looked for and not found.
-type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (symbol.Identity, error)
+type Resolver func(subject symbol.Identity, name string, kind ResolutionKind, owner string) (symbol.Identity, error)
 
 // Validate types and checks every instance on one subject,
 // reporting each violation as a positioned Error on sink and
@@ -74,12 +77,13 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 //
 // keys resolves ResolveMetadataKey params, and a ResolveDiagnosticCode
 // param resolves against the codes that [diag.MustRegister] registered.
-// resolve binds every other reference kind, and a nil resolver leaves
-// those spellings unbound. Validation of one subject is independent of
-// every other, so a caller validates subjects in parallel: the sink is
-// safe for concurrent use, and the resolver is called from every
-// goroutine. Validate refuses an unsealed registry outright, because that
-// is a defect in the composition, not in a carrier.
+// resolve binds every other reference kind with the plugin that registered
+// the schema of the instance, and a nil resolver leaves those spellings
+// unbound. Validation of one subject is independent of every other, so a
+// caller validates subjects in parallel: the sink is safe for concurrent
+// use, and the resolver is called from every goroutine. Validate refuses
+// an unsealed registry outright, because that is a defect in the
+// composition, not in a carrier.
 //
 // # Allocation contract
 //
@@ -251,7 +255,9 @@ func instancesOf(dst []int, typed []checked, canonical Name, negated bool) []int
 
 // validator keeps the registries and the sink for one subject's
 // validation. at is the instance under validation, so a
-// value-level refusal reports at its carrier's line.
+// value-level refusal reports at its carrier's line, and owner is the
+// plugin that registered the schema of that instance, which the
+// resolver receives.
 type validator struct {
 	registry *Registry
 	keys     *meta.Registry
@@ -259,6 +265,7 @@ type validator struct {
 	sink     *diag.Sink
 	subject  symbol.Identity
 	at       position.Pos
+	owner    string
 }
 
 // report attaches one positioned Error.
@@ -366,6 +373,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		v.report(UnclaimedName, raw.Pos, "%s names no registered schema", raw.Name)
 		return Directive{}, Schema{}, false
 	}
+	v.owner = schema.Plugin
 	// A positive instance on a kind that the schema does not admit cannot
 	// run a rule. It reports one finding, and its other checks do not run.
 	if !raw.Negated && len(schema.Kinds) > 0 && !slices.Contains(schema.Kinds, v.subject.Kind) {
@@ -687,7 +695,7 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 		if v.resolve == nil {
 			return Value{Kind: TypeReference, Ref: raw.Text}, true
 		}
-		target, err := v.resolve(v.subject, raw.Text, spec.Resolution)
+		target, err := v.resolve(v.subject, raw.Text, spec.Resolution, v.owner)
 		if err != nil {
 			v.report(UnresolvedReference, v.at,
 				"%s param %s names %q, which does not resolve as %s: %v",
@@ -848,7 +856,7 @@ func (v *validator) fact(name Name, keyType reflect.Type, key string, choices []
 		if v.resolve == nil {
 			return Value{Kind: TypeReference, Ref: text}, true
 		}
-		target, err := v.resolve(v.subject, text, ResolveTypeInScope)
+		target, err := v.resolve(v.subject, text, ResolveTypeInScope, v.owner)
 		if err != nil {
 			v.report(UnresolvedReference, v.at, "%s sets %s to %q, which does not resolve as %s: %v",
 				name, key, text, ResolveTypeInScope, err)

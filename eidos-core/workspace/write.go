@@ -63,8 +63,10 @@ func (w *Workspace) write(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink, others plugin.Names,
 ) ([]stagedFile, []plugin.File, []plugin.NameEntry, error) {
 	// A backend without the role has no binder, and the layout refuses its
-	// bound references.
+	// bound references. A backend without an import rule restricts no
+	// reference.
 	binder, _ := pl.backend.(plugin.Binder)
+	imports, _ := pl.backend.(plugin.ImportChecker)
 	in := layout.Input{
 		Emit:       into,
 		Config:     pl.routing,
@@ -72,6 +74,7 @@ func (w *Workspace) write(
 		Speller:    pl.backend,
 		Packager:   pl.backend,
 		Binder:     binder,
+		Imports:    imports,
 		Index:      ix,
 		Residents:  src.residents,
 		Directives: w.directives,

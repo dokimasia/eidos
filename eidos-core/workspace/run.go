@@ -752,12 +752,17 @@ func (w *Workspace) validated(
 
 // resolver returns the resolver that binds the reference params of a
 // subject through the rules of the language of the subject. Each call
-// reads through a view of its own. The reader of the view records into
+// reads through a view of its own. The scope of a call has the directory
+// into which the output of the plugin that registered the schema of the
+// directive moves for the subject, as [layout.RouteDir] reads it from the
+// raw directives of the subject and of its package. The reader of the view records into
 // reads, which is the read set of the subject, and one goroutine
-// validates a subject at a time. For a language without registered
+// validates a subject at a time. The scope reads the package of the
+// subject through that reader, so a change of the directives of the
+// package validates the subject again. For a language without registered
 // rules, the resolver returns an error that contains the language.
 func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts, reads *store.ReadSet) directive.Resolver {
-	return func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
+	return func(subject symbol.Identity, name string, kind directive.ResolutionKind, owner string) (symbol.Identity, error) {
 		src, held := w.rules.For(subject.Lang)
 		if !held {
 			return symbol.Identity{}, fmt.Errorf("workspace: no rules are registered for %s", subject.Lang)
@@ -767,7 +772,12 @@ func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts, reads *store.Rea
 			return symbol.Identity{}, err
 		}
 		view := rules.NewView(reader, facts, nil, w.kernel).WithRules(w.rulesFor)
-		sym, err := src.Resolve(view.ScopeOf(subject), name, kind, view)
+		scope := view.ScopeOf(subject)
+		if scope.File != nil {
+			scope.Route, _ = layout.RouteDir(scope.File.Pos.File, g.DirectivesOf(subject),
+				g.DirectivesOf(subject.PackageIdentity()), plugin.ID(owner), w.directives)
+		}
+		sym, err := src.Resolve(scope, name, kind, view)
 		if err != nil {
 			return symbol.Identity{}, err
 		}

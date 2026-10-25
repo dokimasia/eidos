@@ -39,6 +39,7 @@ type Builder struct {
 	respell    plugin.Respell
 	member     plugin.MemberRespell
 	packages   plugin.PackageRule
+	importable plugin.ImportRule
 	scopes     func(pkg symbol.Identity) symbol.Identity
 	overloads  bool
 	types      func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
@@ -197,6 +198,17 @@ func (b *Builder) Split(s render.Split) *Builder {
 // the package of its first unit.
 func (b *Builder) Packages(r plugin.PackageRule) *Builder {
 	b.packages = r
+	return b
+}
+
+// ImportRule sets the target's import rule: the reason that a file of a
+// package cannot refer to the referent of a reference, such as a
+// declaration of an internal package of another tree. The built backend serves it as
+// [plugin.ImportChecker], and the layout refuses a declaration with such a
+// reference. Undeclared, a file of the target can refer to every
+// declaration.
+func (b *Builder) ImportRule(r plugin.ImportRule) *Builder {
+	b.importable = r
 	return b
 }
 
@@ -383,7 +395,7 @@ func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
 // kinds that the language refuses, which the backend suite checks, the
 // spelling of a supertype of another language, the namespace of the
 // names of a file, whether the language overloads a function, the
-// convention of a member, and the binder of gRPC.
+// convention of a member, the binder of gRPC and the import rule.
 type Backend interface {
 	plugin.Backend
 	render.Coverer
@@ -393,6 +405,7 @@ type Backend interface {
 	plugin.Overloader
 	plugin.MemberRespeller
 	plugin.Binder
+	plugin.ImportChecker
 }
 
 // Build freezes the declaration and returns the lowered backend. Its
@@ -408,6 +421,7 @@ type Backend interface {
 //     types of other languages;
 //   - SpellSupertype spells as SpellType does;
 //   - PackageAt returns the origin package of the file;
+//   - Importable returns nil;
 //   - NameScope returns the package that it is given;
 //   - Overloads reports false;
 //   - Handler returns the method of [plugin.CanonicalHandler];
@@ -451,8 +465,8 @@ func (b *Builder) Build() Backend {
 			err.Error())
 	}
 	return &builtBackend{
-		name: b.name, target: b.target, syntax: b.syntax,
-		version: b.version, pass: pass, packages: b.packages, scopes: b.scopes, overloads: b.overloads,
+		name: b.name, target: b.target, syntax: b.syntax, version: b.version, pass: pass,
+		packages: b.packages, importable: b.importable, scopes: b.scopes, overloads: b.overloads,
 		lower: b.lower, respell: b.respell, member: b.member,
 		types: b.types, supertypes: b.supertypes, handler: b.handler, home: b.home, policies: b.policies,
 	}
@@ -466,12 +480,14 @@ type builtBackend struct {
 	syntax  plugin.CommentSyntax
 	version string
 	pass    *render.Pass
-	// packages is the declared package rule, and scopes the declared
-	// namespace rule, each nil where the backend declares none. overloads
-	// reports that the language overloads a function.
-	packages  plugin.PackageRule
-	scopes    func(pkg symbol.Identity) symbol.Identity
-	overloads bool
+	// packages is the declared package rule, importable the declared import
+	// rule, and scopes the declared namespace rule, each nil where the
+	// backend declares none. overloads reports that the language overloads a
+	// function.
+	packages   plugin.PackageRule
+	importable plugin.ImportRule
+	scopes     func(pkg symbol.Identity) symbol.Identity
+	overloads  bool
 	// lower, respell and member are the declared hooks of the settle, nil
 	// where the backend declares none. Render refuses an unsettled store
 	// where the backend declares any of them.
@@ -579,6 +595,16 @@ func (b *builtBackend) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 		return p.Origin, nil
 	}
 	return b.packages(p)
+}
+
+// Importable implements [plugin.ImportChecker] through the declared import
+// rule, and returns nil where the backend declares none. It allocates what
+// the rule allocates.
+func (b *builtBackend) Importable(file symbol.Identity, ref *emit.TypeRef) error {
+	if b.importable == nil {
+		return nil
+	}
+	return b.importable(file, ref)
 }
 
 // NameScope implements [plugin.NameScoper] through the declared namespace

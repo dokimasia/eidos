@@ -38,6 +38,10 @@ type Input struct {
 	// Binder is the backend's binder of gRPC, which returns the package of
 	// a bound reference. A nil Binder refuses every bound reference.
 	Binder plugin.Binder
+	// Imports is the backend's import rule, which refuses a declaration with
+	// a reference that its routed file cannot refer to. A nil Imports
+	// refuses no reference.
+	Imports plugin.ImportChecker
 	// Index resolves origins: their source files, their packages and
 	// their validated directives.
 	Index *plugin.Index
@@ -118,11 +122,13 @@ type Routes struct {
 // half is a [plugin.Overloader] that overloads. It sets the package of
 // every bare, translated and emitted reference that crosses into a file of
 // another package, in place. It sets the package of a bound reference to
-// the package that Input.Binder returns for its target. It returns an
-// error only for a defect in its inputs: a nil store, an unsettled store,
-// a missing speller, index or sink, a speller whose parts do not contain
-// the declarations of the unit it split, and a filename that is not one
-// path element.
+// the package that Input.Binder returns for its target. Where Input.Imports
+// is set, it reports [UnimportableReference] for a declaration with a
+// reference that the routed file of the declaration cannot refer to, and
+// refuses that declaration alone. It returns an error only for a defect in
+// its inputs: a nil store, an unsettled store, a missing speller, index or
+// sink, a speller whose parts do not contain the declarations of the unit
+// it split, and a filename that is not one path element.
 //
 // # Cost
 //
@@ -164,6 +170,7 @@ func Route(in Input) (Routes, error) {
 	r.sources()
 	r.collide()
 	r.qualify()
+	r.importable()
 	files := r.assemble()
 	names := plugin.NamesOf(files, in.Emit, in.Others)
 	r.collideNames(files, names)

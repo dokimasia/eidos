@@ -777,6 +777,38 @@ func TestBackend(t *testing.T) {
 		})
 	})
 
+	t.Run("ImportRule", func(t *testing.T) {
+		t.Parallel()
+
+		file := coretest.PackageID(coretest.StorePath)
+		ref := &emit.TypeRef{Spelling: rowName, Package: "example.com/internal/rows"}
+
+		t.Run("returns a backend whose Importable returns the error of the declared rule", func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				gotFile symbol.Identity
+				gotRef  *emit.TypeRef
+			)
+			refusal := errors.New("the file cannot import the package of the reference")
+			rule := func(f symbol.Identity, r *emit.TypeRef) error {
+				gotFile, gotRef = f, r
+				return refusal
+			}
+			err := kitBackend(kitName, kitTarget).ImportRule(rule).Build().Importable(file, ref)
+			assert.ErrorIs(t, err, refusal, "the backend returns the error of the rule")
+			expect.Equal(t, gotFile, file, "the rule reads the package of the file")
+			expect.Equal(t, gotRef, ref, "the rule reads the reference", assert.ByIdentity())
+		})
+
+		t.Run("returns a backend whose Importable returns nil without a rule", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, kitBackend(plainName, kitTarget).Build().Importable(file, ref),
+				"a target without a rule restricts no reference")
+		})
+	})
+
 	t.Run("Overloads", func(t *testing.T) {
 		t.Parallel()
 

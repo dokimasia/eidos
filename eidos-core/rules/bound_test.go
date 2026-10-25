@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -173,6 +174,18 @@ func (capable) ErrorContract(decl symbol.Symbol, _ rules.View) (rules.ErrorContr
 		return rules.ErrorContract{}, false
 	}
 	return rules.ErrorContract{Cause: s.Fields[0], Pointer: true}, true
+}
+
+// errClosed is the reason of the import rule of [capable].
+var errClosed = errors.New("rules_test: the code refers to the declarations of its own package alone")
+
+// Importable returns errClosed for a reference to a declaration of another
+// package than pkg, and nil for every other reference.
+func (capable) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
+	if ref.Target.Package != pkg.Package {
+		return errClosed
+	}
+	return nil
 }
 
 // otherLang is the scripted rules under the name of a language in which
@@ -524,6 +537,40 @@ func TestBound(t *testing.T) {
 
 			_, sentinel := rules.NewBound(scripted(), rules.View{}, nil).SentinelBase(sentinelPrefix + rowName)
 			assert.False(t, sentinel, "the scripted language does not implement ErrorValueRules")
+		})
+	})
+
+	t.Run("Importable", func(t *testing.T) {
+		t.Parallel()
+
+		row := named(svcPath, rowName, symbol.KindStruct)
+
+		t.Run("returns the reason of the language for a declaration that the code cannot refer to", func(t *testing.T) {
+			t.Parallel()
+
+			err := rules.NewBound(capable{scripted()}, rules.View{}, nil).Importable(coretest.PackageID("web"), row)
+			assert.ErrorIs(t, err, errClosed, "the language refuses the declaration of another package")
+		})
+
+		t.Run("returns nil for a declaration that the code can refer to", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, rules.NewBound(capable{scripted()}, rules.View{}, nil).
+				Importable(coretest.PackageID(svcPath), row), "the code refers to a declaration of its own package")
+		})
+
+		t.Run("returns nil for a nil reference", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, rules.NewBound(capable{scripted()}, rules.View{}, nil).
+				Importable(coretest.PackageID("web"), nil), "a nil reference names no declaration")
+		})
+
+		t.Run("returns nil for a language without import rules", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, rules.NewBound(scripted(), rules.View{}, nil).Importable(coretest.PackageID("web"), row),
+				"the scripted language does not implement ImportRules")
 		})
 	})
 

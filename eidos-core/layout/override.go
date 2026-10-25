@@ -108,6 +108,89 @@ func packagePaths(ix *plugin.Index) map[symbol.Identity]override {
 	return out
 }
 
+// RouteDir returns the directory into which the output of the plugin p for a
+// subject moves, from the raw instances on the subject and on its package.
+// It reads the raw instances by the precedence that [Route] applies to the
+// validated instances:
+//
+//   - The reserved out key of a directive of p on the subject takes
+//     precedence over the path of the kernel out directive on the subject,
+//     which takes precedence over the path of the kernel out directive on the
+//     package.
+//   - Within one spelling, the first instance in source order with a path
+//     takes precedence.
+//   - A negated instance and an instance of a spelling that schemas does not
+//     claim route nothing.
+//   - An empty p, and a nil schemas, read the kernel out directive alone.
+//
+// file is the source file of the subject, and the path resolves against its
+// directory as a path override does. A path that names a file moves the
+// output into the directory of that file. RouteDir reports false where no
+// instance states a path, for a path that is absolute or leaves the
+// workspace root, and for a file of a dependency store.
+//
+// RouteDir allocates the directory that it joins.
+func RouteDir(file string, subject, pkg []directive.Raw, p plugin.ID, schemas *directive.Registry) (string, bool) {
+	if !workspaceFile(file) {
+		return "", false
+	}
+	own, kernel := rawPaths(subject, p, schemas)
+	at := own
+	if at == "" {
+		at = kernel
+	}
+	if at == "" {
+		_, at = rawPaths(pkg, "", schemas)
+	}
+	if at == "" {
+		return "", false
+	}
+	dir, _, inside := redirect(path.Dir(file), at)
+	return dir, inside
+}
+
+// rawPaths returns the path that the reserved out key of a directive of p
+// writes on raw instances, and the path that the kernel out directive
+// writes, each the first non-empty one in source order. A negated instance
+// and an instance of a spelling that schemas does not claim write nothing,
+// and no directive is a directive of an empty p. Without schemas, an
+// instance is the kernel out directive where its spelling is that of the
+// directive, and no instance is a directive of p.
+func rawPaths(raws []directive.Raw, p plugin.ID, schemas *directive.Registry) (own, kernel string) {
+	for i := range raws {
+		raw := &raws[i]
+		if raw.Negated {
+			continue
+		}
+		name, owner := raw.Name, ""
+		if schemas != nil {
+			s, claimed := schemas.ResolveName(raw.Name)
+			if !claimed {
+				continue
+			}
+			name, owner = s.Canonical(), s.Plugin
+		}
+		switch {
+		case name == directive.KernelOut && kernel == "":
+			kernel = rawParam(raw, directive.OutPath)
+		case p != "" && plugin.ID(owner) == p && own == "":
+			own = rawParam(raw, directive.ReservedOut)
+		}
+	}
+	return own, kernel
+}
+
+// rawParam returns the scalar text of the first argument of raw under key,
+// and the empty string where raw writes none.
+func rawParam(raw *directive.Raw, key directive.ParamKey) string {
+	for _, arg := range raw.Args {
+		if arg.Key == string(key) && arg.Value.List == nil {
+			return arg.Value.Text
+		}
+	}
+	return ""
+}
+
 // ownedBy reports whether a plugin registered a directive's schema.
 func ownedBy(schemas *directive.Registry, name directive.Name, p plugin.ID) bool {
 	if schemas == nil {

@@ -46,8 +46,8 @@ type Fixture struct {
 	// Layout is the input of the layout of the plan that routes the store,
 	// as the Layout of the plugin test kit returns it, and nil routes the
 	// store as [Files] does. The context of a render sets the store, the
-	// speller, the packager, the binder, the target and the sink of the
-	// input from the fixture and the backend under test.
+	// speller, the packager, the binder, the import rule, the target and the
+	// sink of the input from the fixture and the backend under test.
 	Layout *layout.Input
 }
 
@@ -73,7 +73,8 @@ func (f *Fixture) Context(b backend.Backend, sink *diag.Sink) (*plugin.RenderCon
 		files = Files(f.Emit, b)
 	} else {
 		in := *f.Layout
-		in.Emit, in.Speller, in.Packager, in.Binder, in.Target, in.Sink = f.Emit, b, b, b, b.Target(), sink
+		in.Emit, in.Speller, in.Packager, in.Binder, in.Imports = f.Emit, b, b, b, b
+		in.Target, in.Sink = b.Target(), sink
 		routes, err := layout.Route(in)
 		if err != nil {
 			return nil, err
