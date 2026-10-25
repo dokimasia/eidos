@@ -38,7 +38,7 @@ plans:
 options:
     audit: {redact: false}
 $ eidos --config testdata/tree/.eidos.yaml plan
-frontend golang 0.10.0
+frontend golang 0.11.0
 frontend typescript 0.7.0; tree-sitter-typescript v0.0.0-20261020225451-839d520b3f2a, go-tree-sitter v0.25.0
 frontend java 0.3.0; tree-sitter-java v0.23.5, go-tree-sitter v0.25.0
 frontend rust 0.6.0; tree-sitter-rust v0.24.2, go-tree-sitter v0.25.0
