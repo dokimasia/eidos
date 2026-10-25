@@ -149,6 +149,53 @@ func TestRecorder(t *testing.T) {
 				), "the reads list the subject's edge and the edge of each export")
 			})
 
+			t.Run("adds the routing edges of a preview of a route", func(t *testing.T) {
+				t.Parallel()
+
+				placed := plugin.Placed{Package: edgePackage, Origin: recordedSubject, Dir: edgeDir}
+				got := invocationOf(t, generated(recordedSubject), func(l *state.Lane) {
+					l.Invoked(plugin.Invocation{Match: generated(recordedSubject), Placed: []plugin.Placed{placed}})
+				})
+				assert.Equal(t, got.Reads, sortedEdges(
+					state.DeclarationEdge(recordedSubject), state.DeclarationEdge(edgePackage),
+					state.DirectoryEdge(edgeDir), state.ModulesEdge,
+				), "the reads list the origin, its package, the residents of the directory and the modules")
+			})
+
+			t.Run("adds the files edge of a preview of a family of one file per package", func(t *testing.T) {
+				t.Parallel()
+
+				placed := plugin.Placed{Package: edgePackage, Origin: recordedSubject, Dir: edgeDir, Files: edgePackage}
+				got := invocationOf(t, generated(recordedSubject), func(l *state.Lane) {
+					l.Invoked(plugin.Invocation{Match: generated(recordedSubject), Placed: []plugin.Placed{placed}})
+				})
+				assert.Contains(t, got.Reads, state.FilesEdge(edgePackage), "the reads list the files of the package")
+			})
+
+			t.Run("adds no residents edge for a preview without a directory", func(t *testing.T) {
+				t.Parallel()
+
+				placed := plugin.Placed{Origin: recordedSubject}
+				got := invocationOf(t, generated(recordedSubject), func(l *state.Lane) {
+					l.Invoked(plugin.Invocation{Match: generated(recordedSubject), Placed: []plugin.Placed{placed}})
+				})
+				assert.Equal(t, got.Reads, sortedEdges(
+					state.DeclarationEdge(recordedSubject), state.DeclarationEdge(edgePackage),
+				), "the reads list the origin and its package alone")
+			})
+
+			t.Run("adds no origin edge for a preview without an origin", func(t *testing.T) {
+				t.Parallel()
+
+				graphWide := plugin.MatchKey{Plugin: generatorID, Rule: structRule}
+				placed := plugin.Placed{Package: edgePackage, Dir: edgeDir}
+				got := invocationOf(t, graphWide, func(l *state.Lane) {
+					l.Invoked(plugin.Invocation{Match: graphWide, Placed: []plugin.Placed{placed}})
+				})
+				assert.Equal(t, got.Reads, sortedEdges(state.DirectoryEdge(edgeDir), state.ModulesEdge),
+					"a graph-wide preview reads the residents of the directory and the modules alone")
+			})
+
 			t.Run("records nothing for a pure invocation", func(t *testing.T) {
 				t.Parallel()
 
@@ -193,6 +240,12 @@ func TestRecorder(t *testing.T) {
 				{
 					name: "records an invocation that reported a finding",
 					give: plugin.Invocation{Match: generated(recordedSubject), Findings: reported},
+				},
+				{
+					name: "records an invocation that previewed a route",
+					give: plugin.Invocation{
+						Match: generated(recordedSubject), Placed: []plugin.Placed{{Origin: recordedSubject}},
+					},
 				},
 				{
 					name: "records a match with a host that read, touched and reported nothing",

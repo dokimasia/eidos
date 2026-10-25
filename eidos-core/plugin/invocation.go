@@ -120,6 +120,49 @@ func (k MatchKey) Compare(o MatchKey) int {
 	)
 }
 
+// Placed is the result of one preview of a route: the package of the file
+// into which the layout routes the declarations of a unit, and what the
+// preview read to derive it. A [Placer] returns it, and [Invocation.Placed]
+// lists the previews of a call. A journal records the reads as the edges
+// that the layout reads to place a file, so a warm run executes the call
+// again where the package can change.
+//
+// # Concurrency
+//
+// A Placed is a value, and any number of goroutines may read one.
+//
+// # Allocation contract
+//
+// [Placed.Compare] does not allocate.
+type Placed struct {
+	// Package is the package of the file, with Name set to the name in its
+	// package clause. It is zero after an error.
+	Package symbol.Identity
+	// Origin is the declaration whose routing applied. The preview read its
+	// directives and the out directive of its package.
+	Origin symbol.Identity
+	// Dir is the directory of the file. The package rule read its residents
+	// and the modules. Dir is empty where the preview derived no directory.
+	Dir string
+	// Files is the package from whose workspace files the layout derives the
+	// directory of a family of one file per package. It is zero for any other
+	// family.
+	Files symbol.Identity
+}
+
+// Compare orders two previews by origin, directory, files and package, and
+// returns a negative number, zero or a positive number as p sorts before,
+// with or after o. Directories compare bytewise and identities by
+// [symbol.Identity.Compare]. It cannot fail.
+func (p Placed) Compare(o Placed) int {
+	return cmp.Or(
+		p.Origin.Compare(o.Origin),
+		strings.Compare(p.Dir, o.Dir),
+		p.Files.Compare(o.Files),
+		p.Package.Compare(o.Package),
+	)
+}
+
 // Selection restricts a phase call to what a warm run executes again.
 //
 // The authoring surface honours it. A rule that is not emit-phase runs
@@ -175,6 +218,9 @@ type Invocation struct {
 	// Findings are the findings the call reported, in the order it
 	// reported them.
 	Findings []diag.Diag
+	// Placed are the previews of routes that the call made, sorted by
+	// [Placed.Compare]. A journal records the edges that each preview read.
+	Placed []Placed
 }
 
 // Journal receives a phase call's records after the call's effects

@@ -25,6 +25,11 @@
 // every plan routes against one view of it. [RouteDir] reads the route of
 // the output of a plugin for a subject from the raw directives, with the
 // precedence of [Route], for the validation that runs before the layout.
+// [NewPlacer] returns the [plugin.Placer] of one plan, which previews the
+// file of a unit and its package for a generator before the generator
+// records its declarations. A preview applies the steps of Route to one
+// declaration that takes the routing of a subject. Its error has the
+// message of the finding that Route reports.
 //
 // [ParsePolicy] parses the name of a [Policy] in a configuration, which is
 // the name that [Policy.String] returns.

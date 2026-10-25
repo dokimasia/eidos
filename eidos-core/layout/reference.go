@@ -250,17 +250,7 @@ func (r *router) boundHome(target symbol.Identity) (symbol.Identity, error) {
 	if r.in.Config.Policy == PolicyCentralised {
 		dir = path.Join(r.in.Config.Dir, dir)
 	}
-	at := plugin.Placement{
-		Path:    path.Join(dir, path.Base(file)),
-		Origin:  target.PackageIdentity(),
-		Modules: r.in.Modules,
-	}
-	if r.in.Residents != nil {
-		at.Residents = r.in.Residents(dir)
-	}
-	if base := r.in.Config.ImportBase; base != "" {
-		at.ImportBase, at.BaseDir = base, r.in.Config.Dir
-	}
+	at := r.placementOf(path.Join(dir, path.Base(file)), target.PackageIdentity(), nil, false)
 	return r.in.Binder.Home(target, at)
 }
 

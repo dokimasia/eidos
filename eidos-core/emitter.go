@@ -384,6 +384,10 @@ var errNoSpoke = errors.New("eidos: the plan's backend does not implement a type
 // without a type.
 var errUntyped = errors.New("eidos: a parameter or a return of the rpc has no type")
 
+// errNoPlacer is the reason of a preview of a route in a plan whose
+// generator context has no placer, because the plan does not write files.
+var errNoPlacer = errors.New("eidos: the plan does not write files, so the file of a family has no package")
+
 // translate is the translation of [Emitter.Type] and [Emitter.Supertype].
 // It reports the refusal of [Emitter.typeOf] under [RefusedType] at the
 // position of owner.
@@ -538,6 +542,63 @@ type Out struct {
 func (o *Out) Internal() *Out {
 	o.internal = true
 	return o
+}
+
+// Package returns the package of the file into which the layout of the
+// plan routes the declarations of the handle, with Name set to the name in
+// the package clause of the file. A generator passes it to
+// [rules.Bound.Importable] before it records a declaration, so it leaves
+// out a declaration that the file cannot refer to.
+//
+// The layout of the plan previews the route of the subject of the handle
+// through [plugin.GeneratorContext.Placer]. The preview reads the routing
+// directives on the subject and on its package, and the configuration of
+// the plan for the family. A declaration whose origin has another routing
+// directive can route into another file. After [Out.Internal], the package
+// is the package of the internal test file of a family that tests its
+// package from outside. The preview does not read the header of the file,
+// because the header is the emit.File of its units, which the generators
+// place in the same phase.
+//
+// The invocation records the edges that the preview read: the subject, the
+// package of the subject, the residents of the directory of the file and
+// the modules. For a family of one file per package, it also records the
+// files of the package. A change of one of these runs the handler again.
+//
+// Error modes: the error of the placer where the layout derives no file for
+// the declarations of the subject or the target derives no package, and an
+// error for a plan that does not write files.
+//
+// # Allocation contract
+//
+// Package allocates what the placer allocates, and the list of the
+// subject for an internal handle of a family that tests from outside. The
+// record of the reads allocates only to grow the buffer of the lane.
+func (o *Out) Package() (symbol.Identity, error) {
+	rs := o.rs
+	if rs.placer == nil {
+		return symbol.Identity{}, errNoPlacer
+	}
+	t := &rs.fx.touches[o.touch]
+	subject := subjectOf(t.fr, t.value)
+	fam := rs.b.outByTag[t.key.tag]
+	u := plugin.Unit{
+		Plugin: rs.plugin, Tag: string(t.key.tag), Per: t.key.per, Word: fam.Word, Key: t.key.key,
+		Template: fam.Template,
+	}
+	if t.key.per != plugin.PerPlan && !subject.IsZero() {
+		if pkg, held := rs.index.PackageOf(subject); held {
+			u.Pkg = pkg.ID
+		}
+	}
+	if o.internal && fam.External {
+		u.Inside = []symbol.Identity{subject}
+	}
+	placed, err := rs.placer.Place(subject, u)
+	if rs.journal != nil {
+		rs.notePlaced(placed)
+	}
+	return placed.Package, err
 }
 
 // Append places emit declarations under the subject of the handle. A

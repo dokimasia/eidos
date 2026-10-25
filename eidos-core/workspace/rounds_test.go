@@ -25,6 +25,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/output"
@@ -96,6 +97,17 @@ const (
 
 // readerName is the name of the struct that the reader line declares.
 const readerName = "Reader"
+
+// previewerID is the name of the generator that previews the file of each
+// struct and does not record a declaration.
+const previewerID plugin.ID = "previewer"
+
+// The files without declarations that the preview cases add: one in the
+// directory of the api package, and one in a directory of its own.
+const (
+	emptyAPISource = "svc/api/empty.zz"
+	emptyDirSource = "svc/other/empty.zz"
+)
 
 // auditLine is the directive of the weaver on the struct of the line
 // before it.
@@ -552,6 +564,37 @@ func TestRounds(t *testing.T) {
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drifted file fails the plan")
 			assert.Equal(t, report.Stats.Rendered, 1, "the run renders the drifted file and keeps the stub file")
 		})
+
+		t.Run("runs an invocation again where a file appears in the directory of its preview", func(t *testing.T) {
+			t.Parallel()
+
+			after := roundsTree(rowLine, userLine)
+			after[emptyAPISource] = &fstest.MapFile{Data: []byte("package svc/api\n")}
+			mem := ledger.NewMem()
+			w := built(t, roundsBuilder(t, mem, workspace.Sources{}, previewer()))
+			report, err := warmAfter(t, w, before, after)
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, generatedBy(report, previewerID), 1, "the invocation of User runs again")
+			user := symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct,
+			}
+			inv, held, err := phasesIn(t, mem).Invocation("plan", plugin.MatchKey{Plugin: previewerID, Subject: user})
+			assert.NoError(t, err, "the invocations table reads")
+			assert.True(t, held, "the run records the invocation of User")
+			assert.Contains(t, inv.Reads, state.DirectoryEdge("svc/api"),
+				"the invocation read the residents of svc/api")
+		})
+
+		t.Run("runs no invocation again where a file appears in another directory", func(t *testing.T) {
+			t.Parallel()
+
+			after := roundsTree(rowLine, userLine)
+			after[emptyDirSource] = &fstest.MapFile{Data: []byte("package svc/other\n")}
+			w := built(t, roundsBuilder(t, ledger.NewMem(), workspace.Sources{}, previewer()))
+			report, err := warmAfter(t, w, before, after)
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, generatedBy(report, previewerID), 0, "no preview read the directory")
+		})
 	})
 }
 
@@ -571,6 +614,18 @@ func caseTree() fstest.MapFS {
 	tree := roundsTree(rowLine, userLine)
 	tree[caseSource] = &fstest.MapFile{Data: []byte("package svc/Store\n" + colLine)}
 	return tree
+}
+
+// previewer returns a generator whose handler previews the file of the
+// source of each struct and does not record a declaration, so no group
+// contains a file of its unit.
+func previewer() plugin.Generator {
+	return eidos.NewPlugin(previewerID).
+		Output(plugin.Output{Per: plugin.PerSource, Word: "preview"}).
+		Handle(eidos.OnStruct(func(_ *eidos.StructMatch, e *eidos.Emitter) error {
+			_, err := e.File().Package()
+			return err
+		})).Generator()
 }
 
 // roundsBuilder returns the builder of a composition over the scripted

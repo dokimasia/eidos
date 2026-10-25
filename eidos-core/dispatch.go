@@ -93,6 +93,10 @@ type phaseCall struct {
 	target plugin.Target
 	types  plugin.TypeSpeller
 	policy plugin.Policy
+	// placer previews the routes of the layout of a generator's plan for
+	// [Out.Package], and is nil for a plan that does not write files and for
+	// an annotator's phase call.
+	placer plugin.Placer
 	// journal receives the call's records once its effects apply, and is
 	// nil for a call that keeps none.
 	journal plugin.Journal
@@ -282,15 +286,16 @@ type runState struct {
 	// under the key their type's unbind returns.
 	spare map[any][]Matcher
 	// records are the lane's journaled invocations, in increasing
-	// sequence. log keeps their reads, readExports and stamped are the
-	// buffers their export and claim ranges index, and matched contains
-	// the hosts of their emit-phase matches. All remain empty in a call
-	// that journals nothing. cursor is the record the effect merge
-	// fills.
+	// sequence. log keeps their reads, readExports, stamped and previews
+	// are the buffers their export, claim and preview ranges index, and
+	// matched contains the hosts of their emit-phase matches. All remain
+	// empty in a call that journals nothing. cursor is the record the
+	// effect merge fills.
 	records     []record
 	log         store.ReadLog
 	readExports []string
 	stamped     []meta.FactRef
+	previews    []plugin.Placed
 	matched     []plugin.EmitRef
 	cursor      int
 }
@@ -333,6 +338,7 @@ func (rs *runState) reset() {
 	clear(rs.records)
 	clear(rs.readExports)
 	clear(rs.stamped)
+	clear(rs.previews)
 	clear(rs.matched)
 	*rs = runState{
 		phaseCall:   rs.phaseCall,
@@ -345,6 +351,7 @@ func (rs *runState) reset() {
 		log:         rs.log,
 		readExports: rs.readExports[:0],
 		stamped:     rs.stamped[:0],
+		previews:    rs.previews[:0],
 		matched:     rs.matched[:0],
 	}
 }

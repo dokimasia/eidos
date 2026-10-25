@@ -261,7 +261,7 @@ func (w *Workspace) runPlan(
 		touches = &touchJournal{next: p.lane}
 		next = touches
 	}
-	err = w.generate(ctx, ix, facts, p, exports, nil, next)
+	err = w.generate(ctx, ix, facts, src, p, exports, nil, next)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -295,23 +295,39 @@ func (w *Workspace) runPlan(
 // plan's store, each over a tracked reader of its own, with the exports
 // of the plans it depends on, and counts each call's invocations into
 // the plan's run. sel restricts each call to what a warm run executes
-// again, and a nil sel runs every match.
+// again, and a nil sel runs every match. Each call of a plan that writes
+// files receives the placer of its layout over src, which previews the
+// routes of the plan against the source tree of the run.
 //
 // Where next is set, each call journals into it after the count, reports
 // into a sink of its own whose findings then merge into the plan's, and a
 // call that journals no invocation of its own is journaled as one under
 // [plugin.WholeCall]: its reader's reads, the plans whose export it was
 // handed, the units its plugin flushed or appended into, and its
-// findings.
+// findings. A warm run executes such a call again on every change that it
+// finds, so the record does not list a preview of the call.
 //
 // Error modes: the context's error, a reader the index refuses, and a
 // generator's returned error, wrapped with the turn of the generator.
 func (w *Workspace) generate(
-	ctx context.Context, ix *plugin.Index, facts *meta.Facts, p *planRun,
+	ctx context.Context, ix *plugin.Index, facts *meta.Facts, src tree, p *planRun,
 	exports map[string]plugin.ExportDoc, sel *plugin.Selection, next plugin.Journal,
 ) error {
 	pl := p.plan
 	counted := &tally{next: next}
+	var placer plugin.Placer
+	if pl.contract != nil {
+		placer = layout.NewPlacer(layout.Input{
+			Config:     pl.routing,
+			Outputs:    pl.outputs,
+			Speller:    pl.backend,
+			Packager:   pl.backend,
+			Index:      ix,
+			Directives: w.directives,
+			Residents:  src.residents,
+			Modules:    src.modules,
+		})
+	}
 	for _, s := range pl.entries {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -343,6 +359,7 @@ func (w *Workspace) generate(
 			Target:  pl.backend.Target(),
 			Types:   pl.backend,
 			Policy:  pl.policy,
+			Placer:  placer,
 		}
 		err = s.run.Generate(call)
 		if next != nil {

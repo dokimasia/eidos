@@ -4,6 +4,7 @@
 package plugintest_test
 
 import (
+	"path"
 	"slices"
 	"testing"
 
@@ -59,6 +60,27 @@ var _ plugin.TypeSpeller = choiceSpoke{}
 // SpellType spells the shape as the policy's choice of widthKey.
 func (choiceSpoke) SpellType(_ rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error) {
 	return &emit.TypeRef{Spelling: string(p.Choice(widthKey))}, nil
+}
+
+// placedSpoke is a spoke with both halves of a target. It spells the name
+// of each file from the word of its family, and it gives each file the
+// package of its directory.
+type placedSpoke struct{ choiceSpoke }
+
+var (
+	_ plugin.FileSpeller = placedSpoke{}
+	_ plugin.Packager    = placedSpoke{}
+)
+
+// SplitUnit returns the unit whole.
+func (placedSpoke) SplitUnit(u plugin.Unit) []plugin.Unit { return []plugin.Unit{u} }
+
+// FileName returns the word of the family with the extension zz.
+func (placedSpoke) FileName(u plugin.Unit) string { return u.Word + ".zz" }
+
+// PackageAt returns the package of the directory of the file.
+func (placedSpoke) PackageAt(p plugin.Placement) (symbol.Identity, error) {
+	return symbol.Identity{Lang: coretest.Lang, Package: path.Dir(p.Path), Kind: symbol.KindPackage}, nil
 }
 
 // schemed is a plugin that declares the schemas of its list.
@@ -393,6 +415,49 @@ func TestFixture(t *testing.T) {
 			got := translated(t, f, alpha.ID, beta.ID)
 			assert.NotNil(t, got, "the spoke spells the reference")
 			assert.Equal(t, got.Spelling, string(wide), "the spoke reads the policy's choice")
+		})
+
+		// previewed runs a plugin with one family whose handler previews the
+		// file of alpha over the fixture, and returns the package and the error
+		// of the preview.
+		previewed := func(t *testing.T, f *plugintest.Fixture, alpha symbol.Identity) (symbol.Identity, error) {
+			t.Helper()
+
+			var (
+				got symbol.Identity
+				err error
+			)
+			p := eidos.NewPlugin("t").
+				Output(plugin.Output{Per: plugin.PerSource, Word: "probe"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					if m.Struct.ID == alpha {
+						got, err = e.File().Package()
+					}
+					return nil
+				})).
+				Generator()
+			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
+			return got, err
+		}
+
+		t.Run("previews the routes of the layout of the fixture through a spoke with both halves", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, _ := twoStructs(t)
+			f.Types = placedSpoke{}
+			got, err := previewed(t, f, alpha.ID)
+			assert.NoError(t, err, "the preview routes")
+			want := symbol.Identity{Lang: coretest.Lang, Package: path.Dir(alpha.Pos.File), Kind: symbol.KindPackage}
+			assert.Equal(t, got, want, "the file beside the source of alpha has the package of its directory")
+		})
+
+		t.Run("hands the call no placer through a spoke without a package half", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, _ := twoStructs(t)
+			f.Types = choiceSpoke{}
+			_, err := previewed(t, f, alpha.ID)
+			assert.HasError(t, err, "the fixture previews no route without both halves of a target")
 		})
 
 		t.Run("refuses a plugin without the role", func(t *testing.T) {

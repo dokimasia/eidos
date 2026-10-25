@@ -130,24 +130,30 @@ func (l *Lane) Validation(
 
 // Invoked records one invocation of a phase call of the lane's plan: its
 // match, the edges it read, with its subject's declaration edge added
-// where it has a subject and the export edge of each plan whose export
-// it read, and what it touched and reported. An invocation that reported
-// a finding also lists [FindingsEdge]. The run records a phase call that
-// journaled no invocation of its own the same way, as one invocation
-// under [plugin.WholeCall].
+// where it has a subject, the export edge of each plan whose export it
+// read and the routing edges of each preview of a route, and what it
+// touched and reported. An invocation that reported a finding also lists
+// [FindingsEdge]. The run records a phase call that journaled no
+// invocation of its own the same way, as one invocation under
+// [plugin.WholeCall].
+//
+// The routing edges of a preview are the edges that a group reads to
+// place its files: the declaration edges of the origin and of the package
+// of the origin, the residents edge of the directory with [ModulesEdge],
+// and the files edge of the package of a family of one file per package.
 //
 // It records nothing for a pure invocation: one that read nothing,
-// touched nothing and reported nothing, of a match without a host and
-// of a rule other than [plugin.WholeCall]. Such an invocation produced
-// nothing. A change to its subject is the one change that can make it
-// produce something.
+// previewed nothing, touched nothing and reported nothing, of a match
+// without a host and of a rule other than [plugin.WholeCall]. Such an
+// invocation produced nothing. A change to its subject is the one change
+// that can make it produce something.
 func (l *Lane) Invoked(inv plugin.Invocation) {
 	if l == nil {
 		return
 	}
 	if inv.Match.Rule != plugin.WholeCall && inv.Match.Host == (plugin.EmitRef{}) &&
-		(inv.Reads == nil || inv.Reads.Len() == 0) && len(inv.Exports) == 0 && len(inv.Units) == 0 &&
-		len(inv.Hosts) == 0 && len(inv.Claimed) == 0 && len(inv.Findings) == 0 {
+		(inv.Reads == nil || inv.Reads.Len() == 0) && len(inv.Exports) == 0 && len(inv.Placed) == 0 &&
+		len(inv.Units) == 0 && len(inv.Hosts) == 0 && len(inv.Claimed) == 0 && len(inv.Findings) == 0 {
 
 		return
 	}
@@ -157,6 +163,9 @@ func (l *Lane) Invoked(inv plugin.Invocation) {
 	}
 	for _, plan := range inv.Exports {
 		l.edges = append(l.edges, ExportEdge(plan))
+	}
+	for _, p := range inv.Placed {
+		l.edges = appendPlaced(l.edges, p)
 	}
 	l.edges = withFindings(l.edges, inv.Findings)
 	rec := Invocation{

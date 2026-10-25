@@ -68,7 +68,10 @@ type Fixture struct {
 	// Target is the target of the plan of the phase call of a generator.
 	// Types is the spoke of the backend of the plan, and Policy is the
 	// resolved policy of the plan. A fixture without a spoke refuses every
-	// type of another language that a generator translates.
+	// type of another language that a generator translates. Where the spoke
+	// is a backend with a filename speller and a package rule, a phase call
+	// of a generator previews routes over the layout that [Fixture.Layout]
+	// returns.
 	Target plugin.Target
 	Types  plugin.TypeSpeller
 	Policy plugin.Policy
@@ -240,12 +243,23 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 // still run. The emit store persists across calls, so a later Generate
 // call sees the earlier flushes, as a later turn does. The call
 // translates types with the target, the spoke and the policy of the
+// fixture. Where the spoke is also a filename speller and a package rule,
+// the call previews a route through them over the layout that
+// [Fixture.Layout] returns for p and the plugins of the source of the
 // fixture.
 func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
 	gen, implemented := f.bind(tb, p).(plugin.Generator)
 	assert.True(tb, implemented, "the plugin implements the generator role")
+	var placer plugin.Placer
+	speller, spells := f.Types.(plugin.FileSpeller)
+	packager, packs := f.Types.(plugin.Packager)
+	if spells && packs {
+		in := f.Layout(tb, slices.Concat(f.plugins, []plugin.Plugin{p})...)
+		in.Speller, in.Packager = speller, packager
+		placer = layout.NewPlacer(*in)
+	}
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	var err error
@@ -266,6 +280,7 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 			Target:  f.Target,
 			Types:   f.Types,
 			Policy:  f.Policy,
+			Placer:  placer,
 		})
 	}, "the generate phase runs without a panic")
 	return Result{Emit: f.store(), Sink: sink, Err: err}

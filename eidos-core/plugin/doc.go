@@ -43,9 +43,10 @@
 // candidates' matches, and its [Journal] receives one [Invocation] for
 // each invocation the call ran: what it read, the exports it read, the
 // [UnitRef] of each unit it touched, the values whose slots it
-// appended into, the facts it stamped and the findings it reported. A
-// plugin that implements its role directly may ignore both, and the
-// run records its call as one invocation under [WholeCall].
+// appended into, the facts it stamped, the findings it reported and the
+// [Placed] of each route that it previewed. A plugin that implements its
+// role directly may ignore both, and the run records its call as one
+// invocation under [WholeCall].
 //
 // # The read side
 //
@@ -83,6 +84,12 @@
 // a declaration whose file cannot refer to one of its references. The
 // render pass renders the routed files it receives in
 // [RenderContext.Files].
+//
+// The layout of a plan previews a route for its generators through
+// [Placer]. Each generator call of a plan that writes files receives the
+// placer in [GeneratorContext.Placer]. A preview returns the package of the
+// file of a unit before the generator records its declarations, as a
+// [Placed] with what the preview read.
 //
 // # The hub
 //

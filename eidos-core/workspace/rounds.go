@@ -174,7 +174,7 @@ func (wp *warmPlan) run(
 		p.lane.Reset()
 		touches := &touchJournal{next: p.lane}
 		sel := wp.selection()
-		if err := wp.w.generate(ctx, wp.ix, facts, p, exports, sel, touches); err != nil {
+		if err := wp.w.generate(ctx, wp.ix, facts, src, p, exports, sel, touches); err != nil {
 			return nil, err
 		}
 		if grew, err := wp.placed(touches.touches, sel.Matches); err != nil || grew {

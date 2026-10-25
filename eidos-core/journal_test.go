@@ -87,6 +87,7 @@ func (r *recorder) Invoked(inv plugin.Invocation) {
 	j.Hosts = slices.Clone(inv.Hosts)
 	j.Claimed = slices.Clone(inv.Claimed)
 	j.Findings = slices.Clone(inv.Findings)
+	j.Placed = slices.Clone(inv.Placed)
 	if inv.Reads != nil {
 		j.identities = slices.Collect(inv.Reads.Identities())
 		j.packages = slices.Collect(inv.Reads.Packages())
@@ -360,6 +361,37 @@ func TestJournal(t *testing.T) {
 			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.invoked[0].Exports, []string{basePlan, corePlan},
 				"the record lists each export read once, sorted, and no plan without an export")
+		})
+
+		t.Run("records the previews of routes that an invocation made", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			placed := plugin.Placed{
+				Package: coretest.PackageID(coretest.StorePath), Origin: alpha.ID, Dir: coretest.StorePath,
+			}
+			ctx.Placer = placing{placed: placed}
+			p := eidos.NewPlugin(contextPlugin).
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					if m.Struct.ID != alpha.ID {
+						return nil
+					}
+					out := e.File()
+					for range 2 {
+						_, err := out.Package()
+						assert.NoError(t, err, "the preview routes")
+					}
+					return nil
+				})).
+				Generator()
+			rec := journaledGenerate(t, ctx, p)
+			assert.Length(t, rec.invoked, 2, "the call records the invocations of alpha and beta")
+			assert.Equal(t, rec.invoked[0].Placed, []plugin.Placed{placed},
+				"the record of alpha lists its preview once")
+			assert.Empty(t, rec.invoked[1].Placed, "the record of beta does not list a preview")
 		})
 
 		t.Run("records the units an invocation touched", func(t *testing.T) {

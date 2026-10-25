@@ -39,8 +39,9 @@ type record struct {
 	// in the lane's matched values, and -1 for a rule that is not
 	// emit-phase.
 	reads, host int32
-	// exports and claimed index the lane's readExports and stamped.
-	exports, claimed span
+	// exports, claimed and placed index the lane's readExports, stamped and
+	// previews.
+	exports, claimed, placed span
 	// units, hosts and findings index the call's buffers of the same
 	// names.
 	units, hosts, findings span
@@ -99,6 +100,7 @@ func (rs *runState) open(fr *flatRule, inv *invocation) {
 		host:    -1,
 		exports: span{int32(len(rs.readExports)), int32(len(rs.readExports))},
 		claimed: span{int32(len(rs.stamped)), int32(len(rs.stamped))},
+		placed:  span{int32(len(rs.previews)), int32(len(rs.previews))},
 	})
 	rs.reading = nil
 }
@@ -127,6 +129,12 @@ func (rs *runState) noteExport(plan string) {
 func (rs *runState) noteClaim(f meta.FactRef) {
 	rs.stamped = append(grow.Room(rs.stamped, 1, minGrowth), f)
 	rs.running().claimed.to = int32(len(rs.stamped))
+}
+
+// notePlaced records that the running invocation previewed a route.
+func (rs *runState) notePlaced(p plugin.Placed) {
+	rs.previews = append(grow.Room(rs.previews, 1, minGrowth), p)
+	rs.running().placed.to = int32(len(rs.previews))
 }
 
 // keyOf returns a record's match key: the lane's plugin, the rule's
@@ -242,6 +250,7 @@ func (c *phaseCall) deliver() {
 			Hosts:    sortedSet(spanOf(c.hosts, e.r.hosts), plugin.EmitRef.Compare),
 			Claimed:  sortedSet(spanOf(e.ln.stamped, e.r.claimed), meta.FactRef.Compare),
 			Findings: spanOf(c.findings, e.r.findings),
+			Placed:   sortedSet(spanOf(e.ln.previews, e.r.placed), plugin.Placed.Compare),
 		}
 		if e.r.reads >= 0 {
 			e.ln.log.Load(int(e.r.reads), reads)

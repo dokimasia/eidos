@@ -305,6 +305,31 @@ func (*binderSpoke) Home(symbol.Identity, plugin.Placement) (symbol.Identity, er
 	return symbol.Identity{}, errUnspelled
 }
 
+// preview is one preview that a placer of the cases is asked for: the
+// subject whose routing applies, and the unit of the handle.
+type preview struct {
+	subject symbol.Identity
+	unit    plugin.Unit
+}
+
+// placing is the placer of the cases. It returns placed and err for each
+// preview, and keeps each preview in asked where asked is set.
+type placing struct {
+	placed plugin.Placed
+	err    error
+	asked  *[]preview
+}
+
+var _ plugin.Placer = placing{}
+
+// Place keeps the preview in asked, and returns placed and err.
+func (p placing) Place(subject symbol.Identity, u plugin.Unit) (plugin.Placed, error) {
+	if p.asked != nil {
+		*p.asked = append(*p.asked, preview{subject: subject, unit: u})
+	}
+	return p.placed, p.err
+}
+
 // handlerFixture is a generator context over the interface Store of the
 // fixture's language. Its rpc has documentation, a position, a parameter of
 // the type int and a return of the type string. The context's plan targets
@@ -872,6 +897,123 @@ func TestEmitter(t *testing.T) {
 				assert.Equal(t, out.Internal(), out, "Internal returns the handle", assert.ByIdentity())
 			}
 			marked(t, true, same)
+		})
+	})
+
+	t.Run("Package", func(t *testing.T) {
+		t.Parallel()
+
+		// previewed runs a plugin with a family of each cardinality and a
+		// test family that states External, with placer as the placer of the
+		// call. Its handler previews the handle that open returns for alpha.
+		// previewed returns the package and the error of the preview.
+		previewed := func(
+			t *testing.T, placer plugin.Placer, open func(e *eidos.Emitter) *eidos.Out,
+		) (symbol.Identity, error) {
+			t.Helper()
+
+			g, alpha, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			ctx.Placer = placer
+			var (
+				got symbol.Identity
+				err error
+			)
+			p := eidos.NewPlugin(recordPlugin).
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Output(plugin.Output{Tag: string(packageTag), Per: plugin.PerPackage, Word: "pkg"}).
+				Output(plugin.Output{Tag: string(planTag), Per: plugin.PerPlan, Word: "plan"}).
+				Output(plugin.Output{Tag: eidos.TagTest, Per: plugin.PerSource, Word: "check", External: true}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					if m.Struct.ID == alpha.ID {
+						got, err = open(e).Package()
+					}
+					return nil
+				})).
+				Generator()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			return got, err
+		}
+		_, alpha, _ := fixtureGraph(t)
+		pkg := coretest.PackageID(coretest.StorePath)
+		tests := []struct {
+			name     string
+			giveOpen func(e *eidos.Emitter) *eidos.Out
+			want     plugin.Unit
+		}{
+			{
+				name:     "asks the placer for the file of the source of the subject",
+				giveOpen: func(e *eidos.Emitter) *eidos.Out { return e.File() },
+				want: plugin.Unit{
+					Plugin: contextPlugin, Per: plugin.PerSource, Word: "impl", Key: alpha.Pos.File, Pkg: pkg,
+				},
+			},
+			{
+				name:     "asks the placer for the file of the package of the subject",
+				giveOpen: func(e *eidos.Emitter) *eidos.Out { return e.PackageFile(packageTag) },
+				want: plugin.Unit{
+					Plugin: contextPlugin, Tag: string(packageTag), Per: plugin.PerPackage, Word: "pkg",
+					Key: coretest.StorePath, Pkg: pkg,
+				},
+			},
+			{
+				name:     "asks the placer for the file of the plan",
+				giveOpen: func(e *eidos.Emitter) *eidos.Out { return e.PlanFile(planTag) },
+				want:     plugin.Unit{Plugin: contextPlugin, Tag: string(planTag), Per: plugin.PerPlan, Word: "plan"},
+			},
+			{
+				name:     "asks the placer for the internal test file of an internal handle of an external family",
+				giveOpen: func(e *eidos.Emitter) *eidos.Out { return e.File(eidos.TagTest).Internal() },
+				want: plugin.Unit{
+					Plugin: contextPlugin, Tag: eidos.TagTest, Per: plugin.PerSource, Word: "check",
+					Key: alpha.Pos.File, Pkg: pkg, Inside: []symbol.Identity{alpha.ID},
+				},
+			},
+			{
+				name:     "asks the placer for the file of an internal handle of a family that tests from inside",
+				giveOpen: func(e *eidos.Emitter) *eidos.Out { return e.File().Internal() },
+				want: plugin.Unit{
+					Plugin: contextPlugin, Per: plugin.PerSource, Word: "impl", Key: alpha.Pos.File, Pkg: pkg,
+				},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var asked []preview
+				_, err := previewed(t, placing{asked: &asked}, tt.giveOpen)
+				assert.NoError(t, err, "the preview routes")
+				assert.Equal(t, asked, []preview{{subject: alpha.ID, unit: tt.want}},
+					"the placer previews the unit of the handle for the subject")
+			})
+		}
+
+		t.Run("returns the package that the placer derives", func(t *testing.T) {
+			t.Parallel()
+
+			derived := coretest.PackageID(coretest.StorePath + "_test")
+			got, err := previewed(t, placing{placed: plugin.Placed{Package: derived}},
+				func(e *eidos.Emitter) *eidos.Out { return e.File() })
+			assert.NoError(t, err, "the preview routes")
+			assert.Equal(t, got, derived, "Package returns the package of the preview")
+		})
+
+		t.Run("returns the error of the placer", func(t *testing.T) {
+			t.Parallel()
+
+			errRoute := errors.New("layout: Struct Alpha has no workspace source to be written beside")
+			_, err := previewed(t, placing{err: errRoute}, func(e *eidos.Emitter) *eidos.Out { return e.File() })
+			assert.ErrorIs(t, err, errRoute, "Package returns the reason of the layout")
+		})
+
+		t.Run("returns an error for a plan that does not write files", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := previewed(t, nil, func(e *eidos.Emitter) *eidos.Out { return e.File() })
+			assert.HasError(t, err, "a plan without a placer derives no package")
+			assert.Contains(t, err.Error(), "does not write files", "the error message contains the reason")
 		})
 	})
 
@@ -2024,6 +2166,11 @@ func emitterCases(tb assert.TB) []phaseCase {
 		ctx.Target, ctx.Types, ctx.Policy = tsxTarget, &tsxSpoke{}, policy
 		return ctx
 	}
+	placingContext := func() *plugin.GeneratorContext {
+		ctx := fresh()
+		ctx.Placer = placing{}
+		return ctx
+	}
 	scalar := &node.TypeRef{Spelling: intSpelling}
 	var typed *emit.TypeRef
 	lowered := []*node.Field{{
@@ -2054,6 +2201,13 @@ func emitterCases(tb assert.TB) []phaseCase {
 			name: "Out.Append", allocs: appendAllocs, fresh: fresh,
 			check: oneUnit(plugin.PerSource, invocationStructs),
 			gen:   families(func(_ *eidos.StructMatch, e *eidos.Emitter) { e.File().Append(declaration) }),
+		},
+		{
+			name: "Out.Package", allocs: unitAllocs, fresh: placingContext, check: oneUnit(plugin.PerSource, 0),
+			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) {
+				_, err := e.File().Package()
+				assert.NoError(tb, err, "the preview of the fixture routes")
+			}),
 		},
 		{
 			name: "Ref", allocs: refAllocs, fresh: fresh,

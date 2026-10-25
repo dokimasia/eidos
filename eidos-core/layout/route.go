@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -203,6 +204,10 @@ type router struct {
 	byPath map[string]int
 	// refused contains the declarations a finding refused.
 	refused map[symbol.Symbol]struct{}
+	// previewing reports a preview of a route, which keeps its first
+	// finding in found in place of the sink.
+	previewing bool
+	found      diag.Diag
 }
 
 // placement addresses one plugin's declarations of one origin.
@@ -569,13 +574,9 @@ func (r *router) name() error {
 		}
 		for pi := range parts {
 			parts[pi].Route = b.route
-			name := b.dest.file
-			if name == "" {
-				name = r.in.Speller.FileName(parts[pi])
-			}
-			if !filename(name) {
-				return fmt.Errorf("layout: the speller names a %s unit %q, which is not one path element",
-					u.Word, name)
+			name, err := r.fileNameOf(&b.dest, parts[pi])
+			if err != nil {
+				return err
 			}
 			at := path.Join(b.dest.dir, name)
 			fi, held := r.byPath[at]
@@ -594,6 +595,22 @@ func (r *router) name() error {
 		r.byPath[r.files[fi].file.Path] = fi
 	}
 	return nil
+}
+
+// fileNameOf returns the filename of a part of the batch of dest: the name
+// that an override or the configuration fixes, and the name that the
+// speller spells for the part otherwise. It returns an error for a name
+// that is not one path element, a defect of the speller.
+func (r *router) fileNameOf(dest *destination, part plugin.Unit) (string, error) {
+	name := dest.file
+	if name == "" {
+		name = r.in.Speller.FileName(part)
+	}
+	if !filename(name) {
+		return "", fmt.Errorf("layout: the speller names a %s unit %q, which is not one path element",
+			part.Word, name)
+	}
+	return name, nil
 }
 
 // packages names each file's package through the target's package
@@ -618,16 +635,7 @@ func (r *router) packages() {
 		}
 		fam, _ := familyOf(r.in.Outputs[first.Plugin], first.Tag)
 		inside := slices.ContainsFunc(f.file.Units, func(u plugin.Unit) bool { return len(u.Inside) > 0 })
-		at := plugin.Placement{
-			Path: f.file.Path, Origin: first.Pkg, Modules: r.in.Modules, Header: f.file.Header.Annotations,
-			External: fam.External && !inside,
-		}
-		if r.in.Residents != nil {
-			at.Residents = r.in.Residents(path.Dir(f.file.Path))
-		}
-		if base := r.in.Config.ImportBase; base != "" {
-			at.ImportBase, at.BaseDir = base, r.in.Config.Dir
-		}
+		at := r.placementOf(f.file.Path, first.Pkg, f.file.Header.Annotations, fam.External && !inside)
 		pkg, err := r.in.Packager.PackageAt(at)
 		if err != nil {
 			f.reason = err
@@ -638,6 +646,25 @@ func (r *router) packages() {
 			f.file.Scope = scoper.NameScope(pkg)
 		}
 	}
+}
+
+// placementOf returns what the target reads to name the package of the
+// file at a routed path: origin, the package of its first unit, the
+// residents of its directory, the modules and the import base of the plan,
+// the annotations of its header, and the mark of a family that tests its
+// package from outside. It allocates what the residents of the directory
+// allocate.
+func (r *router) placementOf(
+	file string, origin symbol.Identity, header symbol.Annotations, external bool,
+) plugin.Placement {
+	at := plugin.Placement{Path: file, Origin: origin, Modules: r.in.Modules, Header: header, External: external}
+	if r.in.Residents != nil {
+		at.Residents = r.in.Residents(path.Dir(file))
+	}
+	if base := r.in.Config.ImportBase; base != "" {
+		at.ImportBase, at.BaseDir = base, r.in.Config.Dir
+	}
+	return at
 }
 
 // sources gives each file whose units are per-source units of one key the
@@ -772,7 +799,8 @@ func (r *router) sourceDir(per plugin.Cardinality, key string, pkg symbol.Identi
 }
 
 // packageDir returns a package's source directory, the first in path
-// order where its files span more than one, and caches it.
+// order where its files span more than one. It caches the directory where
+// the router has a cache, which a preview of a route has not.
 func (r *router) packageDir(pkg symbol.Identity) (string, bool) {
 	if cached, read := r.dirs[pkg]; read {
 		return cached.dir, cached.found
@@ -788,7 +816,9 @@ func (r *router) packageDir(pkg symbol.Identity) (string, bool) {
 			}
 		}
 	}
-	r.dirs[pkg] = at
+	if r.dirs != nil {
+		r.dirs[pkg] = at
+	}
 	return at.dir, at.found
 }
 
@@ -953,16 +983,23 @@ func (r *router) firstAt(u *plugin.Unit) position.Pos {
 }
 
 // errorf reports one routing finding at Error severity under the
-// layout phase.
+// layout phase. A preview of a route keeps its first finding instead.
 func (r *router) errorf(c diag.Code, at position.Pos, related []position.Pos, format string, a ...any) {
-	r.in.Sink.Report(diag.Diag{
+	d := diag.Diag{
 		Code:     c,
 		Severity: diag.SeverityError,
 		Pos:      at,
 		Msg:      fmt.Sprintf(format, a...),
 		Origin:   diag.PhaseLayout,
 		Related:  related,
-	})
+	}
+	if !r.previewing {
+		r.in.Sink.Report(d)
+		return
+	}
+	if r.found.Msg == "" {
+		r.found = d
+	}
 }
 
 // familyOf returns the declared family of one tag.
@@ -1008,9 +1045,9 @@ func unitAt(u *plugin.Unit) position.Pos {
 // written file: its kind and its name, such as "method Close", and its
 // kind alone for a declaration without a name. It returns the empty
 // string for a nil declaration. A method and a field have their own
-// names, which [emit.DeclaredName] leaves out. Describe allocates the
-// joined text, one allocation, and nothing for a declaration without a
-// name.
+// names, which [emit.DeclaredName] leaves out, and a declaration of the
+// graph has the name of its identity. Describe allocates the joined text,
+// one allocation, and nothing for a declaration without a name.
 func Describe(d symbol.Symbol) string {
 	if d == nil {
 		return ""
@@ -1021,6 +1058,8 @@ func Describe(d symbol.Symbol) string {
 		name = member.Name
 	case *emit.Field:
 		name = member.Name
+	case node.Declaration:
+		name = member.Identity().Name
 	}
 	if name == "" {
 		return d.Kind().String()

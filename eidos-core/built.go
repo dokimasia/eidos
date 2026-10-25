@@ -188,14 +188,15 @@ func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 // do not see its own emit. It passes the records to the journal of the
 // context once the flush has added the units. A handler reads the exports
 // of the context through its match, and translates a type with the target,
-// the spoke and the policy of the context. The state of the call returns
-// to the shared pool when the call returns.
+// the spoke and the policy of the context. It previews a route with the
+// placer of the context. The state of the call returns to the shared pool
+// when the call returns.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
 	c := newPhaseCall(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Turn, ctx.Rules, ctx.Kernel,
 		ctx.Workers)
 	defer c.release()
 	c.exports = ctx.Exports
-	c.target, c.types, c.policy = ctx.Target, ctx.Types, ctx.Policy
+	c.target, c.types, c.policy, c.placer = ctx.Target, ctx.Types, ctx.Policy, ctx.Placer
 	c.journal = ctx.Journal
 	c.restrict(ctx.Select)
 	if err := c.run(plugin.PhaseGenerate, plugin.PhaseEmit); err != nil {

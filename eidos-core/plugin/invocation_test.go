@@ -42,6 +42,15 @@ var baseMatch = plugin.MatchKey{
 	Host:     plugin.EmitRef{Unit: baseUnit, Index: 3},
 }
 
+// basePlaced is the preview the order cases of a preview move each field
+// past.
+var basePlaced = plugin.Placed{
+	Package: coretest.PackageID(coretest.StorePath),
+	Origin:  structID("Beta"),
+	Dir:     "svc/store",
+	Files:   coretest.PackageID(coretest.StorePath),
+}
+
 // The identities of a phase call's invocations are the keys a warm run
 // re-executes by, so each order is total and pinned field by field.
 func TestInvocation(t *testing.T) {
@@ -178,6 +187,54 @@ func TestInvocation(t *testing.T) {
 				"the whole call's rule is below the first ordinal")
 		})
 	})
+
+	t.Run("Placed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("Compare", func(t *testing.T) {
+			t.Parallel()
+
+			sub := coretest.PackageID(coretest.StorePath + "/sub")
+			tests := []struct {
+				name      string
+				giveLater plugin.Placed
+			}{
+				{
+					name:      "orders by origin before directory, files and package",
+					giveLater: plugin.Placed{Origin: structID("Gamma")},
+				},
+				{
+					name:      "orders by directory before files and package",
+					giveLater: plugin.Placed{Origin: basePlaced.Origin, Dir: "svc/zz"},
+				},
+				{
+					name:      "orders by files before package",
+					giveLater: plugin.Placed{Origin: basePlaced.Origin, Dir: basePlaced.Dir, Files: sub},
+				},
+				{
+					name: "orders by package",
+					giveLater: plugin.Placed{
+						Package: sub, Origin: basePlaced.Origin, Dir: basePlaced.Dir, Files: basePlaced.Files,
+					},
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					assert.Equal(t, basePlaced.Compare(tt.giveLater), -1, "the base sorts first")
+					assert.Equal(t, tt.giveLater.Compare(basePlaced), 1, "the order is antisymmetric")
+				})
+			}
+
+			t.Run("returns zero for equal previews", func(t *testing.T) {
+				t.Parallel()
+
+				same := basePlaced
+				assert.Equal(t, basePlaced.Compare(same), 0, "a preview equals an equal one")
+			})
+		})
+	})
 }
 
 // The orders allocate nothing: a warm run sorts and searches its
@@ -193,6 +250,10 @@ func TestInvocationAllocs(t *testing.T) {
 	assert.Equal(t, got, -1, "EmitRef.Compare puts the earlier place first")
 	assert.MaxAllocs(t, func() { got = baseUnit.Compare(laterKey) }, 0, "UnitRef.Compare allocates nothing")
 	assert.Equal(t, got, -1, "UnitRef.Compare puts the earlier key first")
+	laterPlaced := basePlaced
+	laterPlaced.Package = coretest.PackageID(coretest.StorePath + "/sub")
+	assert.MaxAllocs(t, func() { got = basePlaced.Compare(laterPlaced) }, 0, "Placed.Compare allocates nothing")
+	assert.Equal(t, got, -1, "Placed.Compare puts the earlier package first")
 }
 
 // BenchmarkInvocation measures the orders over keys that agree on every
@@ -230,5 +291,19 @@ func BenchmarkInvocation(b *testing.B) {
 			got = baseUnit.Compare(laterKey)
 		}
 		assert.Equal(b, got, -1, "UnitRef.Compare puts the earlier key first")
+	})
+
+	b.Run("Placed", func(b *testing.B) {
+		b.Run("Compare", func(b *testing.B) {
+			laterPlaced := basePlaced
+			laterPlaced.Package = coretest.PackageID(coretest.StorePath + "/sub")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got int
+			for c.Loop() {
+				got = basePlaced.Compare(laterPlaced)
+			}
+			assert.Equal(b, got, -1, "Placed.Compare puts the earlier package first")
+		})
 	})
 }

@@ -237,6 +237,26 @@ func appendEdges(dst []EdgeHash, s *store.ReadSet) []EdgeHash {
 	return dst
 }
 
+// appendPlaced appends the routing edges of one preview of a route to dst,
+// and returns the extended slice: the declaration edges of the origin and
+// of the package of the origin, the residents edge of the directory with
+// [ModulesEdge], and the files edge of the package of a family of one file
+// per package. It skips the edges of each part that the preview lacks: the
+// origin, the directory and the package of the files. It allocates only to
+// grow dst.
+func appendPlaced(dst []EdgeHash, p plugin.Placed) []EdgeHash {
+	if !p.Origin.IsZero() {
+		dst = append(dst, DeclarationEdge(p.Origin), DeclarationEdge(p.Origin.PackageIdentity()))
+	}
+	if p.Dir != "" {
+		dst = append(dst, DirectoryEdge(p.Dir), ModulesEdge)
+	}
+	if !p.Files.IsZero() {
+		dst = append(dst, FilesEdge(p.Files))
+	}
+	return dst
+}
+
 // readRecord sorts a record's edge hashes and drops the repeats, in
 // place, and returns the record: what a validation, an invocation or a
 // check lists as the edges it read.

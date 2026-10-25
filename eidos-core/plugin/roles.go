@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Annotator stamps facts over the frozen graph.
@@ -100,6 +101,28 @@ type AnnotatorContext struct {
 	Journal Journal
 }
 
+// Placer is the role of the layout of a plan that previews a route for a
+// generator of the plan: the package of the file into which the layout
+// routes the declarations of a unit, before the generator records them.
+// The handle of a typed generator reads it through its method Package.
+//
+// # Concurrency
+//
+// A Placer is safe for concurrent use, because a phase call can run its
+// invocations on more than one worker.
+type Placer interface {
+	// Place returns the package of the file into which the layout routes
+	// the declarations of u that take the routing of subject, and what the
+	// preview read. u has the plugin, the family, the cardinality, the key
+	// and the package of a unit, and no declarations. An origin of u in
+	// [Unit.Inside] selects the internal test file of a family whose
+	// [Output.External] is true. Place returns an error with the reason of
+	// the layout where the layout derives no file for such a declaration,
+	// and the error of the package rule of the target. The [Placed] of an
+	// error contains the reads of the preview too.
+	Place(subject symbol.Identity, u Unit) (Placed, error)
+}
+
 // GeneratorContext is what one Generate call may touch. Its Index
 // and Reader are scoped to the plan's sources, and Emit is the plan's
 // store, where every accumulator flushes.
@@ -140,6 +163,9 @@ type GeneratorContext struct {
 	Target Target
 	Types  TypeSpeller
 	Policy Policy
+	// Placer previews the routes of the layout of the plan for the call,
+	// and is nil for a plan that does not write files.
+	Placer Placer
 }
 
 // PlanRecord is one plan's record as Close reads it: what the plan's
