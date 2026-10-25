@@ -76,6 +76,18 @@ const (
 	subjectField             = "\tSubject svc.Session\n"
 )
 
+// The generator of a test family whose files test svc from outside with an
+// unexported struct, the word of the family, the file that it writes beside
+// the store, the name of the method of each struct, and the line of the
+// method of the struct of Session.
+const (
+	fakesID      plugin.ID = "fakes"
+	fakeWord               = "fake"
+	fakeFile               = "svc/store_fake_test.go"
+	touchName              = "touch"
+	fakeReceiver           = "func (" + fakeWord + "Session) " + touchName + "() {}\n"
+)
+
 // The tree of the internal checks: its module, its store with an exported
 // and an unexported struct, the file of the checks that test the package
 // from inside, the clause of the package under test, and the field of the
@@ -240,6 +252,19 @@ func TestWorkspace(t *testing.T) {
 			root := externalRoot(t)
 			gotesting.AssertVets(t.Context(), t,
 				workspacetest.Generated(t, root, golang.Brand, os.DirFS(workspaceTree), goExt))
+		})
+
+		t.Run("writes the receiver of a method of an unexported struct into an external test file", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			copyTree(t, root, workspaceTree)
+			plan := golang.WorkspacePlans()[0]
+			plan.Generators = append(plan.Generators, fakes())
+			runClean(t, root, []workspace.Plan{plan})
+			expect.That(t, files.Read(t, filepath.Join(root, filepath.FromSlash(fakeFile)))).
+				Contains(externalClause, "the file declares the external test package of svc").
+				Contains(fakeReceiver, "the receiver is the struct of the file without a qualifier")
 		})
 
 		t.Run("writes the check of an unexported struct into the internal test file of svc", func(t *testing.T) {
@@ -451,6 +476,24 @@ func checks() plugin.Generator {
 				out = out.Internal()
 			}
 			out.Append(check)
+			return nil
+		})).
+		Generator()
+}
+
+// fakes returns a generator that writes an unexported struct with one
+// method for each struct of its scope into a test family whose files test
+// their package from outside. The method states no receiver, so the
+// lowering of Go gives it the struct as its receiver.
+func fakes() plugin.Generator {
+	return eidos.NewPlugin(fakesID).
+		Output(plugin.Output{Tag: eidos.TagTest, Per: plugin.PerSource, Word: fakeWord, External: true}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			fake := &emit.Struct{
+				Origin: m.Struct.ID, Name: fakeWord + m.Struct.Name, Visibility: symbol.VisibilityPackage,
+			}
+			fake.Methods.Append(&emit.Method{Name: touchName, Visibility: symbol.VisibilityPackage})
+			e.File(eidos.TagTest).Append(fake)
 			return nil
 		})).
 		Generator()
