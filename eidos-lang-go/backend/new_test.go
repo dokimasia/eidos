@@ -260,6 +260,22 @@ func TestNew(t *testing.T) {
 			assert.Contains(t, body, "func (s *"+settledName+") Touch() {", "the receiver names the settled host")
 		})
 
+		t.Run("returns a backend that writes the struct of the file as the receiver of a struct of another origin",
+			func(t *testing.T) {
+				t.Parallel()
+
+				stub := structOf(emittedName)
+				stub.Origin = symbol.Identity{
+					Lang: golang.Lang, Package: storePkg, Name: rowName, Kind: symbol.KindStruct,
+				}
+				stub.Methods.Append(&emit.Method{Name: touchName})
+				body, findings := rendered(t, svcPackage, stub)
+				assert.Empty(t, findings, "the file renders clean")
+				assert.That(t, body).
+					Contains("func ("+settledName+") Touch() {", "the receiver is the struct of the file").
+					NotContains(storePkg, "the file does not import the package of the origin")
+			})
+
 		t.Run("returns a backend that renders a function type over a respelled declaration", func(t *testing.T) {
 			t.Parallel()
 

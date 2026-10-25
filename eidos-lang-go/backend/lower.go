@@ -78,7 +78,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		return nil, err
 	}
 	if d, is := s.(*emit.Struct); is {
-		receive(d.Name, d.Origin, d.TypeParams, d.Methods.Items())
+		receive(d.Name, d.TypeParams, d.Methods.Items())
 	}
 	return nil, nil
 }
@@ -86,17 +86,20 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 // receive sets the Receives type of the member methods of the struct
 // name. Go declares a method at the package level, so the template
 // renders each method after its type, and the receiver must refer to
-// that type. The reference has the struct origin as its target, so the
-// settle respells the receiver and the type together. A generic struct
-// gets its type parameters as the arguments of the reference, because a
-// Go receiver restates them. A method with its own receiver keeps it, so
-// a generator can request a pointer or a named receiver.
-func receive(name string, origin symbol.Identity, params []*emit.TypeParam, methods []*emit.Method) {
+// that type. The reference is a bare reference to the name of the
+// struct, because Go resolves the type of a receiver in the scope of its
+// package. The settle respells it with the struct through the names of
+// the package of the unit, and the file writes it without a qualifier. A
+// generic struct gets its type parameters as the arguments of the
+// reference, because a Go receiver restates them. A method with its own
+// receiver keeps it, so a generator can request a pointer or a named
+// receiver.
+func receive(name string, params []*emit.TypeParam, methods []*emit.Method) {
 	for _, m := range methods {
 		if m.Receiver != nil || m.Receives != nil {
 			continue
 		}
-		m.Receives = &emit.TypeRef{Target: origin, Spelling: name}
+		m.Receives = &emit.TypeRef{Spelling: name}
 		for _, p := range params {
 			m.Receives.Args = append(m.Receives.Args, &emit.TypeRef{Spelling: p.Name})
 		}
@@ -313,7 +316,8 @@ func lowerSum(s *emit.Sum) ([]symbol.Symbol, error) {
 }
 
 // variantStruct returns the struct of the variant v of the sum s, with
-// the marker method marker.
+// the marker method marker. The receiver of the marker points at the
+// struct through a bare reference to its name, as [receive] states.
 func variantStruct(s *emit.Sum, v *emit.SumVariant, marker string) (*emit.Struct, error) {
 	if err := lowering.NamedPayload(golang.Lang, v); err != nil {
 		return nil, err
@@ -328,7 +332,7 @@ func variantStruct(s *emit.Sum, v *emit.SumVariant, marker string) (*emit.Struct
 		Annotations: v.Annotations,
 	}
 	st.Fields.Append(v.Fields.Items()...)
-	host := &emit.TypeRef{Target: s.Origin, Spelling: st.Name, Args: lowering.ParamArgs(s.TypeParams)}
+	host := &emit.TypeRef{Spelling: st.Name, Args: lowering.ParamArgs(s.TypeParams)}
 	st.Methods.Append(&emit.Method{
 		Name:       marker,
 		Visibility: symbol.VisibilityPackage,

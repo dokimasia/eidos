@@ -374,10 +374,8 @@ func TestLower(t *testing.T) {
 			s.Methods.Append(&emit.Method{Name: loadName})
 			lowered(t, s)
 			filled := s.Methods.Items()[0]
-			assert.NotNil(t, filled.Receives, "an unstated receiver is filled")
-			assert.Equal(t, filled.Receives.Spelling, rowName, "with the host's name")
-			assert.Equal(t, filled.Receives.Target, origin,
-				"bound to the host's origin, so the settle respells both together")
+			assert.Equal(t, filled.Receives, &emit.TypeRef{Spelling: rowName},
+				"a bare reference to the name of the host, which the settle respells with the host")
 		})
 
 		t.Run("keeps the receiver a struct method states", func(t *testing.T) {
@@ -514,8 +512,8 @@ func TestLower(t *testing.T) {
 			expect.Equal(t, m.Receiver.Name, "", "the receiver has no name, because the empty body reads none")
 			expect.Equal(t, m.Receiver.Type, &emit.TypeRef{
 				Spelling: circleReceiver, Form: symbol.FormOptional,
-				Elems: []*emit.TypeRef{{Spelling: shapeCircle, Target: s.Origin}},
-			}, "the receiver points at the struct through the sum's origin, so the settle respells both")
+				Elems: []*emit.TypeRef{{Spelling: shapeCircle}},
+			}, "the receiver points at the struct through a bare reference, which the settle respells with the struct")
 		})
 
 		t.Run("gives each struct the fields of its variant", func(t *testing.T) {
