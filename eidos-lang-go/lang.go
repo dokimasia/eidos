@@ -48,7 +48,7 @@ const Version = "0.10.0"
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds: bump it with any change to
 // the graph a parse produces.
-const FrontendVersion = "0.10.0"
+const FrontendVersion = "0.11.0"
 
 // Syntax returns Go's comment forms, declared once and shared: the
 // frontend strips comments with them, and the output contract

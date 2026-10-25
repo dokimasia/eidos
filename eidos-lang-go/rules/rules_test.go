@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"io/fs"
 	"slices"
 	"strings"
 	"testing"
@@ -38,6 +39,21 @@ const (
 const (
 	contextPath    = "context"
 	foreignContext = "example.test/context"
+)
+
+// The sources of the member walks through a defined type and through an
+// unexported embed of a dependency. definedSource declares Keyed, which
+// embeds a defined type over an array with one method. teeSource declares
+// Tee, which embeds a struct of the standard library package hosted, and
+// hostedSource declares that struct, which embeds an unexported struct
+// with one method.
+const (
+	definedSource = "package fx\n\n// Key is an array type.\ntype Key [16]byte\n\n" +
+		"// Len returns 16.\nfunc (k Key) Len() int { return 16 }\n\n// Keyed embeds Key.\ntype Keyed struct{ Key }\n"
+	teeSource    = "package fx\n\nimport \"hosted\"\n\n// Tee embeds a T.\ntype Tee struct{ *hosted.T }\n"
+	hostedFile   = "hosted/hosted.go"
+	hostedSource = "package hosted\n\n// T embeds common.\ntype T struct{ common }\n\n" +
+		"type common struct{}\n\n// Log logs.\nfunc (c *common) Log() {}\n"
 )
 
 // rulesAllocs is one projection pass over the fixture tree: 212 at the
@@ -199,6 +215,45 @@ func TestRules(t *testing.T) {
 			}
 			assert.Equal(t, names, []string{"Name", "Base", "Kind"},
 				"Derived's field, its embedded field Base, then the Kind that Base promotes")
+		})
+
+		// memberNames lists the names of the fields, the embedded fields and
+		// the methods of a set, in the order of the set.
+		memberNames := func(set rules.MemberSet) []string {
+			names := make([]string, 0, len(set.Members))
+			for _, m := range set.Members {
+				switch d := m.Symbol.(type) {
+				case *node.Field:
+					names = append(names, d.Name)
+				case *node.Embed:
+					names = append(names, d.ID.Name)
+				case *node.Method:
+					names = append(names, d.Name)
+				}
+			}
+			return names
+		}
+
+		t.Run("returns a policy that promotes the methods of an embedded defined type", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, gofrontend.New(nil), fstest.MapFS{fxFile: {Data: []byte(definedSource)}})
+			fx := viewOver(t, f, id(fxPath, "Keyed", symbol.KindStruct), fxFile)
+			set, _ := fx.bound().MembersOf(fx.decl(t, id(fxPath, "Keyed", symbol.KindStruct)))
+			assert.Equal(t, memberNames(set), []string{"Key", "Len"}, "the embedded field Key, then the method of Key")
+			assert.True(t, set.Complete(), "an array has no members, so the walk has no gap")
+		})
+
+		t.Run("returns a policy that promotes the methods of an unexported embed of a dependency", func(t *testing.T) {
+			t.Parallel()
+
+			stores := map[string]fs.FS{gofrontend.GoRootStore: fstest.MapFS{hostedFile: {Data: []byte(hostedSource)}}}
+			f := rulestest.LoadedWith(t, gofrontend.New(nil), fstest.MapFS{fxFile: {Data: []byte(teeSource)}}, stores)
+			fx := viewOver(t, f, id(fxPath, "Tee", symbol.KindStruct), fxFile)
+			set, _ := fx.bound().MembersOf(fx.decl(t, id(fxPath, "Tee", symbol.KindStruct)))
+			assert.Equal(t, memberNames(set), []string{"T", "common", "Log"},
+				"the embedded field T, its embedded field common, then the method of common")
+			assert.True(t, set.Complete(), "the walk follows the unexported embed of the dependency")
 		})
 	})
 

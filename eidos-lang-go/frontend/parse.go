@@ -51,7 +51,9 @@ type pendingUnderlying struct {
 // a go:build line or the suffixes of the file name. Only the package
 // clause and the imports of such a file parse, as the go command reads
 // it, so a syntax error after its imports reports nothing. Every package
-// of the unit has the module of its go.mod.
+// of the unit has the module of its go.mod. The parse reads every member
+// before it lowers the first, because at the signature depth an unexported
+// type that [keptTypes] keeps can be in another file than its embed.
 func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	place, err := placeUnit(u)
 	if err != nil {
@@ -66,10 +68,20 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		place:   place,
 		members: len(members),
 	}
+	read := make([]memberFile, 0, len(members))
 	for _, ref := range members {
-		if err := f.parseFile(u, st, ref.Path); err != nil {
+		m, err := f.readFile(u, st, ref.Path)
+		if err != nil {
 			return err
 		}
+		read = append(read, m)
+	}
+	var kept map[string]map[string]bool
+	if u.Depth() == plugin.DepthSignatures {
+		kept = keptTypes(read)
+	}
+	for _, m := range read {
+		f.lowerFile(u, st, m, kept[m.pkgPath])
 	}
 	gb := u.Graph()
 	for _, pkgPath := range st.order {
@@ -157,49 +169,78 @@ func (st *parseState) batch(pkgPath, name string) *constBatch {
 	return b
 }
 
-// parseFile lowers one member. It parses the package clause and the
-// imports first, and a file that its constraint excludes lowers from them
-// alone. Every other file then parses whole.
-func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath string) error {
+// memberFile is one member of a unit that [goFrontend.readFile] read. It
+// has the path, the bytes, the syntax tree and the error of the parse of
+// the member, its build constraint, and the package that it declares.
+// [goFrontend.lowerFile] reports the error, so the findings of the members
+// keep the order of the members.
+type memberFile struct {
+	path     string
+	src      []byte
+	parsed   *ast.File
+	err      error
+	built    constraint.Expr
+	excluded bool
+	pkgPath  string
+	pkgName  string
+}
+
+// readFile reads and parses one member. It parses the package clause and
+// the imports first, and a file that its constraint excludes keeps them
+// alone. Every other file then parses whole. A file without a package
+// clause has no package.
+func (f *goFrontend) readFile(u *plugin.SourceUnit, st *parseState, filePath string) (memberFile, error) {
 	src, err := u.Read(filePath)
 	if err != nil {
-		return err
+		return memberFile{}, err
 	}
+	m := memberFile{path: filePath, src: src}
+	m.parsed, m.err = parser.ParseFile(st.fset, filePath, src, parseMode|parser.ImportsOnly)
+	if m.parsed == nil || m.parsed.Name == nil || !m.parsed.Package.IsValid() {
+		return m, nil
+	}
+	m.built = constraintOf(m.parsed, filePath)
+	m.excluded = m.built != nil && !m.built.Eval(f.satisfies)
+	if !m.excluded {
+		m.parsed, m.err = parser.ParseFile(st.fset, filePath, src, parseMode)
+	}
+	if m.parsed == nil || m.parsed.Name == nil || !m.parsed.Package.IsValid() {
+		return m, nil
+	}
+	m.pkgPath, m.pkgName = st.place.importPath, m.parsed.Name.Name
+	if strings.HasSuffix(m.pkgName, golang.TestSuffix) {
+		m.pkgPath += golang.TestSuffix
+	}
+	return m, nil
+}
 
-	parsed, err := parser.ParseFile(st.fset, filePath, src, parseMode|parser.ImportsOnly)
-	var built constraint.Expr
-	excluded := false
-	if parsed != nil && parsed.Name != nil && parsed.Package.IsValid() {
-		built = constraintOf(parsed, filePath)
-		excluded = built != nil && !built.Eval(f.satisfies)
-		if !excluded {
-			parsed, err = parser.ParseFile(st.fset, filePath, src, parseMode)
-		}
+// lowerFile lowers one member that [goFrontend.readFile] read, after it
+// reports the syntax errors of the member. A file without a package clause
+// declares nothing. A file that its constraint excludes lowers from its
+// package clause and its imports alone. kept has the names of the
+// unexported types that the signature depth loads in the package of the
+// file.
+func (f *goFrontend) lowerFile(u *plugin.SourceUnit, st *parseState, m memberFile, kept map[string]bool) {
+	if m.err != nil {
+		reportSyntax(u, m.path, m.err)
 	}
-	if err != nil {
-		reportSyntax(u, filePath, err)
-	}
+	parsed := m.parsed
 	if parsed == nil || parsed.Name == nil || !parsed.Package.IsValid() {
 		// A file without a package clause declares nothing. The parse
 		// reports its syntax errors, and no declaration has a position in
 		// it.
-		return nil
+		return
 	}
 	l := &lowered{
-		file: st.fset.File(parsed.Package), src: src,
+		file: st.fset.File(parsed.Package), src: m.src,
 		intern: st.intern, consumed: map[*ast.CommentGroup]bool{},
-		comments: parsed.Comments, std: st.place.std,
+		comments: parsed.Comments, std: st.place.std, kept: kept,
 	}
 	gb := u.Graph()
-
-	pkgPath := st.place.importPath
-	pkgName := parsed.Name.Name
-	if strings.HasSuffix(pkgName, golang.TestSuffix) {
-		pkgPath += golang.TestSuffix
-	}
+	pkgPath, pkgName, built := m.pkgPath, m.pkgName, m.built
 	pkg := gb.Package(pkgPath)
 
-	file := &node.File{Path: filePath, Pos: l.at(parsed.Package)}
+	file := &node.File{Path: m.path, Pos: l.at(parsed.Package)}
 	pkg.Files = append(pkg.Files, file)
 
 	cgo := false
@@ -228,7 +269,7 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	if marker, generated := generatedMarker(parsed); generated {
 		gb.Stamp(file, meta.RawStamp{Key: golang.GeneratedKey, Value: marker, Pos: file.Pos})
 	}
-	if excluded {
+	if m.excluded {
 		// A file outside the build names its package only where no file
 		// inside the build did, and the parse leaves out its package doc
 		// and its carriers.
@@ -239,7 +280,7 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		if u.Depth() == plugin.DepthSignatures {
 			pruneImports(file, nil)
 		}
-		return nil
+		return
 	}
 	namePackage(u, st, pkg, pkgPath, pkgName, file.Pos)
 	// The doc of the package clause is the doc of the package. The package
@@ -285,7 +326,108 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 		file.Annotations = append(file.Annotations, floating.Annotations...)
 		u.RefuseCarriers(UnaddressedCarrier, floating.Carriers, "a comment that no declaration takes")
 	}
-	return nil
+}
+
+// keptTypes returns the names of the unexported types that the signature
+// depth loads in each package of a unit. The keys of the map are the
+// import paths of the packages. An unexported type is kept where an
+// exported type of its package embeds it or names it as the target of an
+// alias, because the exported type promotes the members of such a type. So
+// is an unexported type that a kept type reaches the same way. A type that
+// only a field or a signature names is left out, because no code outside
+// its package can refer to it. The types of every file of a package count,
+// because an embed and its type can be in two files. A file that its
+// constraint excludes does not declare a type. keptTypes returns nil where
+// it does not keep a type.
+func keptTypes(members []memberFile) map[string]map[string]bool {
+	type pending struct {
+		pkgPath string
+		spec    *ast.TypeSpec
+	}
+	specs := map[string]map[string]*ast.TypeSpec{}
+	var queue []pending
+	for _, m := range members {
+		if m.excluded || m.pkgName == "" {
+			continue
+		}
+		byName := specs[m.pkgPath]
+		if byName == nil {
+			byName = map[string]*ast.TypeSpec{}
+			specs[m.pkgPath] = byName
+		}
+		for _, decl := range m.parsed.Decls {
+			gen, isGen := decl.(*ast.GenDecl)
+			if !isGen || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				s, isType := spec.(*ast.TypeSpec)
+				if !isType {
+					continue
+				}
+				if _, declared := byName[s.Name.Name]; !declared {
+					byName[s.Name.Name] = s
+				}
+				if ast.IsExported(s.Name.Name) {
+					queue = append(queue, pending{pkgPath: m.pkgPath, spec: s})
+				}
+			}
+		}
+	}
+	var (
+		kept  map[string]map[string]bool
+		names []string
+	)
+	for len(queue) > 0 {
+		next := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		names = promotedNames(names[:0], next.spec)
+		for _, name := range names {
+			spec, declared := specs[next.pkgPath][name]
+			if ast.IsExported(name) || !declared || kept[next.pkgPath][name] {
+				continue
+			}
+			if kept == nil {
+				kept = map[string]map[string]bool{}
+			}
+			if kept[next.pkgPath] == nil {
+				kept[next.pkgPath] = map[string]bool{}
+			}
+			kept[next.pkgPath][name] = true
+			queue = append(queue, pending{pkgPath: next.pkgPath, spec: spec})
+		}
+	}
+	return kept
+}
+
+// promotedNames appends to dst the names of the local types whose members
+// a type spec promotes. A struct or an interface body promotes the type of
+// each embed, and an alias or a defined type promotes its target. The name
+// of an embed leaves out its pointer and the arguments of its
+// instantiation. promotedNames skips the target of a pointer type, because
+// a pointer type does not have the members of its target. It skips a name
+// that an import qualifies, because that name is a type of another
+// package.
+func promotedNames(dst []string, s *ast.TypeSpec) []string {
+	var fields []*ast.Field
+	switch t := s.Type.(type) {
+	case *ast.StructType:
+		fields = t.Fields.List
+	case *ast.InterfaceType:
+		fields = t.Methods.List
+	default:
+		_, pointer := unparen(s.Type).(*ast.StarExpr)
+		if id, local := undecorated(s.Type).(*ast.Ident); local && !pointer {
+			dst = append(dst, id.Name)
+		}
+		return dst
+	}
+	for _, field := range fields {
+		if id, local := undecorated(field.Type).(*ast.Ident); local && len(field.Names) == 0 {
+			dst = append(dst, id.Name)
+		}
+	}
+	return dst
 }
 
 // span is the extent of one function body in a file.
@@ -464,10 +606,11 @@ func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, spec *ast.Im
 // lowerDecl lowers one top-level declaration at the depth of the unit. At
 // the signature depth it leaves out an unexported declaration and marks
 // its comments as taken, because they belong to the declaration that the
-// load left out. It leaves out a function that no code can name at every
-// depth, and refuses the carriers on it. The tool directives in the doc of
-// an import declaration are annotations of the file, and its carriers are
-// refused, as on the doc of an import.
+// load left out. An unexported type that [keptTypes] keeps loads at the
+// signature depth too. It leaves out a function that no code can name at
+// every depth, and refuses the carriers on it. The tool directives in the
+// doc of an import declaration are annotations of the file, and its
+// carriers are refused, as on the doc of an import.
 func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File, decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
@@ -496,7 +639,7 @@ func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File
 		for _, spec := range d.Specs {
 			switch s := spec.(type) {
 			case *ast.TypeSpec:
-				if u.Depth() == plugin.DepthSignatures && !ast.IsExported(s.Name.Name) {
+				if u.Depth() == plugin.DepthSignatures && !ast.IsExported(s.Name.Name) && !l.kept[s.Name.Name] {
 					l.skip(s.Doc, s.Comment)
 					continue
 				}

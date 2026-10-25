@@ -134,6 +134,14 @@
 // so the next round follows what exported signatures reference and not
 // what function bodies call.
 //
+// A signature-only parse keeps an unexported type that an exported type of
+// its package embeds or names as the target of an alias, because the
+// exported type promotes the members of that type. It also keeps each
+// unexported type that a kept type reaches the same way. testing.T embeds
+// testing.common, so the member walk of a struct that embeds *testing.T
+// lists the methods of testing.common. A kept type loads its exported
+// fields and methods alone.
+//
 // # Stamps
 //
 // Every package a workspace unit declares is stamped with the kernel's

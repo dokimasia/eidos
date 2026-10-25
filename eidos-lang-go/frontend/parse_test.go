@@ -972,6 +972,114 @@ func TestParse(t *testing.T) {
 			assert.Equal(t, e.Fields[0].Name, "Pub", "the exported one loads")
 		})
 
+		kept := []struct {
+			name      string
+			giveSrc   string
+			wantNames []string
+		}{
+			{
+				name:      "keeps an unexported struct that an exported struct embeds at signature depth",
+				giveSrc:   "package p\n\ntype T struct {\n\tcommon\n}\n\ntype common struct{}\n",
+				wantNames: []string{"T", "common"},
+			},
+			{
+				name:      "keeps an unexported struct that an exported struct embeds through a pointer at signature depth",
+				giveSrc:   "package p\n\ntype T struct {\n\t*common\n}\n\ntype common struct{}\n",
+				wantNames: []string{"T", "common"},
+			},
+			{
+				name:      "keeps an unexported generic struct that an exported struct embeds at signature depth",
+				giveSrc:   "package p\n\ntype T struct{ box[int] }\n\ntype box[V any] struct{ Item V }\n",
+				wantNames: []string{"T", "box"},
+			},
+			{
+				name:      "keeps an unexported interface that an exported interface embeds at signature depth",
+				giveSrc:   "package p\n\ntype Reader interface{ reader }\n\ntype reader interface{ Read() }\n",
+				wantNames: []string{"Reader", "reader"},
+			},
+			{
+				name:      "keeps an unexported type that an exported alias names at signature depth",
+				giveSrc:   "package p\n\ntype Calls = calls\n\ntype calls struct{}\n",
+				wantNames: []string{"Calls", "calls"},
+			},
+			{
+				name:      "keeps an unexported type that an exported defined type names at signature depth",
+				giveSrc:   "package p\n\ntype Count counter\n\ntype counter int\n",
+				wantNames: []string{"Count", "counter"},
+			},
+			{
+				name:      "keeps an unexported struct that a kept struct embeds at signature depth",
+				giveSrc:   "package p\n\ntype T struct{ outer }\n\ntype outer struct{ inner }\n\ntype inner struct{}\n",
+				wantNames: []string{"T", "outer", "inner"},
+			},
+			{
+				name:      "leaves out an unexported struct that a field of an exported struct names at signature depth",
+				giveSrc:   "package p\n\ntype T struct{ F hidden }\n\ntype hidden struct{}\n",
+				wantNames: []string{"T"},
+			},
+			{
+				name:      "leaves out an unexported struct that an exported pointer type names at signature depth",
+				giveSrc:   "package p\n\ntype P *hidden\n\ntype hidden struct{}\n",
+				wantNames: []string{"P"},
+			},
+			{
+				name:      "leaves out an unexported struct that only an unexported struct embeds at signature depth",
+				giveSrc:   "package p\n\ntype T struct{}\n\ntype outer struct{ inner }\n\ntype inner struct{}\n",
+				wantNames: []string{"T"},
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				file := onlyFile(t, parsedFile(t, nil, plugin.DepthSignatures, tt.giveSrc))
+				names := make([]string, 0, len(file.Decls))
+				for _, decl := range file.Decls {
+					switch d := decl.(type) {
+					case *node.Struct:
+						names = append(names, d.Name)
+					case *node.Interface:
+						names = append(names, d.Name)
+					case *node.Alias:
+						names = append(names, d.Name)
+					}
+				}
+				assert.Equal(t, names, tt.wantNames, "the types that the signature depth loads")
+			})
+		}
+
+		t.Run("keeps the exported members of a kept struct at signature depth", func(t *testing.T) {
+			t.Parallel()
+
+			file := onlyFile(t, parsedFile(t, nil, plugin.DepthSignatures,
+				"package p\n\ntype T struct{ common }\n\ntype common struct {\n\tName string\n\tsecret int\n}\n\n"+
+					"func (c *common) Log() {}\n\nfunc (c *common) frame() {}\n"))
+			assert.Length(t, file.Decls, 2, "T and the struct that it embeds load")
+			common, isStruct := file.Decls[1].(*node.Struct)
+			assert.True(t, isStruct, "the embedded struct loads as a struct")
+			assert.Length(t, common.Fields, 1, "the kept struct loads one field")
+			expect.Equal(t, common.Fields[0].Name, "Name", "the kept struct loads its exported field")
+			assert.Length(t, common.Methods, 1, "the kept struct folds one method")
+			expect.Equal(t, common.Methods[0].Name, "Log", "the kept struct folds its exported method")
+		})
+
+		t.Run("keeps an unexported struct that an exported struct of another file embeds at signature depth",
+			func(t *testing.T) {
+				t.Parallel()
+
+				u := parsedSources(t, plugin.DepthSignatures, fstest.MapFS{
+					"p/a.go": {Data: []byte("package p\n\ntype T struct{ common }\n")},
+					"p/b.go": {Data: []byte("package p\n\ntype common struct{}\n")},
+				})
+				assert.Length(t, u.Graph().Packages(), 1, "one package parses")
+				files := u.Graph().Packages()[0].Files
+				assert.Length(t, files, 2, "both files parse")
+				assert.Length(t, files[1].Decls, 1, "the second file loads the struct that the first file embeds")
+				common, isStruct := files[1].Decls[0].(*node.Struct)
+				assert.True(t, isStruct, "the embedded struct loads as a struct")
+				assert.Equal(t, common.Name, "common", "the second file loads common")
+			})
+
 		t.Run("consumes the comments of a declaration signature depth leaves out", func(t *testing.T) {
 			t.Parallel()
 

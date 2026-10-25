@@ -40,6 +40,9 @@ type lowered struct {
 	// the standard library imports the packages that it vendors from
 	// vendor/.
 	std bool
+	// kept has the names of the unexported types that the signature depth
+	// loads in the package of the file. It is nil at the full depth.
+	kept map[string]bool
 }
 
 // at returns the position of a token position of the file.
