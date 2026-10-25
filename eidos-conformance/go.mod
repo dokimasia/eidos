@@ -20,7 +20,7 @@ require (
 	go.dokimi.dev/eidos/lang/typescript v0.4.0
 	go.dokimi.dev/eidos/plugin/shape v0.0.7
 	go.dokimi.dev/eidos/sdk v0.5.0
-	go.stealthscale.io/cli v0.4.0
+	go.stealthscale.io/cli v0.7.0
 )
 
 require (
@@ -45,7 +45,7 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
-	go.stealthscale.io/cli/yaml v0.1.3 // indirect
+	go.stealthscale.io/cli/yaml v0.1.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
 	golang.org/x/mod v0.42.0 // indirect

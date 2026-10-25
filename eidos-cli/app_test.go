@@ -55,8 +55,8 @@ func TestApp(t *testing.T) {
 		t.Run("returns an app with the kernel commands at its root in order", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, commandsOf(t, cli.New(appHelp, compose), helpFlag), kernelNames,
-				"the help of the app lists the kernel commands")
+			assert.Equal(t, commandsOf(t, cli.New(appHelp, compose), helpFlag), helpNames,
+				"the help of the app lists the kernel commands, then the command of go-cli")
 		})
 
 		t.Run("returns an app with the name of the brand", func(t *testing.T) {

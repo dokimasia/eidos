@@ -5,14 +5,15 @@ Usage: eidos <command> [options]
 Generates code with the declarative plugins of a workspace.
 
 Commands:
-  run      Generates the output of each workspace and commits it.
-  plan     Prints the composition of each workspace without running it.
-  explain  Prints what the last run recorded about a file, a declaration, a fact or a finding.
-  prune    Removes the generated files that no plan produces.
-  doctor   Checks the config, the sealed state and the directives of each workspace.
-  watch    Runs each workspace again after each change, until an interrupt.
-  version  Prints the versions of the binary, of eidos and of the plugins of each workspace.
-  schema   Prints the JSON Schema of the config file of the binary.
+  run         Generates the output of each workspace and commits it.
+  plan        Prints the composition of each workspace without running it.
+  explain     Prints what the last run recorded about a file, a declaration, a fact or a finding.
+  prune       Removes the generated files that no plan produces.
+  doctor      Checks the config, the sealed state and the directives of each workspace.
+  watch       Runs each workspace again after each change, until an interrupt.
+  version     Prints the versions of the binary, of eidos and of the plugins of each workspace.
+  schema      Prints the JSON Schema of the config file of the binary.
+  completion  Write the completion script of a shell.
 
 Options:
   -C, --chdir string   Run in this directory instead of the working directory.                 env EIDOS_CHDIR

@@ -30,6 +30,10 @@ const (
 	cmdSchema  = "schema"
 )
 
+// cmdCompletion is the name of the command that go-cli adds to every app
+// with commands, after the commands of the app.
+const cmdCompletion = "completion"
+
 // The flags that the cases pass to the commands.
 const (
 	jsonFlag     = "--format=json"
@@ -87,6 +91,10 @@ const (
 // kernelNames contains the names of the kernel commands, in the order of
 // the help of an app that New returns.
 var kernelNames = []string{cmdRun, cmdPlan, cmdExplain, cmdPrune, cmdDoctor, cmdWatch, cmdVersion, cmdSchema}
+
+// helpNames contains the names of the commands that the help of an app that
+// New returns lists: the kernel commands, then the command of go-cli.
+var helpNames = slices.Concat(kernelNames, []string{cmdCompletion})
 
 // header is the field that every event of JSON output starts with.
 type header struct {

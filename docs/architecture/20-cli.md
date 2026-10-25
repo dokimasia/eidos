@@ -19,9 +19,11 @@ document is the contract for that surface.
 
 A binary built with eidos is an app of `go.stealthscale.io/cli`, go-cli
 for short. `cli.New` takes a function that composes the workspace, and
-returns a go-cli app with the eight kernel commands at its root. The
-binary adds its own commands to the app as go-cli commands, such as an
-installer or a migration, and runs the app with `cli.Main`:
+returns a go-cli app with the eight kernel commands at its root. go-cli
+adds its command `completion` after the commands of the app, which
+writes the completion script of a shell. The binary adds its own
+commands to the app as go-cli commands, such as an installer or a
+migration, and runs the app with `cli.Main`:
 
 ```go
 func main() {

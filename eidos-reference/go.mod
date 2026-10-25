@@ -25,8 +25,8 @@ require (
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	go.dokimi.dev/eidos/declarative v0.1.6 // indirect
-	go.stealthscale.io/cli v0.4.0 // indirect
-	go.stealthscale.io/cli/yaml v0.1.3 // indirect
+	go.stealthscale.io/cli v0.7.0 // indirect
+	go.stealthscale.io/cli/yaml v0.1.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
