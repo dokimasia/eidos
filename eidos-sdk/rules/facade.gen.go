@@ -264,13 +264,16 @@ type GapReason = core.GapReason
 
 const (
 	// GapUnresolved is a contributor whose reference has no target, or
-	// a target the view does not contain.
+	// a target the view does not contain. The walk applies the same rule
+	// to the target of an alias.
 	GapUnresolved = core.GapUnresolved
 	// GapNotMembered is a contributor that is not a type with
-	// members.
+	// members. An inline body under an alias and a structural type under
+	// a transparent alias report it too.
 	GapNotMembered = core.GapNotMembered
 	// GapCyclic is a contributor already on the path, or one past
-	// the depth budget.
+	// the depth budget. A chain of aliases reports it too where the chain
+	// names a declaration on the path or passes eight aliases.
 	GapCyclic = core.GapCyclic
 	// GapGeneric is a contributor whose type arguments differ in number
 	// from the type parameters of its declaration.

@@ -309,7 +309,9 @@ const (
 	// DepthFull loads everything the unit's source states.
 	DepthFull = core.DepthFull
 	// DepthSignatures loads the exported shape alone: no bodies,
-	// no unexported members. The same bytes at the two depths
+	// no unexported members. An unexported type whose members an
+	// exported type promotes is part of that shape, so it loads with
+	// its exported members. The same bytes at the two depths
 	// produce two graphs and key differently.
 	DepthSignatures = core.DepthSignatures
 )
