@@ -106,6 +106,7 @@ var capabilities = []capability{
 	capabilityOf[rules.ResultRules](),
 	capabilityOf[rules.TextRules](),
 	capabilityOf[rules.ContextRules](),
+	capabilityOf[rules.ImportRules](),
 	capabilityOf[rules.TagRules](),
 	capabilityOf[rules.WellKnownRules](),
 	capabilityOf[rules.ShapeRules](),
