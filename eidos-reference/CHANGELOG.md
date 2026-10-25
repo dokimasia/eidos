@@ -1,5 +1,20 @@
 # go.dokimi.dev/eidos/reference
 
+## 0.1.7
+
+### Patch Changes
+
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+- 8b056b3: Update `go.stealthscale.io/cli` to v0.7.0 and `go.stealthscale.io/cli/yaml` to v0.1.7.
+- Updated dependencies [8b056b3, f2467a9, 0ccd4f4, 25ad6fd, 1163699, b5864dc, 7559a1a, 3203b3d, 53b3580, 0fb5a7e, 6f125b4, 1833bae, f0b7d82, 4702c35, 86dbe80, 2265178]
+  - go.dokimi.dev/eidos/cli@0.3.0
+  - go.dokimi.dev/eidos/core@0.8.0
+  - go.dokimi.dev/eidos/lang/go@0.4.0
+  - go.dokimi.dev/eidos/sdk@0.6.0
+  - go.dokimi.dev/eidos/declarative@0.1.7
+  - go.dokimi.dev/eidos/lang@0.3.1
+  - go.dokimi.dev/eidos/lang/typescript@0.4.1
+
 ## 0.1.6
 
 ### Patch Changes

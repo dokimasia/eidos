@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang
 
+## 0.3.1
+
+### Patch Changes
+
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+- Updated dependencies [f2467a9, 0ccd4f4, b5864dc, 7559a1a, 53b3580, 6f125b4, 1833bae, 4702c35, 86dbe80]
+  - go.dokimi.dev/eidos/core@0.8.0
+  - go.dokimi.dev/eidos/sdk@0.6.0
+
 ## 0.3.0
 
 ### Minor Changes

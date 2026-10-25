@@ -1,5 +1,30 @@
 # go.dokimi.dev/eidos/core
 
+## 0.8.0
+
+### Minor Changes
+
+- f2467a9: Add `plugin.ImportChecker` and `backend.Builder.ImportRule` for the import rule of a target.
+- f2467a9: Add `rules.ImportRules` and `Bound.Importable` for the declarations that the code of a package can refer to.
+- 0ccd4f4: Add `Out.Package` to return the package of the routed file of a handle before the handler records.
+- 0ccd4f4: Add `plugin.Placer`, `plugin.Placed` and `plugin.GeneratorContext.Placer` for the preview of a route.
+- 0ccd4f4: Add `layout.NewPlacer` to preview the routes of the layout of one plan.
+- 0ccd4f4: Add `plugin.Invocation.Placed` for the previews of routes that an invocation made.
+- f2467a9: Add `rules.Scope.Route` and `layout.RouteDir` for the directory of the route of the subject of a directive.
+- 0ccd4f4: Give each generator call of a plan that writes files the placer of the layout of the plan.
+- 6f125b4: **Breaking:** Key `plugin.Unit.Data` by the record that `Out.Record` placed.
+- f2467a9: **Breaking:** Pass the plugin of the directive to `directive.Resolver`.
+- 0ccd4f4: Preview the routes of the layout of a `plugintest.Fixture` through a spoke with both halves of a target.
+- 0ccd4f4: Record the routing edges of each preview of an invocation in its read record.
+- f2467a9: Refuse a declaration whose routed file cannot import one of its references under `layout.UnimportableReference`.
+
+### Patch Changes
+
+- 53b3580: Fix `Bound.MembersOf` to promote the members of a contributor whose declaration is an alias.
+- 6f125b4: Fix `Out.Record` to keep the data of each record where two records of a unit have one origin.
+- 0ccd4f4: Name a declaration of the graph by the name of its identity in `layout.Describe`.
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+
 ## 0.7.0
 
 ### Minor Changes
