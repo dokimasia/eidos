@@ -1,5 +1,33 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.4.0
+
+### Minor Changes
+
+- 25ad6fd: Add `golang.CheckReference` for the declarations that Go code of a package can refer to.
+- 1163699: Add `golang.PackageBindings` for the scope of the imports of the files of a Go package.
+- 25ad6fd: Declare `spell.Importable` as the import rule of the Go backend.
+- 25ad6fd: Implement `rules.ImportRules` in the Go rules.
+- f0b7d82: Load each unexported type whose members an exported type promotes in a signature-only Go parse.
+- 1163699: Record the uses of a Go directive argument through the imports of every file of its package.
+- 1163699: Resolve a bare name of a Go directive argument in the external test package of its directory.
+- 25ad6fd: Resolve a bare name of a directive argument in the external test package of the route of its subject.
+- 1163699: Resolve a qualifier of a Go directive argument through the imports of the other files of its package.
+
+### Patch Changes
+
+- 1163699: Allocate each list of the files of a parsed Go package once.
+- 3203b3d: Fix the resolution in the external test package of a route to derive its path from slash paths on every system.
+- 1163699: Fix `golang.AssumedName` to allocate nothing for a last element such as `vol`.
+- 0fb5a7e: Fix the receiver of a generated Go method to refer to the struct of its own file.
+- 25ad6fd: Fix the Go backend to refuse the import of an external test package.
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+- 2265178: Fix the samples and the zero value of a defined Go array, slice or map type to use a composite literal of the defined type.
+- Updated dependencies [f2467a9, 0ccd4f4, b5864dc, 7559a1a, 53b3580, 6f125b4, 1833bae, 4702c35, 86dbe80]
+  - go.dokimi.dev/eidos/core@0.8.0
+  - go.dokimi.dev/eidos/sdk@0.6.0
+  - go.dokimi.dev/eidos/lang@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes

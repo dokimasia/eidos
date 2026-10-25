@@ -1,5 +1,19 @@
 # go.dokimi.dev/eidos/cli
 
+## 0.3.0
+
+### Minor Changes
+
+- 8b056b3: Add the command `completion` of go-cli, which writes the completion script of a shell.
+
+### Patch Changes
+
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+- 8b056b3: Update `go.stealthscale.io/cli` to v0.7.0 and `go.stealthscale.io/cli/yaml` to v0.1.7.
+- Updated dependencies [f2467a9, 0ccd4f4, 53b3580, 6f125b4, 86dbe80]
+  - go.dokimi.dev/eidos/core@0.8.0
+  - go.dokimi.dev/eidos/declarative@0.1.7
+
 ## 0.2.5
 
 ### Patch Changes

@@ -1,5 +1,22 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.6.0
+
+### Minor Changes
+
+- 1833bae: **Breaking:** Key `plugin.Unit.Data` of the SDK by the record that `Out.Record` placed.
+- 7559a1a: **Breaking:** Pass the plugin of the directive to `directive.Resolver` of the SDK.
+- 7559a1a: Add `plugin.ImportChecker`, `plugin.ImportRule` and `rules.ImportRules` to the SDK.
+- 4702c35: Add `plugin.Placer` and `plugin.Placed` to the SDK.
+
+### Patch Changes
+
+- b5864dc: Copy the documentation of the gaps of an alias and of the signature depth.
+- 7559a1a: Copy the documentation of `rules.Scope.Route` and of the import rule of `backend.Backend` into the SDK.
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+- Updated dependencies [f2467a9, 0ccd4f4, 53b3580, 6f125b4, 86dbe80]
+  - go.dokimi.dev/eidos/core@0.8.0
+
 ## 0.5.0
 
 ### Minor Changes

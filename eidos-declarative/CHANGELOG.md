@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/declarative
 
+## 0.1.7
+
+### Patch Changes
+
+- 86dbe80: Update `go.dokimi.dev/assert` to v0.7.0.
+- Updated dependencies [f2467a9, 0ccd4f4, 53b3580, 6f125b4, 86dbe80]
+  - go.dokimi.dev/eidos/core@0.8.0
+
 ## 0.1.6
 
 ### Patch Changes
