@@ -264,6 +264,20 @@ merge, and Python linearises its bases in the C3 order of its method
 resolution. A generator that re-derives any of them gets it wrong for
 the next language.
 
+A contributor whose declaration is an alias contributes these members
+at the depth of the alias:
+
+- the methods that the package of the alias declares with the alias as
+  their owner, because the alias kind does not declare members and Go
+  declares the methods of a defined type outside its declaration
+- for a transparent alias, what its target contributes
+- for a defined type, the fields and the embeds of a struct under it, or
+  every member of an interface under it
+
+A defined type has none of the methods that the type under it declares.
+`net.IP` is a defined type over `[]byte`, so a struct that embeds it has
+the methods that the package `net` declares for `IP`.
+
 A `MemberSet` records, per member, which supertype or embed it
 arrived through. For any contributor that yielded nothing, it
 records why: unresolved, not a membered type, cyclic, or generic.

@@ -126,8 +126,10 @@ no current declaration.
 In-scope symbols load fully, and dependency symbols load as
 signatures only, meaning declarations without bodies or private
 members ([11-languages.md](11-languages.md) covers binary dependency
-formats). The graph you mutate stays small, and the graph you
-resolve against stays shallow. This is what keeps a memory-resident
+formats). A private type whose members an exported type promotes, such
+as the embedded `testing.common` of `testing.T`, loads with its exported
+members. The graph that you mutate is small, and the graph that you
+resolve against is shallow. This is what keeps a memory-resident
 graph honest at ten thousand packages.
 
 **3. Red-green re-derivation** along the recorded edges, with early

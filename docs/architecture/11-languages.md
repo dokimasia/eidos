@@ -241,6 +241,14 @@ directory. The frontend records the uses of an argument in the same
 scope, so a signature-only file keeps an import that a directive of
 another file names.
 
+A signature-only parse of the Go frontend keeps an unexported type that
+an exported type of its package embeds or names as the target of an
+alias, and each unexported type that a kept type reaches the same way.
+The exported type promotes the members of such a type. `testing.T`
+embeds `testing.common`, so the member walk of a struct that embeds
+`*testing.T` lists the methods of `testing.common`. A kept type loads its
+exported fields and methods alone.
+
 The TypeScript and Python frontends mark an overload signature with
 `Overload`, and the callable of its name without the mark is the
 implementation. The render writes the declarations of a TypeScript file

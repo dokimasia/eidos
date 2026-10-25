@@ -122,3 +122,4 @@ way.
 | [0101](0101-a-plugin-with-both-roles-provides-a-capability-in-one-role.md) | A plugin with both roles provides a capability in one role | Accepted |
 | [0102](0102-the-go-rules-resolve-a-directive-argument-in-the-scope-of-its-package.md) | The Go rules resolve a directive argument in the scope of its package | Accepted |
 | [0103](0103-a-record-keeps-the-data-of-the-call-that-places-it.md) | A record keeps the data of the call that places it | Accepted |
+| [0104](0104-the-member-walk-follows-an-alias-and-an-unexported-embed-of-a-dependency.md) | The member walk follows an alias and an unexported embed of a dependency | Accepted |
