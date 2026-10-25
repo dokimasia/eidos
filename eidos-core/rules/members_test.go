@@ -573,6 +573,10 @@ func TestMembers(t *testing.T) {
 				giveTarget: named(svcPath, "F", symbol.KindFunction),
 				want:       []rules.GapReason{rules.GapNotMembered},
 			},
+			{
+				name: "reports GapNotMembered for an alias without a target",
+				want: []rules.GapReason{rules.GapNotMembered},
+			},
 		}
 		for _, tt := range spelled {
 			t.Run(tt.name, func(t *testing.T) {
@@ -589,6 +593,17 @@ func TestMembers(t *testing.T) {
 			})
 		}
 
+		t.Run("reports GapNotMembered for a contributor whose declaration is a function", func(t *testing.T) {
+			t.Parallel()
+
+			host := coretest.Struct(svcPath, "Host")
+			host.Embeds = []*node.Embed{embedOf(svcPath, "F", symbol.KindFunction)}
+			pkg := coretest.Package(svcPath, coretest.Function(svcPath, "F"), host)
+			b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+			set, _ := b.MembersOf(host)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapNotMembered}, "a function has no members")
+		})
+
 		t.Run("reports GapCyclic for a defined type over the walked struct", func(t *testing.T) {
 			t.Parallel()
 
@@ -599,6 +614,99 @@ func TestMembers(t *testing.T) {
 			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, tree, key)))
 			set, _ := b.MembersOf(tree)
 			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapCyclic}, "the struct under Key is on the path")
+		})
+
+		t.Run("reports GapCyclic for a chain of more than eight aliases", func(t *testing.T) {
+			t.Parallel()
+
+			decls := make([]symbol.Symbol, 0, 11)
+			decls = append(decls, coretest.Struct(svcPath, baseName))
+			for i := range 9 {
+				a := coretest.Alias(svcPath, "A"+string(rune('0'+i)))
+				a.Target = named(svcPath, "A"+string(rune('0'+i+1)), symbol.KindAlias)
+				if i == 8 {
+					a.Target = named(svcPath, baseName, symbol.KindStruct)
+				}
+				decls = append(decls, a)
+			}
+			host := coretest.Struct(svcPath, "Host")
+			host.Embeds = []*node.Embed{embedOf(svcPath, "A0", symbol.KindAlias)}
+			decls = append(decls, host)
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, decls...)))
+			set, _ := b.MembersOf(host)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapCyclic}, "the walk follows eight aliases at most")
+		})
+
+		t.Run("reports GapGeneric for an alias of a generic struct without its arguments", func(t *testing.T) {
+			t.Parallel()
+
+			box, boxT := genericStruct(svcPath, "Box", "T")
+			box.Fields = []*node.Field{field(svcPath, "Box", "item", boxT)}
+			key := coretest.Alias(svcPath, keyName)
+			key.Target = named(svcPath, "Box", symbol.KindStruct)
+			keyed := coretest.Struct(svcPath, keyedName)
+			keyed.Embeds = []*node.Embed{embedOf(svcPath, keyName, symbol.KindAlias)}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, box, key, keyed)))
+			set, _ := b.MembersOf(keyed)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapGeneric},
+				"the target of Key does not bind the parameter of Box")
+		})
+
+		t.Run("binds the arguments of an embedded generic defined type in its methods", func(t *testing.T) {
+			t.Parallel()
+
+			param := coretest.MemberID(svcPath, "Boxed", "U", symbol.KindTypeParam)
+			boxed := coretest.Alias(svcPath, "Boxed")
+			boxed.Defined, boxed.TypeParams = true, []*node.TypeParam{{ID: param, Name: "U"}}
+			boxed.Target = &node.TypeRef{
+				Spelling: "[]U", Form: symbol.FormList, Elems: []*node.TypeRef{{Spelling: "U", Target: param}},
+			}
+			get := coretest.Method(svcPath, "Boxed", "Get")
+			get.Returns = []*node.Return{{Type: &node.TypeRef{Spelling: "U", Target: param}}}
+			holder := coretest.Struct(svcPath, "Holder")
+			ref := named(svcPath, "Boxed", symbol.KindAlias)
+			ref.Args = []*node.TypeRef{builtin(intSpelling)}
+			holder.Embeds = []*node.Embed{{Ref: ref}}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, boxed, get, holder)))
+			set, _ := b.MembersOf(holder)
+			assert.Equal(t, names(set), []string{"Get"}, "the method of Boxed promotes")
+			assert.Equal(t, set.Members[0].Symbol.(*node.Method).Returns[0].Type.Spelling, intSpelling,
+				"with the argument of the embed in place of the parameter of Boxed")
+			assert.NotEqual(t, set.Members[0].Symbol, symbol.Symbol(get), "on a copy, never the graph's node",
+				assert.ByIdentity())
+		})
+
+		t.Run("walks an alias of another language under the policy of its language", func(t *testing.T) {
+			t.Parallel()
+
+			foreign := coretest.Struct(svcPath, "Message")
+			foreign.ID.Lang = "proto"
+			foreign.Fields = []*node.Field{field(svcPath, "Message", "id", builtin(intSpelling))}
+			foreign.Fields[0].ID.Lang = "proto"
+			alias := &node.Alias{
+				ID:     symbol.Identity{Lang: "proto", Package: svcPath, Name: "Spelled", Kind: symbol.KindAlias},
+				Name:   "Spelled",
+				Target: &node.TypeRef{Spelling: "Message", Target: foreign.ID},
+			}
+			host := coretest.Struct(svcPath, "Host")
+			host.Embeds = []*node.Embed{{Ref: &node.TypeRef{Spelling: "Spelled", Target: alias.ID}}}
+			g := coretest.Frozen(t, coretest.Package(svcPath, host), &node.Package{
+				ID:   symbol.Identity{Lang: "proto", Package: svcPath, Kind: symbol.KindPackage},
+				Path: []string{svcPath},
+				Files: []*node.File{{
+					ID:   symbol.Identity{Lang: "proto", Package: svcPath, Name: "m.proto", Kind: symbol.KindFile},
+					Path: "m.proto", Decls: node.Symbols{alias, foreign},
+				}},
+			})
+			var asked []symbol.Lang
+			v, _, _ := viewOver(t, g)
+			b := rules.NewBound(scripted(), v, func(lang symbol.Lang) rules.SourceRules {
+				asked = append(asked, lang)
+				return rules.Absent(lang)
+			})
+			set, _ := b.MembersOf(host)
+			assert.Contains(t, asked, symbol.Lang("proto"), "the language of the alias is asked for its policy")
+			assert.Equal(t, names(set), []string{"id"}, "and the field of its target arrives under it")
 		})
 
 		t.Run("reports GapCyclic for a chain of aliases that names its first alias", func(t *testing.T) {

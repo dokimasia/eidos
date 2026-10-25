@@ -562,28 +562,19 @@ func (w *walk) targetOf(under *node.TypeRef, defined bool, source SourceRules) (
 func (w *walk) recordOwn(
 	alias *node.Alias, args []*node.TypeRef, path []symbol.Identity, depth int, viaOptional bool, via *node.TypeRef,
 ) {
-	pkg, held := w.b.view.PackageOf(alias.ID)
-	if !held {
-		return
-	}
-	for _, f := range pkg.Files {
-		if f == nil {
+	pkg, _ := w.b.view.PackageOf(alias.ID)
+	for m := range node.DeclsOf[*node.Method](pkg) {
+		if m == nil || m.Name == "" || m.ID.Owner != alias.Name {
 			continue
 		}
-		for _, decl := range f.Decls {
-			m, isMethod := decl.(*node.Method)
-			if !isMethod || m == nil || m.Name == "" || m.ID.Owner != alias.Name {
-				continue
-			}
-			if len(args) > 0 {
-				c := *m
-				c.Params = substituteParams(m.Params, alias.TypeParams, args)
-				c.Returns = substituteReturns(m.Returns, alias.TypeParams, args)
-				m = &c
-			}
-			member := Member{Symbol: m, Owner: alias.ID, Through: path, Depth: depth, ViaOptional: viaOptional}
-			w.record(m.Name, member, via)
+		if len(args) > 0 {
+			c := *m
+			c.Params = substituteParams(m.Params, alias.TypeParams, args)
+			c.Returns = substituteReturns(m.Returns, alias.TypeParams, args)
+			m = &c
 		}
+		member := Member{Symbol: m, Owner: alias.ID, Through: path, Depth: depth, ViaOptional: viaOptional}
+		w.record(m.Name, member, via)
 	}
 }
 
