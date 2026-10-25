@@ -15,6 +15,7 @@ import (
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/rulestest"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -46,6 +47,15 @@ const (
 	wideTestFile = "wide/g_test.go"
 )
 
+// The routes of the package scope cases: a directory below the directory of
+// Subject and a directory beside it, each with an external test package.
+const (
+	kitDir        = "wide/kit"
+	kitTestPath   = kitDir + golang.TestSuffix
+	outerDir      = "outer"
+	outerTestPath = outerDir + golang.TestSuffix
+)
+
 // refusalPrefix pins the opening of every refusal the Go rules
 // return: the language's identity.
 const refusalPrefix = string(golang.Lang) + ": "
@@ -65,6 +75,10 @@ const (
 	// nothing, and the list of the one candidate in the imports of the
 	// package.
 	wideAllocs = 1 + 1
+	// routedAllocs is a resolution in the external test package of a route:
+	// the map of the scope of the subject's file, which imports nothing, the
+	// list of candidates, and the path of the package.
+	routedAllocs = 1 + 1 + 3
 )
 
 // A directive names a declaration by a spelling, and the Go rules
@@ -431,6 +445,89 @@ func TestResolve(t *testing.T) {
 			})
 		}
 
+		routed := []struct {
+			name  string
+			route string
+			give  string
+			want  symbol.Identity
+		}{
+			{
+				name:  "returns the function that a bare name declares in the external test package of the route",
+				route: kitDir, give: "newKit", want: id(kitTestPath, "newKit", symbol.KindFunction),
+			},
+			{
+				name:  "returns the function of the external test package of the subject's directory over the route's",
+				route: kitDir, give: "newSubject", want: id(wideTestPath, "newSubject", symbol.KindFunction),
+			},
+			{
+				name:  "returns the function of the external test package of a route beside the subject's directory",
+				route: outerDir, give: "newOuter", want: id(outerTestPath, "newOuter", symbol.KindFunction),
+			},
+		}
+		for _, tt := range routed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := wideOver(t, subject, wideFile)
+				scope := f.scope(subject)
+				scope.Route = tt.route
+				got, err := r.Resolve(scope, tt.give, directive.ResolveCallableInScope, f.view)
+				assert.NoError(t, err, "the spelling resolves")
+				assert.Equal(t, got.(node.Declaration).Identity(), tt.want, "to the declaration it names")
+			})
+		}
+
+		routedRefused := []struct {
+			name  string
+			route string
+			give  string
+		}{
+			{
+				name: "returns an error for a bare name of the external test package of a route without the route",
+				give: "newKit",
+			},
+			{
+				name:  "returns an error for a bare name that the external test package of the route does not declare",
+				route: kitDir, give: "missing",
+			},
+			{
+				name:  "returns an error for a bare name of another directory where the route is the subject's directory",
+				route: widePath,
+				give:  "newKit",
+			},
+		}
+		for _, tt := range routedRefused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := wideOver(t, subject, wideFile)
+				scope := f.scope(subject)
+				scope.Route = tt.route
+				_, err := r.Resolve(scope, tt.give, directive.ResolveCallableInScope, f.view)
+				assert.HasError(t, err, "the spelling names nothing at the kind")
+			})
+		}
+
+		t.Run("returns an error for a bare name of a route of a subject outside the workspace root",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := wideOver(t, subject, wideFile)
+				outside := &node.File{Pos: position.Pos{File: "../outside/a.go"}}
+				scope := rules.Scope{Subject: subject, File: outside, Route: kitDir}
+				_, err := r.Resolve(scope, "newKit", directive.ResolveCallableInScope, f.view)
+				assert.HasError(t, err, "the route has no path relative to a file outside the workspace root")
+			})
+
+		t.Run("returns an error for a bare name of a route without the file of the subject", func(t *testing.T) {
+			t.Parallel()
+
+			f := wideOver(t, subject, wideFile)
+			scope := rules.Scope{Subject: subject, Route: kitDir}
+			_, err := r.Resolve(scope, "newKit", directive.ResolveCallableInScope, f.view)
+			assert.HasError(t, err, "the route resolves against the directory of the file of the subject")
+		})
+
 		t.Run("returns an error naming both paths of a qualifier that two other files bind", func(t *testing.T) {
 			t.Parallel()
 
@@ -735,7 +832,9 @@ func wideOver(tb assert.TB, subject symbol.Identity, path string) *fixture {
 // Bound in e.go imports two under the name w, which h.go binds to vol. The
 // package clause of v3 is node. The internal test file binds fixture, and
 // the external test package declares newSubject, Tested and a build of its
-// own beside the build of the package.
+// own beside the build of the package. The external test package of the
+// route wide/kit declares newKit and a newSubject of its own, and the
+// external test package of the route outer declares newOuter.
 func wideTree() fstest.MapFS {
 	return fstest.MapFS{
 		wideFile: {Data: []byte(`package wide
@@ -816,6 +915,18 @@ type Thing struct{}
 
 type Leaf struct{}
 `)},
+		kitDir + "/k_test.go": {Data: []byte(`package kit_test
+
+import "wide"
+
+func newKit() *wide.Subject { return &wide.Subject{} }
+
+func newSubject() *wide.Subject { return &wide.Subject{} }
+`)},
+		outerDir + "/o_test.go": {Data: []byte(`package outer_test
+
+func newOuter() {}
+`)},
 	}
 }
 
@@ -835,11 +946,21 @@ func resolveCalls(tb testing.TB) []allocCall {
 	subject := id(widePath, "Subject", symbol.KindStruct)
 	w := wideOver(tb, subject, wideFile)
 	wideScope := w.scope(subject)
+	routedScope := w.scope(subject)
+	routedScope.Route = kitDir
 	var (
 		got symbol.Symbol
 		err error
 	)
 	return []allocCall{
+		{
+			name: "Resolve", caseName: "a function of the external test package of the route", allocs: routedAllocs,
+			call: func() { got, err = r.Resolve(routedScope, "newKit", directive.ResolveCallableInScope, w.view) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve finds newKit")
+				assert.Equal(tb, got.Kind(), symbol.KindFunction, "Resolve returns the function")
+			},
+		},
 		{
 			name: "Resolve", caseName: "a function in scope", allocs: probeAllocs,
 			call: func() { got, err = r.Resolve(scope, "Find", directive.ResolveCallableInScope, f.view) },

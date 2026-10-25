@@ -20,6 +20,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -55,6 +56,14 @@ const (
 	hiddenFile = "fx/hidden.go"
 	paddedName = "Padded"
 	bigPath    = "math/big"
+)
+
+// The packages of the import cases: the package of the code, the package of
+// the referents, and an internal package of the tree of the referents.
+const (
+	webPath   = "example.com/shop/web"
+	corePath  = "example.com/shop/core"
+	clockPath = corePath + "/internal/clock"
 )
 
 // The capability cases read the sentinel that a base spells, the struct
@@ -387,6 +396,88 @@ func TestCapabilities(t *testing.T) {
 			_, stated := capability[rules.TagRules](t).Tag(nil, jsonKey)
 			assert.False(t, stated, "no field, no tag")
 		})
+	})
+
+	t.Run("Importable", func(t *testing.T) {
+		t.Parallel()
+
+		web := id(webPath, "", symbol.KindPackage)
+		clock := ref(clockPath, "Clock", symbol.KindInterface)
+		admitted := []struct {
+			name string
+			give *node.TypeRef
+		}{
+			{name: "returns nil for a nil reference"},
+			{name: "returns nil for a predeclared type", give: &node.TypeRef{Spelling: "int"}},
+			{
+				name: "returns nil for an exported declaration of another package",
+				give: ref(corePath, "Row", symbol.KindStruct),
+			},
+			{
+				name: "returns nil for an unexported declaration of the package of the code",
+				give: ref(webPath, "rows", symbol.KindStruct),
+			},
+			{
+				name: "returns nil for a type parameter of another package",
+				give: ref(corePath, "T", symbol.KindTypeParam),
+			},
+			{
+				name: "returns nil for an exported declaration that the reference names without a target",
+				give: &node.TypeRef{Spelling: "core.Row", Package: corePath},
+			},
+		}
+		for _, tt := range admitted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NoError(t, capability[rules.ImportRules](t).Importable(web, tt.give),
+					"Go code of the package refers to the declaration")
+			})
+		}
+
+		refused := []struct {
+			name string
+			give *node.TypeRef
+			want string
+		}{
+			{
+				name: "returns an error for a target of an internal tree that does not contain the code",
+				give: clock, want: "internal to " + corePath,
+			},
+			{
+				name: "returns an error for an unexported target of another package",
+				give: ref(corePath, "rows", symbol.KindStruct), want: "rows is not exported",
+			},
+			{
+				name: "returns an error for a function of an external test package",
+				give: ref(corePath+golang.TestSuffix, "NewBox", symbol.KindFunction), want: "external test package",
+			},
+			{
+				name: "returns an error for the spelling of an unexported declaration without a target",
+				give: &node.TypeRef{Spelling: "core.rows", Package: corePath}, want: "rows is not exported",
+			},
+			{
+				name: "returns an error for the element of a list that the code cannot refer to",
+				give: &node.TypeRef{Form: symbol.FormList, Spelling: "[]clock.Clock", Elems: []*node.TypeRef{clock}},
+				want: "internal to " + corePath,
+			},
+			{
+				name: "returns an error for a type argument that the code cannot refer to",
+				give: &node.TypeRef{
+					Spelling: "Box", Target: id(webPath, "Box", symbol.KindStruct), Args: []*node.TypeRef{clock},
+				},
+				want: "internal to " + corePath,
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := capability[rules.ImportRules](t).Importable(web, tt.give)
+				assert.HasError(t, err, "Go code of the package cannot refer to the declaration")
+				assert.Contains(t, err.Error(), tt.want, "the error names the rule")
+			})
+		}
 	})
 
 	t.Run("Derive", func(t *testing.T) {
@@ -825,6 +916,8 @@ func capabilityCalls(tb testing.TB) []allocCall {
 	errs, tags := capability[rules.ErrorValueRules](tb), capability[rules.TagRules](tb)
 	generics, promotion := capability[rules.GenericsRules](tb), capability[rules.PromotionRules](tb)
 	equality, errorTypes := capability[rules.EqualityRules](tb), capability[rules.ErrorTypeRules](tb)
+	imports, web := capability[rules.ImportRules](tb), id(webPath, "", symbol.KindPackage)
+	coreRow := ref(corePath, "Row", symbol.KindStruct)
 	tagged, box := f.field(tb, "Tagged", "Name"), paramsOf(tb, f, "Box")
 	derived, _ := f.decl(tb, id(fxPath, "Derived", symbol.KindStruct)).(*node.Struct)
 	row, base := ref(fxPath, "Row", symbol.KindStruct), ref(fxPath, "Base", symbol.KindStruct)
@@ -839,8 +932,16 @@ func capabilityCalls(tb testing.TB) []allocCall {
 		methods  []*node.Method
 		message  *node.Method
 		contract rules.ErrorContract
+		refusal  error
 	)
 	return []allocCall{
+		{
+			name: "Importable",
+			call: func() { refusal = imports.Importable(web, coreRow) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, refusal, "Importable admits an exported declaration of another package")
+			},
+		},
 		{
 			name:   "MethodSet",
 			allocs: methodSetAllocs,

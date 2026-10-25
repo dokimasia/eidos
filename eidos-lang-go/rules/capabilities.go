@@ -242,6 +242,40 @@ func (Rules) Tag(f *node.Field, key string) (string, bool) {
 	return reflect.StructTag(f.Tag).Lookup(key)
 }
 
+// Importable returns the reason that Go code of the package pkg cannot refer
+// to the referent of ref, as [golang.CheckReference] decides it. It checks
+// each reference inside ref too: the elements of a structural form, the type
+// arguments, and the types of the members of an inline body. The referent of
+// a reference is the declaration of its Go target, and otherwise the
+// declaration of the package that it records under its spelling without the
+// qualifier. A type
+// parameter belongs to the declaration that declares it, and a predeclared
+// type and a structural form record no package, so the code refers to each
+// of them. Importable returns the error of the first reference that the
+// code cannot refer to, and nil for a nil reference.
+//
+// Importable allocates nothing for a reference that the code can refer to. A
+// refusal allocates its error.
+func (Rules) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
+	if ref == nil {
+		return nil
+	}
+	for s := range node.All(ref) {
+		t, isRef := s.(*node.TypeRef)
+		if !isRef || t.Target.Kind == symbol.KindTypeParam {
+			continue
+		}
+		target, name := t.Package, golang.Unqualified(t.Spelling)
+		if t.Target.Lang == golang.Lang {
+			target, name = t.Target.Package, t.Target.Name
+		}
+		if err := golang.CheckReference(pkg.Package, target, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Derive returns int as the witness for a type parameter whose bound
 // admits int. These bounds admit int:
 //   - no bound

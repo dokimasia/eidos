@@ -7,8 +7,10 @@
 // the package a file at a routed path declares, and [Name] spells a
 // declared name in Go's convention, where case states visibility.
 // [Type] spells the canonical shape of a type of another language in
-// Go, as the spoke of the cross-language hub. The kernel consumes them
-// through the backend kit's naming, package, respelling and type steps.
+// Go, as the spoke of the cross-language hub. [Importable] is the import
+// rule of the target, which the layout asks for each reference of a
+// routed declaration. The kernel consumes them through the backend kit's
+// naming, package, import, respelling and type steps.
 //
 // # Dependency position
 //

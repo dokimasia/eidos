@@ -348,6 +348,11 @@ func TestValue(t *testing.T) {
 				}),
 				want: "malformed import path",
 			},
+			{
+				name: "returns an error for a callee of an external test package",
+				give: emit.Call(valueFn(unitsPkg+golang.TestSuffix, nowName)),
+				want: "external test package",
+			},
 		}
 		for _, tt := range callees {
 			t.Run(tt.name, func(t *testing.T) {

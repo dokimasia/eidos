@@ -43,7 +43,7 @@ const BuildAnnotation = "go:build"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.10.0"
+const Version = "0.11.0"
 
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds: bump it with any change to

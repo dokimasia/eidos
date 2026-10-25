@@ -6,6 +6,8 @@ package rules
 import (
 	"fmt"
 	"go/token"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -43,7 +45,12 @@ const (
 //   - A bare name that neither the package of the subject nor a dot import
 //     of its file declares resolves in the external test package of the
 //     directory, the package at the path of the subject's package with
-//     [golang.TestSuffix].
+//     [golang.TestSuffix]. It then resolves in the external test package
+//     of the directory of the route of the scope, where the generated code
+//     that refers to the name is. The path of that package is the path of
+//     the subject's package joined with the route below the directory of
+//     the subject's file, with [golang.TestSuffix], because the directories
+//     of one module mirror its import paths.
 //   - A name under a full import path, such as
 //     example.com/shop/seed.Defaults, resolves in the package of that
 //     path, whether the file imports the package or not. The last dot
@@ -71,12 +78,15 @@ const (
 // dot import. A qualified name that the file does not bind also allocates
 // the list of its candidates in the imports of the package. A bare name
 // that the package does not declare looks in the external test package
-// and allocates nothing more. A name under a full import path allocates
-// no scope and no list of candidates. A member resolution allocates the
-// list of the types that it searches and what the member walk allocates.
-// A callable of a method subject resolves among the members first, and
-// through the probe where no member has the name. A stand-in and a
-// refusal allocate themselves.
+// and allocates nothing more. A look in the external test package of a
+// route allocates the path of that package: the route below the directory
+// of the file, the joined path and the path with its suffix, three
+// allocations. A name under a full import path allocates no scope and no
+// list of candidates. A member resolution allocates the list of the types
+// that it searches and what the member walk allocates. A callable of a
+// method subject resolves among the members first, and through the probe
+// where no member has the name. A stand-in and a refusal allocate
+// themselves.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -93,7 +103,8 @@ type resolver struct{}
 // candidate whose package the view does not contain is skipped. A
 // qualified name that the file does not bind then resolves through the
 // imports of the files of the package, and a bare name in the external
-// test package of the directory. A name under a full import path resolves
+// test package of the directory and then in the external test package of
+// the directory of the route. A name under a full import path resolves
 // among the declarations of the package of the path alone. InScope refuses
 // a spelling that is not a Go name, a qualifier that two files of the
 // package bind to different packages, and a name that no candidate
@@ -120,6 +131,12 @@ func (resolver) InScope(scope rules.Scope, name string, kinds []symbol.Kind, v r
 		external := symbol.Identity{Lang: golang.Lang, Package: scope.Subject.Package + golang.TestSuffix, Name: name}
 		if sym := candidateIn(external, kinds, v); sym != nil {
 			return sym, nil
+		}
+		if tests, routed := routeTests(scope); routed {
+			inRoute := symbol.Identity{Lang: golang.Lang, Package: tests, Name: name}
+			if sym := candidateIn(inRoute, kinds, v); sym != nil {
+				return sym, nil
+			}
 		}
 		return nil, refuse("no %s named %s is in scope of %s", kindList(kinds), name, scope.Subject)
 	}
@@ -190,6 +207,25 @@ func bindingsOf(f *node.File) golang.Bindings {
 		return golang.Bindings{}
 	}
 	return golang.NewBindings(f.Imports)
+}
+
+// routeTests returns the path of the external test package of the
+// directory of the route of scope: the path of the package of the subject's
+// directory joined with the route below the directory of the subject's
+// file, with [golang.TestSuffix]. It reports false for a scope without a
+// route or without a file, for a route that is the directory of the file,
+// whose external test package InScope reads already, and for a file outside
+// the workspace root. routeTests allocates the path.
+func routeTests(scope rules.Scope) (string, bool) {
+	if scope.Route == "" || scope.File == nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(filepath.FromSlash(path.Dir(scope.File.Pos.File)), filepath.FromSlash(scope.Route))
+	if err != nil || rel == "." {
+		return "", false
+	}
+	dir := strings.TrimSuffix(scope.Subject.Package, golang.TestSuffix)
+	return path.Join(dir, filepath.ToSlash(rel)) + golang.TestSuffix, true
 }
 
 // packageBindings returns the scope of the imports of the files of the

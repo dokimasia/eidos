@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/mod/module"
-
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/render"
 )
@@ -32,16 +30,6 @@ const (
 	dotImport   = "."
 )
 
-// The forms of the path element internal, which the go command reads in
-// an import path: the element alone, at the start of a path, inside a
-// path and at its end.
-const (
-	internalElem   = "internal"
-	internalPrefix = internalElem + "/"
-	internalSuffix = "/" + internalElem
-	internalInfix  = internalSuffix + "/"
-)
-
 // bind imports the package path into set under the name that its package
 // clause declares, and returns the name that qualifies a declaration of the
 // package. [render.ImportSet.Declared] returns the declared name of a
@@ -50,19 +38,14 @@ const (
 // name again, and the package of the file returns the empty name, because
 // a file never imports its own package.
 //
-// Before bind imports another package, it checks the path by the rules
-// of the go command:
+// Before bind imports another package, it checks the import by the rules
+// of the go command, as [golang.CheckReference] checks the import of a
+// package without a name: the path is a valid import path, it is not an
+// external test package, and an internal package is internal to a tree that
+// contains the file.
 //
-//   - The path is a valid import path, as [module.CheckImportPath]
-//     checks it.
-//   - Where the path has the element internal, the package of the file
-//     is the parent of the last such element, or a package below it. The
-//     suffix _test of an external test package belongs to the package
-//     that it tests. The parent of a path that starts with internal is
-//     the standard library, which contains no generated file.
-//
-// Error modes: a path that fails a check returns an error with the
-// reason, and binds nothing.
+// Error modes: a path that fails a check returns the error of
+// [golang.CheckReference], and binds nothing.
 //
 // bind allocates what [render.ImportSet.Declared] and
 // [render.ImportSet.Bind] allocate for a new binding, and nothing for a
@@ -72,24 +55,8 @@ func bind(set *render.ImportSet, path string) (string, error) {
 	if path == home {
 		return "", nil
 	}
-	if err := module.CheckImportPath(path); err != nil {
-		return "", refuse("the go command refuses the import: %v", err)
-	}
-	internal := true
-	var parent string
-	switch {
-	case strings.HasSuffix(path, internalSuffix):
-		parent = strings.TrimSuffix(path, internalSuffix)
-	case strings.Contains(path, internalInfix):
-		parent = path[:strings.LastIndex(path, internalInfix)]
-	case path == internalElem || strings.HasPrefix(path, internalPrefix):
-		return "", refuse("%s is internal to the standard library, and the file is outside it", path)
-	default:
-		internal = false
-	}
-	importer := strings.TrimSuffix(home, golang.TestSuffix)
-	if internal && importer != parent && !strings.HasPrefix(importer, parent+"/") {
-		return "", refuse("%s is internal to %s, and the package %s of the file is outside it", path, parent, home)
+	if err := golang.CheckReference(home, path, ""); err != nil {
+		return "", err
 	}
 	local := golang.Qualifier(path)
 	if declared, known := set.Declared(path); known {

@@ -733,6 +733,12 @@ func TestVocabulary(t *testing.T) {
 				give: imported("internal", "example.com/shop/core/internal", rowName),
 				want: "internal to example.com/shop/core",
 			},
+			{
+				name: "returns an error for a declaration of an external test package",
+				home: "example.com/shop/web",
+				give: imported(storeName, storePkg+golang.TestSuffix, rowName),
+				want: "external test package",
+			},
 		}
 		for _, tt := range imports {
 			t.Run(tt.name, func(t *testing.T) {

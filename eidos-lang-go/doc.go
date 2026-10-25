@@ -32,6 +32,10 @@
 // import groups. [TestSuffix] ends a test file's stem and the import
 // path the frontend loads an external test package under, so the
 // backend spells a file of that package as a test file.
+// [CheckReference] returns the reason that Go code of one package cannot
+// refer to a declaration, by the rules of the go command and the
+// compiler. The backend, the layout and the rules check a reference
+// through it.
 //
 // [Bindings] contains what the imports of one file bind, and
 // [NewBindings] derives the bindings from the import records of the
@@ -92,8 +96,9 @@
 // # Dependency position
 //
 // The root package imports the sdk's diag, emit, meta, node, plugin
-// and symbol facades, eidos-lang's naming and spellref, and the Go
-// stdlib, go/types among it. The
+// and symbol facades, eidos-lang's naming and spellref, the module
+// package of golang.org/x/mod for the check of an import path, and the
+// Go stdlib, go/types among it. The
 // module's other packages import the kernel's SPI through the sdk
 // facade, the shared helpers of eidos-lang, and the Go stdlib. None
 // imports eidos-lang's grammar packages: the frontend parses with
