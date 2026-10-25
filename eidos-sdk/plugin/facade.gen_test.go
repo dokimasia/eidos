@@ -701,6 +701,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ImportChecker", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.ImportChecker](), reflect.TypeFor[core.ImportChecker](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("ImportRule", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.ImportRule](), reflect.TypeFor[core.ImportRule](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("NameScoper", func(t *testing.T) {
 		t.Parallel()
 

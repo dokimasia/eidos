@@ -420,7 +420,10 @@ type Variant = core.Variant
 type Schema = core.Schema
 
 // Resolver binds one source reference param: what a spelling
-// names from a subject, at a resolution kind. The workspace
+// names from a subject, at a resolution kind. owner is the plugin
+// that registered the schema of the directive, and empty for a
+// schema of the kernel, so a resolver can read the route that the
+// output of that plugin takes for the subject. The workspace
 // derives it from the registered rules and a view minted over the
 // sealed graph for validation. The view records its reads with the
 // validation, so a warm run validates a subject again only after its
@@ -471,12 +474,13 @@ type Resolver = core.Resolver
 //
 // keys resolves ResolveMetadataKey params, and a ResolveDiagnosticCode
 // param resolves against the codes that [diag.MustRegister] registered.
-// resolve binds every other reference kind, and a nil resolver leaves
-// those spellings unbound. Validation of one subject is independent of
-// every other, so a caller validates subjects in parallel: the sink is
-// safe for concurrent use, and the resolver is called from every
-// goroutine. Validate refuses an unsealed registry outright, because that
-// is a defect in the composition, not in a carrier.
+// resolve binds every other reference kind with the plugin that registered
+// the schema of the instance, and a nil resolver leaves those spellings
+// unbound. Validation of one subject is independent of every other, so a
+// caller validates subjects in parallel: the sink is safe for concurrent
+// use, and the resolver is called from every goroutine. Validate refuses
+// an unsealed registry outright, because that is a defect in the
+// composition, not in a carrier.
 //
 // # Allocation contract
 //

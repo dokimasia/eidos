@@ -116,6 +116,11 @@ type SourceRules = core.SourceRules
 
 // Scope is the place where a spelling is read. Subject is the declaration
 // that has the spelling, and the imports of File qualify the spelling.
+// Route is the workspace-relative directory into which the output of the
+// plugin that registered the schema of the directive of the spelling moves
+// for the subject, as the layout routes that output, and empty where no
+// route moves it. A language can resolve a name in the package of that
+// directory, because the generated code that refers to the name is there.
 type Scope = core.Scope
 
 // ParamRole classifies a callable's parameter.
@@ -367,6 +372,12 @@ type TextRules = core.TextRules
 // [Bound.CallableOf] asks it for each callable and puts the view of the
 // context before the parameters.
 type ContextRules = core.ContextRules
+
+// ImportRules is the optional capability of a language that restricts the
+// declarations that the code of a package can refer to. Go code imports no
+// internal package of another tree and no external test package, and refers
+// to no unexported name of another package. [Bound.Importable] calls it.
+type ImportRules = core.ImportRules
 
 // TagRules reads a language's per-field tags.
 type TagRules = core.TagRules

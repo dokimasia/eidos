@@ -715,6 +715,19 @@ type Packager = core.Packager
 // declares it: the function [Packager.PackageAt] runs.
 type PackageRule = core.PackageRule
 
+// ImportChecker is the role of a target whose language restricts the
+// declarations that a file can refer to. A Go file imports no internal
+// package of another tree and no external test package, and refers to no
+// unexported name of another package. The layout refuses a declaration with
+// a reference that the file of the declaration cannot refer to, and keeps
+// the other declarations of the file. A target without the role restricts
+// no reference.
+type ImportChecker = core.ImportChecker
+
+// ImportRule is a target's import rule in the form a backend kit declares
+// it: the function [ImportChecker.Importable] runs.
+type ImportRule = core.ImportRule
+
 // NameScoper is the role of a target whose file-level names share one
 // namespace across the files of different packages. A protobuf file is a
 // package of its own, because a protobuf file imports a file, and the
