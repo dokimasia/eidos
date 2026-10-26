@@ -126,3 +126,4 @@ way.
 | [0105](0105-the-layout-refuses-a-declaration-whose-file-cannot-import-a-reference.md) | The layout refuses a declaration whose file cannot import one of its references | Accepted |
 | [0106](0106-a-directive-argument-resolves-in-the-route-of-its-subject.md) | A directive argument resolves in the route of the output of its subject | Accepted |
 | [0107](0107-a-generator-previews-the-package-of-the-routed-file-of-a-handle.md) | A generator previews the package of the routed file of a handle | Accepted |
+| [0108](0108-a-plugin-checks-the-declarations-of-a-value-against-the-package-of-a-file.md) | A plugin checks the declarations of a value against the package of a file | Accepted |

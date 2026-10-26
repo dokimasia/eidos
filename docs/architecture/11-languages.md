@@ -254,7 +254,7 @@ cannot refer to a declaration. It refuses these declarations:
 
 The Go backend checks each import with it. The layout calls it through
 `spell.Importable` for each reference of a routed declaration, and the
-rules decide `Bound.Importable` through it.
+rules decide `Bound.Importable` and `Bound.ImportableValue` through it.
 
 A signature-only parse of the Go frontend keeps an unexported type that
 an exported type of its package embeds or names as the target of an

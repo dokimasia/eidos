@@ -388,11 +388,12 @@ derived.
 ## Tier 2: declared by satisfying, found by asserting
 
 A language declares an optional capability by implementing the
-interface. The bound rules wrap seven capabilities: `Tag`,
+interface. The bound rules wrap eight capabilities: `Tag`,
 `SentinelName`, `SentinelBase`, `ErrorContract`, `Importable`,
-`FieldTypeOf` and `Witnesses`. A handler reads them through methods that
-report false for a language without the capability. `Importable` returns
-nil for such a language, because the language restricts no reference. A
+`ImportableValue`, `FieldTypeOf` and `Witnesses`. A handler reads them
+through methods that report false for a language without the capability.
+`Importable` and `ImportableValue` return nil for such a language,
+because the language restricts no reference. A
 consumer of any other capability asserts for it. When the assertion
 fails, the consumer reports once and generates nothing. It does not build
 a projection on a default that nobody chose. If these were required
@@ -422,6 +423,9 @@ type ContextRules interface {
 }
 type ImportRules interface {
     Importable(pkg symbol.Identity, ref *node.TypeRef) error // why the code of pkg cannot refer to ref
+}
+type ValueImportRules interface {
+    ImportableValue(pkg symbol.Identity, v emit.Value) error // why the code of pkg cannot refer to a declaration of v
 }
 type TagRules interface {
     Tag(f *node.Field, key string) (string, bool)
@@ -476,6 +480,7 @@ field is the projection.
 | `TextRules` | the value of a text that an author states for a text type, which `View.Authored` asks for in place of a string literal | Rust `String::from("a")`, and the character literal of `char` |
 | `ContextRules` | the context of a call that a signature does not state, which `CallableOf` puts first among the parameters | the context of every protobuf rpc, which every gRPC binding passes to a handler |
 | `ImportRules` | whether the code of a package can refer to the referent of a reference, which a generator checks before it records a declaration into a file of that package | Go internal packages, external test packages and unexported names |
+| `ValueImportRules` | whether the code of a package can refer to each declaration of a value, which a generator checks before it records the value into a file of that package | the default of a Go field from an internal package, and an error that a generated function returns |
 | `TagRules` | stringly per-field tags | Go struct tags |
 | `WellKnownRules` | the well-known identity of a type of the standard library, which the fold reads before it classifies a target | Go `time.Time` and `time.Duration` |
 | `ShapeRules` | the shape of the values of a reference to a declared type, which the fold reads after `WellKnownRules` and before it classifies a target. The fold takes the folded type arguments of the reference as the children of a structural shape without children, and the first argument alone as the child of a stream, because a generator states the types that it receives and returns after the type that it yields | GraphQL custom scalars with a `@specifiedBy` URL of the table of scalars, the builtins and the generic classes of Python's typeshed, and `Literal` |
