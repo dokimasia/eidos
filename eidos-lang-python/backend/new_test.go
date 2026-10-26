@@ -77,7 +77,7 @@ var canonicalModules = map[string]string{
 		"        \"\"\"Map rewraps the item.\"\"\"\n        ...\n\n\nclass Row:  # one per fetch\n" +
 		"    \"\"\"Row is one canonical record.\"\"\"\n\n    name: string  # unique per store\n" +
 		"    \"\"\"Name keys the row.\"\"\"\n\n    def boot(self) -> None: ...\n\n    def fetch(self) -> None:\n" +
-		"        state = begin()\n        commit(state)\n        Audit.record(state)\n        return\n\n" +
+		"        state = begin()\n        commit(state)\n        Audit.Record(state)\n        return\n\n" +
 		"    def push(self) -> None:\n        saving()\n        audit()\n\n    def trace(self) -> None:\n" +
 		"        trace()\n",
 	"svc/shape_gen.py": "from dataclasses import dataclass\nfrom typing import Generic, TypeAlias, TypeVar\n\n" +
@@ -95,7 +95,7 @@ var canonicalModules = map[string]string{
 		"    ) -> string:  # by key\n        \"\"\"Get returns the row key names.\"\"\"\n        ...\n",
 	"svc/task_gen.py": "from typing import TypeVar\n\nfrom audit import Audit\n\nT = TypeVar(\"T\", bound=Codec)\n\n\n" +
 		"def boot() -> None: ...\n\n\ndef fetch() -> None:\n    state = begin()\n    commit(state)\n" +
-		"    Audit.record(state)\n    return\n\n\ndef push() -> None:\n    saving()\n    audit()\n\n\n" +
+		"    Audit.Record(state)\n    return\n\n\ndef push() -> None:\n    saving()\n    audit()\n\n\n" +
 		"def sort(items: T) -> T:  # stable\n    \"\"\"Sort orders items in place.\"\"\"\n    ...\n\n\n" +
 		"def trace() -> None:\n    trace()\n",
 }
