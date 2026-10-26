@@ -631,6 +631,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ValueImportRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.ValueImportRules](), reflect.TypeFor[core.ValueImportRules](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("TagRules", func(t *testing.T) {
 		t.Parallel()
 

@@ -379,6 +379,12 @@ type ContextRules = core.ContextRules
 // to no unexported name of another package. [Bound.Importable] calls it.
 type ImportRules = core.ImportRules
 
+// ValueImportRules is the optional capability of a language that restricts
+// the declarations to which the values in the code of a package can refer,
+// as [ImportRules] restricts the declarations of a type reference.
+// [Bound.ImportableValue] calls it.
+type ValueImportRules = core.ValueImportRules
+
 // TagRules reads a language's per-field tags.
 type TagRules = core.TagRules
 
