@@ -188,6 +188,15 @@ func (capable) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
 	return nil
 }
 
+// ImportableValue returns errClosed for a value whose callee is a
+// declaration of another package than pkg, and nil for every other value.
+func (capable) ImportableValue(pkg symbol.Identity, v emit.Value) error {
+	if v.Callee.Package != pkg.Package {
+		return errClosed
+	}
+	return nil
+}
+
 // otherLang is the scripted rules under the name of a language in which
 // the fixture declares nothing. A case reads the declarations of the
 // fixture through the rules of another language.
@@ -571,6 +580,35 @@ func TestBound(t *testing.T) {
 
 			assert.NoError(t, rules.NewBound(scripted(), rules.View{}, nil).Importable(coretest.PackageID("web"), row),
 				"the scripted language does not implement ImportRules")
+		})
+	})
+
+	t.Run("ImportableValue", func(t *testing.T) {
+		t.Parallel()
+
+		call := emit.Call(coretest.ID(svcPath, rowName, symbol.KindFunction))
+
+		t.Run("returns the reason of the language for a value that the code cannot refer to", func(t *testing.T) {
+			t.Parallel()
+
+			err := rules.NewBound(capable{scripted()}, rules.View{}, nil).
+				ImportableValue(coretest.PackageID("web"), call)
+			assert.ErrorIs(t, err, errClosed, "the language refuses the call of a function of another package")
+		})
+
+		t.Run("returns nil for a value that the code can refer to", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, rules.NewBound(capable{scripted()}, rules.View{}, nil).
+				ImportableValue(coretest.PackageID(svcPath), call), "the code calls a function of its own package")
+		})
+
+		t.Run("returns nil for a language without value import rules", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, rules.NewBound(scripted(), rules.View{}, nil).
+				ImportableValue(coretest.PackageID("web"), call),
+				"the scripted language does not implement ValueImportRules")
 		})
 	})
 

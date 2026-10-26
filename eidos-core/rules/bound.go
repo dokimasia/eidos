@@ -226,6 +226,21 @@ func (b Bound) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
 	return imports.Importable(pkg, ref)
 }
 
+// ImportableValue returns the reason that the code of the package pkg cannot
+// refer to a declaration of the value v, and nil where it can, through the
+// rules of the bound language. A generator calls it before it records v for
+// a file of pkg, such as the default of a field or an error that a
+// generated function returns. ImportableValue returns nil where the
+// language does not implement [ValueImportRules]. It allocates what the
+// ImportableValue of the language allocates.
+func (b Bound) ImportableValue(pkg symbol.Identity, v emit.Value) error {
+	imports, declared := b.source.(ValueImportRules)
+	if !declared {
+		return nil
+	}
+	return imports.ImportableValue(pkg, v)
+}
+
 // ErrorContract returns the contract of decl as an error type, through
 // the rules of the language of decl. It reports false where decl is not a
 // declaration, where it is not an error type, and where those rules do not

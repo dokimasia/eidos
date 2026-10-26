@@ -149,6 +149,18 @@ type ImportRules interface {
 	Importable(pkg symbol.Identity, ref *node.TypeRef) error
 }
 
+// ValueImportRules is the optional capability of a language that restricts
+// the declarations to which the values in the code of a package can refer,
+// as [ImportRules] restricts the declarations of a type reference.
+// [Bound.ImportableValue] calls it.
+type ValueImportRules interface {
+	// ImportableValue returns the reason that the code of the package pkg
+	// cannot refer to a declaration of v, and nil where it can. It checks
+	// the callee and the type of v, and the fields, the keys, the arguments
+	// and the inner value that v contains.
+	ImportableValue(pkg symbol.Identity, v emit.Value) error
+}
+
 // TagRules reads a language's per-field tags.
 type TagRules interface {
 	// Tag returns a field's tag value under a key, and reports false
