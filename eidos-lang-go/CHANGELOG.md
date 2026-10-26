@@ -1,5 +1,19 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.5.0
+
+### Minor Changes
+
+- 8dd6045: Implement `rules.ValueImportRules` in the Go rules through `golang.CheckReference`.
+
+### Patch Changes
+
+- 5db1e37: Fix the render of a Go value to refuse an unexported callee of another package.
+- Updated dependencies [899b981, 8d1cae6, 729462f]
+  - go.dokimi.dev/eidos/core@0.9.0
+  - go.dokimi.dev/eidos/sdk@0.7.0
+  - go.dokimi.dev/eidos/lang@0.3.2
+
 ## 0.4.0
 
 ### Minor Changes

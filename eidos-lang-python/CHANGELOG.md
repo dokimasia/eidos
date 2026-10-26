@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang/python
 
+## 0.1.6
+
+### Patch Changes
+
+- Updated dependencies [899b981, 8d1cae6, 729462f]
+  - go.dokimi.dev/eidos/core@0.9.0
+  - go.dokimi.dev/eidos/sdk@0.7.0
+  - go.dokimi.dev/eidos/lang@0.3.2
+
 ## 0.1.5
 
 ### Patch Changes

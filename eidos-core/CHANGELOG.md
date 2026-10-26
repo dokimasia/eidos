@@ -1,5 +1,15 @@
 # go.dokimi.dev/eidos/core
 
+## 0.9.0
+
+### Minor Changes
+
+- 899b981: Add `rules.ValueImportRules` and `Bound.ImportableValue` to check the declarations of a value against the package of a file.
+
+### Patch Changes
+
+- 8d1cae6: Fix the canonical fixture of `backendtest` to call the exported function `Record` of another package.
+
 ## 0.8.0
 
 ### Minor Changes

@@ -1,5 +1,16 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.7.0
+
+### Minor Changes
+
+- 729462f: Add `rules.ValueImportRules` to the SDK.
+
+### Patch Changes
+
+- Updated dependencies [899b981, 8d1cae6]
+  - go.dokimi.dev/eidos/core@0.9.0
+
 ## 0.6.0
 
 ### Minor Changes
