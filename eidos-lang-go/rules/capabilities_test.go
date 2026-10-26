@@ -505,6 +505,20 @@ func TestCapabilities(t *testing.T) {
 				name: "returns nil for a composite of an exported type of another package",
 				give: emit.Composite(rules.EmitRef(ref(corePath, "Row", symbol.KindStruct)), emit.Element(one)),
 			},
+			{
+				name: "returns nil for an exported field of a composite of another package",
+				give: emit.Composite(
+					rules.EmitRef(ref(corePath, "Row", symbol.KindStruct)),
+					emit.NamedField("Slack", one),
+				),
+			},
+			{
+				name: "returns nil for an unexported field of a composite of the package of the code",
+				give: emit.Composite(
+					rules.EmitRef(ref(webPath, "grip", symbol.KindStruct)),
+					emit.NamedField("slack", one),
+				),
+			},
 		}
 		for _, tt := range admitted {
 			t.Run(tt.name, func(t *testing.T) {
@@ -555,6 +569,14 @@ func TestCapabilities(t *testing.T) {
 				give: emit.Call(id(corePath, "Wrap", symbol.KindFunction), worn), want: internalTo,
 			},
 			{name: "returns an error for the inner value of an address", give: emit.Address(worn), want: internalTo},
+			{
+				name: "returns an error for an unexported field of a composite of another package",
+				give: emit.Composite(
+					rules.EmitRef(ref(corePath, "Row", symbol.KindStruct)),
+					emit.NamedField("slack", one),
+				),
+				want: "slack is not exported",
+			},
 		}
 		for _, tt := range refused {
 			t.Run(tt.name, func(t *testing.T) {

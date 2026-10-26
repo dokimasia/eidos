@@ -284,9 +284,12 @@ func (Rules) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
 // package and its name. It checks each reference inside the type of v by
 // the package that the Go backend imports for it, which
 // [spellref.PackageOf] returns, and by its spelling without the
-// qualifier. It checks the fields, the keys, the arguments and the inner
-// value of v the same way. ImportableValue returns the error of the first
-// declaration that the code cannot refer to.
+// qualifier. It checks the name of each named field of a composite by the
+// package of the type of the composite, because Go code sets only the
+// exported fields of a struct of another package. It checks the fields,
+// the keys, the arguments and the inner value of v the same way.
+// ImportableValue returns the error of the first declaration that the code
+// cannot refer to.
 //
 // ImportableValue allocates nothing for a value that the code can refer to.
 // A refusal allocates its error.
@@ -308,8 +311,17 @@ func (r Rules) ImportableValue(pkg symbol.Identity, v emit.Value) error {
 			}
 		}
 	}
+	var host string
+	if v.Kind == emit.ValueComposite && v.Type != nil {
+		host = spellref.PackageOf(v.Type, golang.Lang)
+	}
 	for i := range v.Fields {
 		f := &v.Fields[i]
+		if f.Name != "" {
+			if err := golang.CheckReference(pkg.Package, host, f.Name); err != nil {
+				return err
+			}
+		}
 		if f.Key != nil {
 			if err := r.ImportableValue(pkg, *f.Key); err != nil {
 				return err
