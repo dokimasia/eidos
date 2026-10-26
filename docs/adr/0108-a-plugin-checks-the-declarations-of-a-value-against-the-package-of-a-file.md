@@ -46,6 +46,9 @@ We will let a plugin check a value before it records it, through an optional rul
   its name, and each type reference by the package that the Go backend imports for it. They check the
   fields, the keys, the arguments and the inner value the same way.
 - The conformance matrix lists the rule.
+- The Go backend refuses an unexported callee of another package when a template writes it, as it
+  refuses an import that the go command refuses. The function of another package that the bodies
+  of the shared backend fixture call is `Record`, which every target spells.
 
 ## Alternatives Considered
 
@@ -54,24 +57,18 @@ We will let a plugin check a value before it records it, through an optional rul
 A language that implements `ImportRules` would have to implement the check of a value too. A separate
 optional rule leaves every implementation of `ImportRules` unchanged.
 
-### A check of the name in the render of a callee
-
-The Go backend would refuse an unexported callee of another package when a template writes it, as it
-refuses the import. The bodies of the shared backend fixture call an unexported function of another
-package, and the render would refuse them. A plugin that checks its values before it records them
-does not reach the refusal of the render.
-
 ## Consequences
 
 **Positive:**
 
 - A generator leaves out a value that the file cannot refer to, and the file keeps its other records.
 - The Go rules apply one rule to a type reference and to a value.
+- The Go backend does not write a call that does not compile.
 
 **Negative:**
 
-- The render of a Go callee checks its import alone. A plugin that records an unexported callee of
-  another package without the check writes a file that does not compile.
+- A plugin that records an unexported callee of another package without the check fails the file
+  template, and the render withholds every record of the file.
 
 ## References
 
