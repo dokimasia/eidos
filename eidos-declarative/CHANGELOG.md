@@ -1,5 +1,12 @@
 # go.dokimi.dev/eidos/declarative
 
+## 0.1.8
+
+### Patch Changes
+
+- Updated dependencies [899b981, 8d1cae6]
+  - go.dokimi.dev/eidos/core@0.9.0
+
 ## 0.1.7
 
 ### Patch Changes
