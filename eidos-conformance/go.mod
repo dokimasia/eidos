@@ -11,7 +11,7 @@ require (
 	go.dokimi.dev/eidos/core v0.9.0
 	go.dokimi.dev/eidos/declarative v0.1.8
 	go.dokimi.dev/eidos/lang v0.3.2
-	go.dokimi.dev/eidos/lang/go v0.5.0
+	go.dokimi.dev/eidos/lang/go v0.5.1
 	go.dokimi.dev/eidos/lang/graphql v0.1.6
 	go.dokimi.dev/eidos/lang/java v0.2.6
 	go.dokimi.dev/eidos/lang/protobuf v0.2.6

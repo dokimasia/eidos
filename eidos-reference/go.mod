@@ -10,7 +10,7 @@ require (
 	go.dokimi.dev/eidos/cli v0.3.1
 	go.dokimi.dev/eidos/core v0.9.0
 	go.dokimi.dev/eidos/lang v0.3.2
-	go.dokimi.dev/eidos/lang/go v0.5.0
+	go.dokimi.dev/eidos/lang/go v0.5.1
 	go.dokimi.dev/eidos/lang/typescript v0.4.2
 	go.dokimi.dev/eidos/sdk v0.7.0
 	golang.org/x/mod v0.42.0

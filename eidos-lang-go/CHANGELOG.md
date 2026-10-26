@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.5.1
+
+### Patch Changes
+
+- f2a676a: Fix `ImportableValue` of the Go rules to refuse an unexported field of a composite of another package.
+
 ## 0.5.0
 
 ### Minor Changes
