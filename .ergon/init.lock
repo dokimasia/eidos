@@ -1,5 +1,5 @@
 {
-  "ergon": "0.14.0",
+  "ergon": "0.14.4",
   "files": [
     {
       "path": ".commitlint.yaml",
@@ -134,7 +134,7 @@
     {
       "path": "Makefile",
       "producer": "common",
-      "sha256": "f4fb98b6fd8321c522a2fbf0d426dd31efbb89804cbb4919cef1cd197c9ac491"
+      "sha256": "5aa61dbcdafa43d60abbfaf61bdcd641e3601253c8460792710cfc468a0192f6"
     },
     {
       "path": "NOTICE",
@@ -237,10 +237,11 @@
     ],
     "go.fuzz.match": ".",
     "go.fuzz.time": "30s",
-    "go.generate.args": [],
-    "go.generate.command": [
-      "go",
-      "generate"
+    "go.generate.commands": [
+      [
+        "go",
+        "generate"
+      ]
     ],
     "go.homebrew.tap": "",
     "go.lint.analyzers": "go.dokimi.dev/lint/golangci@v0.2.0",

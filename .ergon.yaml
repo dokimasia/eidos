@@ -286,12 +286,13 @@ go:
     timeout: 0s
     args: []
     workers: 1
-  # generate-go runs command with args and the paths in every module. verify-generate-go, the step
-  # generate of check, runs the same and fails when the run changes a tracked file or writes a file
-  # that git does not track. An empty command removes both targets.
+  # generate-go runs each command line of commands in order with the paths in every module.
+  # verify-generate-go, the step generate of check, runs the same and fails when the run changes a
+  # tracked file or writes a file that git does not track. An empty list of commands removes both
+  # targets.
   generate:
-    command: [go, generate]
-    args: []
+    commands:
+      - [go, generate]
   # audit-go runs govulncheck with args in every module.
   audit:
     args: []
