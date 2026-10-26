@@ -94,8 +94,8 @@ go.dokimi.dev/eidos/declarative v0.1.8 h1:HzLSNn2CnhmkWEwd/jGGYVxaGieYriI8bbqS2y
 go.dokimi.dev/eidos/declarative v0.1.8/go.mod h1:6TsoGBwTXbhte8MV/uGSaMLCpxYDk7WwR79CvGWYHTk=
 go.dokimi.dev/eidos/lang v0.3.2 h1:xtUf/D4CDYw0lnrv22ij0sqHdSxrAEbD/5jYvJUIpX0=
 go.dokimi.dev/eidos/lang v0.3.2/go.mod h1:4llMnx6a8URs9Y80+jXwA6/3gHrLyL3EVu9wR6V+qM8=
-go.dokimi.dev/eidos/lang/go v0.5.0 h1:IOuFoABqCXszdg1krQR8/hAOXVdaaXFsb96/PrD/X8o=
-go.dokimi.dev/eidos/lang/go v0.5.0/go.mod h1:TZNEN0Ga0UeDYUdisF+aVy1DC4da6oMhlyq7YHpGCUc=
+go.dokimi.dev/eidos/lang/go v0.5.1 h1:+2TN1nSLe08udN2NAmvn68kbRs444hd8bdC08sfs2hQ=
+go.dokimi.dev/eidos/lang/go v0.5.1/go.mod h1:TZNEN0Ga0UeDYUdisF+aVy1DC4da6oMhlyq7YHpGCUc=
 go.dokimi.dev/eidos/lang/graphql v0.1.6 h1:l5csXkOZMRV7IxG/CVsfQxJpwpb/dunZcT5aS7POlgI=
 go.dokimi.dev/eidos/lang/graphql v0.1.6/go.mod h1:w6ircdViFuyCpxVm+lTPMs/UX2EgynGhMEe9QFplm1I=
 go.dokimi.dev/eidos/lang/java v0.2.6 h1:2o6/w2mOUJ7/jSnN8z37zt4rvWJETQhDS42rFhpa2JY=

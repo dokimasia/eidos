@@ -37,7 +37,7 @@ replace go.dokimi.dev/eidos/declarative v0.1.8 => ./eidos-declarative
 
 replace go.dokimi.dev/eidos/lang v0.3.2 => ./eidos-lang
 
-replace go.dokimi.dev/eidos/lang/go v0.5.0 => ./eidos-lang-go
+replace go.dokimi.dev/eidos/lang/go v0.5.1 => ./eidos-lang-go
 
 replace go.dokimi.dev/eidos/lang/graphql v0.1.6 => ./eidos-lang-graphql
 
