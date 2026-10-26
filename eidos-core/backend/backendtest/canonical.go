@@ -67,7 +67,7 @@ const (
 const (
 	auditPackage = "audit"
 	auditOwner   = "Audit"
-	auditName    = "record"
+	auditName    = "Record"
 )
 
 // The struct tag of the canonical field has one entry with this key and
