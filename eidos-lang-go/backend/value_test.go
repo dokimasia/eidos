@@ -353,13 +353,18 @@ func TestValue(t *testing.T) {
 				give: emit.Call(valueFn(unitsPkg+golang.TestSuffix, nowName)),
 				want: "external test package",
 			},
+			{
+				name: "returns an error for an unexported callee of another package",
+				give: emit.Call(valueFn(unitsPkg, "now")),
+				want: "now is not exported",
+			},
 		}
 		for _, tt := range callees {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				_, set, err := returned(t, tt.give)
-				assert.HasError(t, err, "the go command refuses the import")
+				assert.HasError(t, err, "the file cannot refer to the callee")
 				expect.Contains(t, err.Error(), tt.want, "naming the rule")
 				expect.Equal(t, set.Len(), 0, "the refused import is not bound")
 			})

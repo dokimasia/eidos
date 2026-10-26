@@ -47,11 +47,16 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 // the name of the import qualifies the name of the declaration. Where
 // another import or a declaration of the file takes that name, the import
 // binds a numbered name. A declaration in no package, and one in the
-// package of the file, spells bare. Callee returns the error of bind for a
-// package that the go command refuses to import.
+// package of the file, spells bare. Callee returns the error of
+// [golang.CheckReference] for a declaration that the file cannot refer to,
+// such as an unexported declaration of another package, and the error of
+// bind for a package that the go command refuses to import.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Package == "" {
 		return id.Name, nil
+	}
+	if err := golang.CheckReference(t.set.Home(), id.Package, id.Name); err != nil {
+		return "", err
 	}
 	local, err := bind(t.set, id.Package)
 	if err != nil {
