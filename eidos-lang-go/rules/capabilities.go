@@ -13,6 +13,8 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/lang/spellref"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -272,6 +274,58 @@ func (Rules) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
 		if err := golang.CheckReference(pkg.Package, target, name); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// ImportableValue returns the reason that Go code of the package pkg cannot
+// refer to a declaration of the value v, as [golang.CheckReference] decides
+// it, and nil where it can. It checks the callee of a call or a name by its
+// package and its name. It checks each reference inside the type of v by
+// the package that the Go backend imports for it, which
+// [spellref.PackageOf] returns, and by its spelling without the
+// qualifier. It checks the fields, the keys, the arguments and the inner
+// value of v the same way. ImportableValue returns the error of the first
+// declaration that the code cannot refer to.
+//
+// ImportableValue allocates nothing for a value that the code can refer to.
+// A refusal allocates its error.
+func (r Rules) ImportableValue(pkg symbol.Identity, v emit.Value) error {
+	if v.Callee.Package != "" {
+		if err := golang.CheckReference(pkg.Package, v.Callee.Package, v.Callee.Name); err != nil {
+			return err
+		}
+	}
+	if v.Type != nil {
+		for s := range emit.All(v.Type) {
+			t, isRef := s.(*emit.TypeRef)
+			if !isRef {
+				continue
+			}
+			from := spellref.PackageOf(t, golang.Lang)
+			if err := golang.CheckReference(pkg.Package, from, golang.Unqualified(t.Spelling)); err != nil {
+				return err
+			}
+		}
+	}
+	for i := range v.Fields {
+		f := &v.Fields[i]
+		if f.Key != nil {
+			if err := r.ImportableValue(pkg, *f.Key); err != nil {
+				return err
+			}
+		}
+		if err := r.ImportableValue(pkg, f.Value); err != nil {
+			return err
+		}
+	}
+	for i := range v.Args {
+		if err := r.ImportableValue(pkg, v.Args[i]); err != nil {
+			return err
+		}
+	}
+	if v.Inner != nil {
+		return r.ImportableValue(pkg, *v.Inner)
 	}
 	return nil
 }

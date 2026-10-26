@@ -23,6 +23,7 @@ import (
 	golang "go.dokimi.dev/eidos/lang/go"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/rulestest"
@@ -480,6 +481,92 @@ func TestCapabilities(t *testing.T) {
 		}
 	})
 
+	t.Run("ImportableValue", func(t *testing.T) {
+		t.Parallel()
+
+		web := id(webPath, "", symbol.KindPackage)
+		worn := emit.Name(id(clockPath, "ErrWorn", symbol.KindVariable))
+		one := emit.Literal(emit.LiteralInt, "1")
+		admitted := []struct {
+			name string
+			give emit.Value
+		}{
+			{name: "returns nil for the zero value"},
+			{name: "returns nil for a literal", give: one},
+			{
+				name: "returns nil for a call of an exported function of another package",
+				give: emit.Call(id(corePath, "NewRow", symbol.KindFunction)),
+			},
+			{
+				name: "returns nil for an unexported variable of the package of the code",
+				give: emit.Name(id(webPath, "errGone", symbol.KindVariable)),
+			},
+			{
+				name: "returns nil for a composite of an exported type of another package",
+				give: emit.Composite(rules.EmitRef(ref(corePath, "Row", symbol.KindStruct)), emit.Element(one)),
+			},
+		}
+		for _, tt := range admitted {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NoError(t, capability[rules.ValueImportRules](t).ImportableValue(web, tt.give),
+					"Go code of the package refers to every declaration of the value")
+			})
+		}
+
+		internalTo := "internal to " + corePath
+		refused := []struct {
+			name string
+			give emit.Value
+			want string
+		}{
+			{name: "returns an error for a variable of an internal tree", give: worn, want: internalTo},
+			{
+				name: "returns an error for a call of an unexported function of another package",
+				give: emit.Call(id(corePath, "newRow", symbol.KindFunction)), want: "newRow is not exported",
+			},
+			{
+				name: "returns an error for a conversion to a type of an internal tree",
+				give: emit.Conversion(rules.EmitRef(ref(clockPath, "Level", symbol.KindAlias)), one), want: internalTo,
+			},
+			{
+				name: "returns an error for a type argument of the type of a composite",
+				give: emit.Composite(rules.EmitRef(&node.TypeRef{
+					Spelling: "Box", Target: id(webPath, "Box", symbol.KindStruct),
+					Args: []*node.TypeRef{ref(clockPath, "Clock", symbol.KindInterface)},
+				})),
+				want: internalTo,
+			},
+			{
+				name: "returns an error for the value of a field of a composite",
+				give: emit.Composite(rules.EmitRef(ref(webPath, "Probe", symbol.KindStruct)),
+					emit.NamedField("Err", worn)),
+				want: internalTo,
+			},
+			{
+				name: "returns an error for the key of an entry of a composite",
+				give: emit.Composite(rules.EmitRef(ref(webPath, "Index", symbol.KindAlias)),
+					emit.KeyedEntry(worn, one)),
+				want: internalTo,
+			},
+			{
+				name: "returns an error for an argument of a call",
+				give: emit.Call(id(corePath, "Wrap", symbol.KindFunction), worn), want: internalTo,
+			},
+			{name: "returns an error for the inner value of an address", give: emit.Address(worn), want: internalTo},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := capability[rules.ValueImportRules](t).ImportableValue(web, tt.give)
+				assert.HasError(t, err, "Go code of the package cannot refer to a declaration of the value")
+				assert.Contains(t, err.Error(), tt.want, "the error names the rule")
+			})
+		}
+	})
+
 	t.Run("Derive", func(t *testing.T) {
 		t.Parallel()
 
@@ -918,6 +1005,9 @@ func capabilityCalls(tb testing.TB) []allocCall {
 	equality, errorTypes := capability[rules.EqualityRules](tb), capability[rules.ErrorTypeRules](tb)
 	imports, web := capability[rules.ImportRules](tb), id(webPath, "", symbol.KindPackage)
 	coreRow := ref(corePath, "Row", symbol.KindStruct)
+	values := capability[rules.ValueImportRules](tb)
+	rowValue := emit.Composite(rules.EmitRef(coreRow),
+		emit.NamedField("Next", emit.Call(id(corePath, "NewRow", symbol.KindFunction))))
 	tagged, box := f.field(tb, "Tagged", "Name"), paramsOf(tb, f, "Box")
 	derived, _ := f.decl(tb, id(fxPath, "Derived", symbol.KindStruct)).(*node.Struct)
 	row, base := ref(fxPath, "Row", symbol.KindStruct), ref(fxPath, "Base", symbol.KindStruct)
@@ -940,6 +1030,13 @@ func capabilityCalls(tb testing.TB) []allocCall {
 			call: func() { refusal = imports.Importable(web, coreRow) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, refusal, "Importable admits an exported declaration of another package")
+			},
+		},
+		{
+			name: "ImportableValue",
+			call: func() { refusal = values.ImportableValue(web, rowValue) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, refusal, "ImportableValue admits a composite of an exported type of another package")
 			},
 		},
 		{
