@@ -4,7 +4,7 @@ title: The member walk follows an alias and an unexported embed of a dependency
 status: Accepted
 date: 2026-10-25
 supersedes: none
-superseded-by: none
+superseded-by: ADR-0109
 rfc: none
 ---
 

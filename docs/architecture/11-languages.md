@@ -262,7 +262,15 @@ alias, and each unexported type that a kept type reaches the same way.
 The exported type promotes the members of such a type. `testing.T`
 embeds `testing.common`, so the member walk of a struct that embeds
 `*testing.T` lists the methods of `testing.common`. A kept type loads its
-exported fields and methods alone.
+exported fields and methods.
+
+The parse also lowers each unexported method of an interface that it
+loads. A type implements the interface only where it has the method.
+Only a type of the package of the interface can declare such a method.
+The parse keeps the method of that name of each type of the package. `testing.common` declares the method `private` of `testing.TB`,
+so `testing.T` implements `testing.TB` in a dependency unit. The Go rules
+scope an unexported name to its package. A type of another package with a
+method `private` does not implement `testing.TB`.
 
 The TypeScript and Python frontends mark an overload signature with
 `Overload`, and the callable of its name without the mark is the

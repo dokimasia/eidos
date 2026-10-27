@@ -304,6 +304,14 @@ satisfaction reads more than the member sets implements
 which a value of the type does not have, and each interface with
 type-set elements, which no comparison of members proves.
 
+A language whose names of package visibility are unique to their
+package sets `MemberPolicy.PackageScopedNames`. The walk then settles
+such a name apart from the same name of another package. `Satisfies`
+matches such a member of an interface only to a member whose owner is
+in the package of the owner of the interface member. The Go rules set
+it, so only a method of the package `testing` and an embed of
+`testing.TB` implement the unexported method `private` of `testing.TB`.
+
 ### Values
 
 Value synthesis, which every check-emitting generator depends on.

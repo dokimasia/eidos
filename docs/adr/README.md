@@ -122,8 +122,9 @@ way.
 | [0101](0101-a-plugin-with-both-roles-provides-a-capability-in-one-role.md) | A plugin with both roles provides a capability in one role | Accepted |
 | [0102](0102-the-go-rules-resolve-a-directive-argument-in-the-scope-of-its-package.md) | The Go rules resolve a directive argument in the scope of its package | Accepted, superseded in part by [0106](0106-a-directive-argument-resolves-in-the-route-of-its-subject.md) |
 | [0103](0103-a-record-keeps-the-data-of-the-call-that-places-it.md) | A record keeps the data of the call that places it | Accepted |
-| [0104](0104-the-member-walk-follows-an-alias-and-an-unexported-embed-of-a-dependency.md) | The member walk follows an alias and an unexported embed of a dependency | Accepted |
+| [0104](0104-the-member-walk-follows-an-alias-and-an-unexported-embed-of-a-dependency.md) | The member walk follows an alias and an unexported embed of a dependency | Accepted, superseded in part by [0109](0109-an-unexported-method-is-a-member-of-its-package.md) |
 | [0105](0105-the-layout-refuses-a-declaration-whose-file-cannot-import-a-reference.md) | The layout refuses a declaration whose file cannot import one of its references | Accepted |
 | [0106](0106-a-directive-argument-resolves-in-the-route-of-its-subject.md) | A directive argument resolves in the route of the output of its subject | Accepted |
 | [0107](0107-a-generator-previews-the-package-of-the-routed-file-of-a-handle.md) | A generator previews the package of the routed file of a handle | Accepted |
 | [0108](0108-a-plugin-checks-the-declarations-of-a-value-against-the-package-of-a-file.md) | A plugin checks the declarations of a value against the package of a file | Accepted |
+| [0109](0109-an-unexported-method-is-a-member-of-its-package.md) | An unexported method is a member of its package | Accepted |
