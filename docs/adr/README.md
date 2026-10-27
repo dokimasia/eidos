@@ -128,3 +128,4 @@ way.
 | [0107](0107-a-generator-previews-the-package-of-the-routed-file-of-a-handle.md) | A generator previews the package of the routed file of a handle | Accepted |
 | [0108](0108-a-plugin-checks-the-declarations-of-a-value-against-the-package-of-a-file.md) | A plugin checks the declarations of a value against the package of a file | Accepted |
 | [0109](0109-an-unexported-method-is-a-member-of-its-package.md) | An unexported method is a member of its package | Accepted |
+| [0110](0110-an-acronym-keeps-the-s-of-its-plural.md) | An acronym keeps the s of its plural | Accepted |

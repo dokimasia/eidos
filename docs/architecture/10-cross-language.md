@@ -158,6 +158,12 @@ such as `getById` and `toJSON`. A class that a generator mirrors from
 an interface then implements each method under the name of the
 interface, and a GraphQL field keeps the key of its response.
 
+The split keeps the s of a plural with its acronym, so it reads
+`ListURLs` as `List` and `URLs`. Rust and Python write the name as
+`list_urls`, and each target that keeps an acronym run writes
+`ListURLs` as it is. Go writes the plural of an initialism in one case
+too, so `user_ids` becomes `userIDs`.
+
 A nested declaration crosses under its flat name. `Identity.FlatName`
 joins the parts of the declaration's owner chain and its name, and
 writes the first letter of each part after the first in upper case, so
