@@ -93,6 +93,18 @@ func TestCase(t *testing.T) {
 				name: "upper-cases a word whose upper-case form is an initialism",
 				in:   "ıd_token", want: "IDToken",
 			},
+			{name: "keeps the plural s of an acronym run", in: "ListURLs", want: "ListURLs"},
+			{
+				name:  "keeps the plural s of an acronym run the caser does not know",
+				caser: naming.New(), in: "ListPDFs", want: "ListPDFs",
+			},
+			{name: "upper-cases the plural of a recognised initialism", in: "user_ids", want: "UserIDs"},
+			{name: "upper-cases the plural of an initialism written in title case", in: "UserIds", want: "UserIDs"},
+			{name: "upper-cases an initialism that ends in s whole", in: "https_proxy", want: "HTTPSProxy"},
+			{
+				name:  "title-cases the plural of an initialism the caser does not know",
+				caser: naming.New(), in: "user_ids", want: "UserIds",
+			},
 		})
 		runShared(t, naming.Pascal, (*naming.Caser).Pascal, "HTTPRow", "UserIDFetcher")
 
@@ -132,6 +144,12 @@ func TestCase(t *testing.T) {
 				name: "converts an input without a lower-case letter that opens with a digit",
 				in:   "1ABC", want: "1Abc",
 			},
+			{name: "lower-cases a first word that is a plural acronym run", in: "IDsToFetch", want: "idsToFetch"},
+			{name: "keeps the plural s of an acronym run after the first word", in: "userIDs", want: "userIDs"},
+			{
+				name: "upper-cases the plural of a recognised initialism after the first word",
+				in:   "user_urls", want: "userURLs",
+			},
 		})
 		runShared(t, naming.Camel, (*naming.Caser).Camel, "httpRow", "userIDFetcher")
 	})
@@ -147,6 +165,8 @@ func TestCase(t *testing.T) {
 			{name: "returns a snake-case input unchanged", in: "hello_world", want: "hello_world"},
 			{name: "joins the words of a doubled separator with one", in: "row__count", want: "row_count"},
 			{name: "writes the replacement rune for a byte of invalid UTF-8", in: "\xbe", want: "�"},
+			{name: "lower-cases an acronym run with its plural s whole", in: "UserIDs", want: "user_ids"},
+			{name: "lower-cases a plural acronym run before a word", in: "URLsToFetch", want: "urls_to_fetch"},
 		})
 		runShared(t, naming.Snake, (*naming.Caser).Snake, "row_count", "user_id_fetcher")
 	})
@@ -158,6 +178,7 @@ func TestCase(t *testing.T) {
 			{name: "returns an empty string for an empty input", in: "", want: ""},
 			{name: "converts a Pascal-case input", in: "HelloWorld", want: "HELLO_WORLD"},
 			{name: "keeps an acronym run upper-case", in: "HTTPServer", want: "HTTP_SERVER"},
+			{name: "upper-cases an acronym run with its plural s whole", in: "UserIDs", want: "USER_IDS"},
 		})
 		runShared(t, naming.ScreamingSnake, (*naming.Caser).ScreamingSnake, "MAX_ROWS", "USER_ID_FETCHER")
 	})
@@ -169,6 +190,12 @@ func TestCase(t *testing.T) {
 			{name: "returns an empty string for an empty input", in: "", want: ""},
 			{name: "converts a Pascal-case input", in: "HelloWorld", want: "hello-world"},
 			{name: "converts a snake-case input", in: "hello_world", want: "hello-world"},
+			{
+				name: "lower-cases an acronym run with its plural s whole",
+				in:   "ReturnsDistinctIDs",
+				want: "returns-distinct-ids",
+			},
+			{name: "lower-cases a trailing acronym run with its plural s", in: "ListURLs", want: "list-urls"},
 		})
 		runShared(t, naming.Kebab, (*naming.Caser).Kebab, "row-count", "user-id-fetcher")
 	})
@@ -287,7 +314,7 @@ func runShared(
 	t.Run("returns its own output unchanged for inputs of letters with separators", func(t *testing.T) {
 		t.Parallel()
 
-		for _, in := range inputs([]string{"a", "d", "A", "D", "_", "-"}, 5) {
+		for _, in := range inputs([]string{"a", "d", "s", "A", "D", "_", "-"}, 5) {
 			once := fn(in)
 			assert.Equal(t, fn(once), once, "a conversion of the conversion of "+strconv.Quote(in)+" changes nothing")
 		}

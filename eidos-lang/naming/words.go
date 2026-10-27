@@ -9,6 +9,10 @@ import (
 	"unicode/utf8"
 )
 
+// pluralMark is the lower-case s that ends the plural of an acronym run,
+// such as the s of IDs.
+const pluralMark = 's'
+
 // Words splits s into its component words.
 //
 // A boundary falls at:
@@ -22,6 +26,13 @@ import (
 //     "URL" and "Path"
 //   - an upper-case rune after a digit: "Int64Value" splits into "Int64"
 //     and "Value"
+//
+// An acronym run keeps its plural s: no boundary falls before the last
+// upper-case rune of a run that a lower-case s follows where the s ends
+// the input or a rune other than a lower-case letter follows it.
+// "UserIDs" splits into "User" and "IDs", and "URLsToFetch" into "URLs",
+// "To" and "Fetch". "IDsort" splits into "I" and "Dsort", because a
+// lower-case rune follows its s.
 //
 // A digit belongs to the word before it, so "Version2" is one word. A
 // consumer that wants "Version_2" separates the digit first.
@@ -138,7 +149,8 @@ func decodeRuneAt(s string, i int) (rune, int) {
 // for the first word, plus one per separator, plus one per ASCII
 // lower-to-upper or digit-to-upper transition, plus one per ASCII
 // acronym boundary, the last upper-case letter of a run that a
-// lower-case letter follows, as "HTTPServer" has at its "S".
+// lower-case letter other than the plural s of the run follows, as
+// "HTTPServer" has at its "S".
 //
 // The scan stays on the ASCII fast path and does not decode. It counts
 // at least the words of an ASCII input, so [Caser.Words] allocates its
@@ -155,7 +167,7 @@ func countWordStarts(s string) int {
 		case i > 0 && c >= 'A' && c <= 'Z' && (s[i-1] >= 'a' && s[i-1] <= 'z' || s[i-1] >= '0' && s[i-1] <= '9'):
 			n++
 		case i > 0 && i+1 < len(s) && c >= 'A' && c <= 'Z' && s[i-1] >= 'A' && s[i-1] <= 'Z' &&
-			s[i+1] >= 'a' && s[i+1] <= 'z':
+			s[i+1] >= 'a' && s[i+1] <= 'z' && (s[i+1] != pluralMark || !pluralEnd(s, i+2)):
 			n++
 		}
 	}
@@ -164,19 +176,32 @@ func countWordStarts(s string) int {
 
 // breaksBefore reports whether a word boundary falls immediately before
 // cur. prev is the preceding rune, and next is the byte offset just past
-// cur, where the acronym lookahead decodes one rune.
+// cur, where the acronym lookahead decodes up to two runes.
 //
 // A lower-case rune or a digit before an upper-case one breaks, and so
 // does the last upper-case rune of a run that a lower-case rune follows.
+// The plural s of the run, which [pluralEnd] reports, does not break it.
 func breaksBefore(prev, cur rune, s string, next int) bool {
 	if (unicode.IsLower(prev) || unicode.IsDigit(prev)) && unicode.IsUpper(cur) {
 		return true
 	}
 	if unicode.IsUpper(prev) && unicode.IsUpper(cur) && next < len(s) {
-		r, _ := decodeRuneAt(s, next)
-		return unicode.IsLower(r)
+		r, sz := decodeRuneAt(s, next)
+		return unicode.IsLower(r) && (r != pluralMark || !pluralEnd(s, next+sz))
 	}
 	return false
+}
+
+// pluralEnd reports whether a lower-case s after an acronym run is the
+// plural s of the run. end is the byte offset of s just past the s. The
+// s is the plural where it ends s or where a rune other than a
+// lower-case letter follows it.
+func pluralEnd(s string, end int) bool {
+	if end >= len(s) {
+		return true
+	}
+	after, _ := decodeRuneAt(s, end)
+	return !unicode.IsLower(after)
 }
 
 // isSeparator reports whether r is one of the word-separator runes. No

@@ -11,7 +11,10 @@ import "strings"
 // word whose upper-cased form is a recognised initialism (see
 // [CommonInitialisms]) is upper-cased in full, and any other
 // all-upper ASCII word is kept whole as an acronym run, so
-// Pascal("IOReader") returns "IOReader". An upper-case identifier,
+// Pascal("IOReader") returns "IOReader". The plural of a recognised
+// initialism spells the initialism and an s, so Pascal("user_ids")
+// returns "UserIDs", and an acronym run keeps its plural s, so
+// Pascal("ListPDFs") returns "ListPDFs". An upper-case identifier,
 // an upper-case ASCII letter followed by upper-case letters, digits
 // and underscores, is returned unchanged: "FOO" and "STATUS_ACTIVE"
 // keep their spelling. An empty or separator-only input returns "".
@@ -37,11 +40,12 @@ func (c *Caser) Pascal(s string) string {
 
 // Camel converts s to camelCase.
 //
-// The first word is fully lower-cased, so "URLPath" becomes "urlPath"
-// and "HTTPServer" becomes "httpServer". Every later word is
+// The first word is fully lower-cased, so "URLPath" becomes "urlPath",
+// "HTTPServer" becomes "httpServer" and "IDsToFetch" becomes
+// "idsToFetch". Every later word is
 // title-cased by the rules of [Caser.Pascal]: a recognised
-// initialism is upper-cased in full, and an all-upper ASCII word is
-// kept whole in an input that also contains a lower-case letter. In
+// initialism and its plural are upper-cased in full, and an acronym
+// run is kept whole in an input that also contains a lower-case letter. In
 // an input without a lower-case letter no word is an acronym run, so
 // "STATUS_ACTIVE" becomes "statusActive". An input already in the
 // style returns itself and allocates nothing. Any other allocates the
@@ -154,8 +158,8 @@ func matchesJoined(s string, sep byte, up bool) bool {
 
 // matchesTitled reports whether a title-family style's output for s
 // is s itself, under [Caser.writeTitleWord]'s rules per word: a
-// recognised initialism appears in its canonical form, an all-upper
-// ASCII word is kept whole where keepUpper is set, and every other
+// recognised initialism and its plural appear in their canonical form,
+// an acronym run is kept whole where keepUpper is set, and every other
 // word title-cases. The first word lower-cases whole where
 // firstLower is set, which is camel's opening. The words follow each
 // other with no separator. The scan allocates nothing.
@@ -178,12 +182,15 @@ func (c *Caser) matchesTitled(s string, firstLower, keepUpper bool) bool {
 				j += sz
 			}
 		default:
-			if canon, known := c.lookupInitialism(w); known {
+			if canon, plural, known := c.initialismOf(w); known {
+				if plural {
+					w = w[:len(w)-1]
+				}
 				if canon != w {
 					ok = false
 					return false
 				}
-			} else if !keepUpper || !isAllUpperASCII(w) {
+			} else if !keepUpper || !isAcronymRun(w) {
 				r, sz := decodeRuneAt(s, start)
 				if upperRune(r) != r {
 					ok = false

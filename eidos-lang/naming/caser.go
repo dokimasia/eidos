@@ -22,7 +22,9 @@ var ErrInvalidInitialism = errors.New(
 
 // CommonInitialisms is the list of initialisms [Default] recognises:
 // the acronyms the common style guides keep upper-case, so
-// "url_path" converts through Pascal to "URLPath".
+// "url_path" converts through Pascal to "URLPath". The plural of each
+// keeps the initialism upper-case too, so "user_ids" converts through
+// Pascal to "UserIDs".
 //
 // A consumer that needs another set builds a Caser with [New] and
 // [Caser.WithInitialisms].
@@ -160,6 +162,33 @@ func (c *Caser) lookupInitialism(w string) (string, bool) {
 	return canon, ok
 }
 
+// initialismOf returns the canonical spelling of the recognised
+// initialism that w names, and reports whether w names one. A word of a
+// recognised initialism and a final lower-case s, such as "ids", names
+// the plural of the initialism, which plural reports. The initialism
+// itself takes precedence, so "https" names HTTPS and not the plural of
+// HTTP. It allocates nothing for an ASCII word.
+func (c *Caser) initialismOf(w string) (canon string, plural, ok bool) {
+	if canon, ok = c.lookupInitialism(w); ok {
+		return canon, false, true
+	}
+	if n := len(w); n > 1 && w[n-1] == pluralMark {
+		canon, ok = c.lookupInitialism(w[:n-1])
+		return canon, ok, ok
+	}
+	return "", false, false
+}
+
+// isAcronymRun reports whether w is an acronym run: upper-case ASCII
+// letters, and a final lower-case s where the run is a plural, such as
+// "IO" and "PDFs". The caller passes a non-empty w.
+func isAcronymRun(w string) bool {
+	if n := len(w); n > 1 && w[n-1] == pluralMark {
+		w = w[:n-1]
+	}
+	return isAllUpperASCII(w)
+}
+
 // isAllUpperASCII reports whether every byte of s is an upper-case
 // ASCII letter. The caller passes a non-empty s.
 func isAllUpperASCII(s string) bool {
@@ -245,16 +274,20 @@ func withInitialismsUnchecked(words []string) *Caser {
 
 // writeTitleWord writes w's title-cased form into b: the first rune
 // upper-cased and the rest lower-cased. A word naming a recognised
-// initialism is written in its canonical spelling. When keepUpper is
-// set, an all-upper ASCII word is written as it is: an acronym run.
+// initialism is written in its canonical spelling, and a word naming
+// its plural in the canonical spelling and an s. When keepUpper is set,
+// an acronym run that [isAcronymRun] reports is written as it is.
 //
 // [Caser.Pascal] and [Caser.Camel] title-case every word through it.
 func (c *Caser) writeTitleWord(b *strings.Builder, w string, keepUpper bool) {
-	if canon, ok := c.lookupInitialism(w); ok {
+	if canon, plural, ok := c.initialismOf(w); ok {
 		b.WriteString(canon)
+		if plural {
+			b.WriteByte(pluralMark)
+		}
 		return
 	}
-	if keepUpper && isAllUpperASCII(w) {
+	if keepUpper && isAcronymRun(w) {
 		b.WriteString(w)
 		return
 	}

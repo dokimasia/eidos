@@ -7,6 +7,7 @@
 // [Words] is the primitive: it splits an identifier into its
 // component words, recognising camelCase and PascalCase
 // boundaries, acronym runs (HTTPServer becomes HTTP and Server),
+// the plural s of an acronym run (UserIDs becomes User and IDs),
 // and the separator characters (_, -, ., space, slash, tab).
 // Every style is built on it.
 //

@@ -44,6 +44,23 @@ func TestWords(t *testing.T) {
 				in:   "HTTPServer", want: []string{"HTTP", "Server"},
 			},
 			{name: "returns a trailing acronym whole", in: "userID", want: []string{"user", "ID"}},
+			{
+				name: "returns an acronym run with its plural s whole",
+				in:   "UserIDs", want: []string{"User", "IDs"},
+			},
+			{
+				name: "returns an acronym run with its plural s before an upper-case rune",
+				in:   "URLsToFetch", want: []string{"URLs", "To", "Fetch"},
+			},
+			{
+				name: "returns an acronym run with its plural s before a separator",
+				in:   "IDs_list", want: []string{"IDs", "list"},
+			},
+			{name: "joins a digit to a plural acronym run", in: "IDs2", want: []string{"IDs2"}},
+			{
+				name: "splits an acronym run before an s that a lower-case rune follows",
+				in:   "IDsort", want: []string{"I", "Dsort"},
+			},
 			{name: "returns an all-upper identifier whole", in: "HTTP", want: []string{"HTTP"}},
 			{name: "splits at an underscore", in: "hello_world", want: []string{"hello", "world"}},
 			{name: "splits at a hyphen", in: "hello-world", want: []string{"hello", "world"}},
