@@ -1,0 +1,20 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=../../spec.schema.json
+name: waits
+form: mixin
+documentary: true
+claim: >
+  The callable can wait until another call changes the state of its
+  subject, such as a campaign that waits until the leader resigns. A
+  generator of checks does not repeat the callable on one subject without
+  that other call.
+observation: >
+  Nothing. The mixin documents the callable and licenses no check.
+falsifiability: >
+  Nothing turns red, because the mixin licenses no check.
+counterexamples:
+  refused: >
+    a benchmark that repeats the callable on one subject, whose second call
+    waits for a call that the benchmark never makes

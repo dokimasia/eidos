@@ -3901,6 +3901,29 @@ func VoidLifecycleOf(m sdk.Matcher) (VoidLifecycleParams, bool) {
 // voidLifecycleShapeKey is the handle of the key shape.void-lifecycle.shape.
 var voidLifecycleShapeKey meta.Key[bool] = meta.Named[bool]("shape.void-lifecycle.shape")
 
+// Waits is the mixin waits. The callable can wait until another call changes
+// the state of its subject, such as a campaign that waits until the leader
+// resigns. A generator of checks does not repeat the callable on one subject
+// without that other call.
+const Waits Mixin = "waits"
+
+// WaitsParams are the params of the mixin waits.
+type WaitsParams struct{}
+
+// WaitsOf returns the params of the mixin waits on the subject of m, and false
+// where the subject does not have the mixin. It records each read in the
+// invocation of m.
+func WaitsOf(m sdk.Matcher) (WaitsParams, bool) {
+	var p WaitsParams
+	if _, held := sdk.Fact(m, waitsMixinKey); !held {
+		return p, false
+	}
+	return p, true
+}
+
+// waitsMixinKey is the handle of the key shape.waits.mixin.
+var waitsMixinKey meta.Key[bool] = meta.Named[bool]("shape.waits.mixin")
+
 // Watcher is the contract watcher. A watch callable returns a subscription to
 // updates, which the trigger callable causes. The next and stop params name
 // the methods of the returned subscription.
@@ -6133,6 +6156,14 @@ func Specs() []Spec {
 			Detected: true,
 		},
 		{
+			Name:        "waits",
+			Form:        FormMixin,
+			Doc:         "The callable can wait until another call changes the state of its subject, such as a campaign that waits until the leader resigns. A generator of checks does not repeat the callable on one subject without that other call.",
+			Group:       "shape.waits",
+			Key:         "shape.waits.mixin",
+			Documentary: true,
+		},
+		{
 			Name:  "watcher",
 			Form:  FormContract,
 			Doc:   "A watch callable returns a subscription to updates, which the trigger callable causes. The next and stop params name the methods of the returned subscription.",
@@ -6326,4 +6357,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:d40120994f318ad79d266fa3bada0e7e082ce7bddff28b4e4292ec9d9a1044e7
+// shapegen:provenance sha256:cde8c866db2e0c968e589854cebd7d9e1e94d45c1bb8eaa3754a89f0674e0bb1

@@ -167,6 +167,7 @@ var readings = []reading{
 	readerOf(shape.Upserter, shape.UpserterOf),
 	readerOf(shape.Validates, shape.ValidatesOf),
 	readerOf(shape.VoidLifecycle, shape.VoidLifecycleOf),
+	readerOf(shape.Waits, shape.WaitsOf),
 	readerOf(shape.Watcher, shape.WatcherOf),
 	readerOf(shape.Windowed, shape.WindowedOf),
 	readerOf(shape.Workflow, shape.WorkflowOf),
