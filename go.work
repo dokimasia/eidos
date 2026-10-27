@@ -35,21 +35,21 @@ replace go.dokimi.dev/eidos/core v0.10.0 => ./eidos-core
 
 replace go.dokimi.dev/eidos/declarative v0.1.9 => ./eidos-declarative
 
-replace go.dokimi.dev/eidos/lang v0.3.3 => ./eidos-lang
+replace go.dokimi.dev/eidos/lang v0.4.0 => ./eidos-lang
 
-replace go.dokimi.dev/eidos/lang/go v0.6.0 => ./eidos-lang-go
+replace go.dokimi.dev/eidos/lang/go v0.6.1 => ./eidos-lang-go
 
-replace go.dokimi.dev/eidos/lang/graphql v0.1.7 => ./eidos-lang-graphql
+replace go.dokimi.dev/eidos/lang/graphql v0.1.8 => ./eidos-lang-graphql
 
-replace go.dokimi.dev/eidos/lang/java v0.2.7 => ./eidos-lang-java
+replace go.dokimi.dev/eidos/lang/java v0.2.8 => ./eidos-lang-java
 
-replace go.dokimi.dev/eidos/lang/protobuf v0.2.7 => ./eidos-lang-protobuf
+replace go.dokimi.dev/eidos/lang/protobuf v0.2.8 => ./eidos-lang-protobuf
 
-replace go.dokimi.dev/eidos/lang/python v0.1.7 => ./eidos-lang-python
+replace go.dokimi.dev/eidos/lang/python v0.1.8 => ./eidos-lang-python
 
-replace go.dokimi.dev/eidos/lang/rust v0.2.7 => ./eidos-lang-rust
+replace go.dokimi.dev/eidos/lang/rust v0.2.8 => ./eidos-lang-rust
 
-replace go.dokimi.dev/eidos/lang/typescript v0.4.3 => ./eidos-lang-typescript
+replace go.dokimi.dev/eidos/lang/typescript v0.4.4 => ./eidos-lang-typescript
 
 replace go.dokimi.dev/eidos/plugin/shape v0.0.10 => ./eidos-plugin-shape
 

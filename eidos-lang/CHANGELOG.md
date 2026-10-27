@@ -1,5 +1,12 @@
 # go.dokimi.dev/eidos/lang
 
+## 0.4.0
+
+### Minor Changes
+
+- ec6b0c7: Fix `naming.Words` to keep the plural s of an acronym run with the run, so `UserIDs` splits into `User` and `IDs`.
+- ec6b0c7: Spell the plural of an acronym in one case in `naming.Pascal` and `naming.Camel`, so `user_ids` becomes `UserIDs`.
+
 ## 0.3.3
 
 ### Patch Changes

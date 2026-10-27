@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.6.1
+
+### Patch Changes
+
+- 3bf527c: Raise the version of the backend for the plural s of an acronym.
+- Updated dependencies [ec6b0c7]
+  - go.dokimi.dev/eidos/lang@0.4.0
+
 ## 0.6.0
 
 ### Minor Changes

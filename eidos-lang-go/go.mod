@@ -8,7 +8,7 @@ go 1.27.3
 require (
 	github.com/golangci/golines v0.16.0
 	go.dokimi.dev/assert v0.7.0
-	go.dokimi.dev/eidos/lang v0.3.3
+	go.dokimi.dev/eidos/lang v0.4.0
 	go.dokimi.dev/eidos/sdk v0.7.1
 	golang.org/x/mod v0.42.0
 	mvdan.cc/gofumpt v0.12.0
