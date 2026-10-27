@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/core
 
+## 0.10.0
+
+### Minor Changes
+
+- 4f50e1a: Add `MemberPolicy.PackageScopedNames` to keep a name of package visibility unique to the package of its owner in `Bound.MembersOf` and `Bound.Satisfies`.
+
 ## 0.9.0
 
 ### Minor Changes
