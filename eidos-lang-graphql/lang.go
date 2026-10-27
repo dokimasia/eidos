@@ -59,7 +59,7 @@ const Target plugin.Target = "graphql"
 // BackendVersion is the version of the output of the backend. The
 // composition fingerprint folds it, and every change of the rendered output
 // changes it.
-const BackendVersion = "0.2.0"
+const BackendVersion = "0.3.0"
 
 // Syntax returns the comment forms of GraphQL. The frontend reads carriers
 // through them, and the output contract writes the frame of a written file

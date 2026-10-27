@@ -45,7 +45,7 @@ const Target plugin.Target = "protobuf"
 // BackendVersion is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const BackendVersion = "0.2.0"
+const BackendVersion = "0.3.0"
 
 // Syntax returns protobuf's comment forms, which the frontend
 // strips documentation with and the render side would spell

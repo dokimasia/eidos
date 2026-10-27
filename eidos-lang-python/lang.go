@@ -62,7 +62,7 @@ const Target plugin.Target = "python"
 // BackendVersion is the version of the output of the backend. The
 // composition fingerprint folds it, and every change of the rendered output
 // changes it.
-const BackendVersion = "0.2.0"
+const BackendVersion = "0.3.0"
 
 // Syntax returns the comment forms of Python: the line comment # and no
 // block comment. A docstring is a string, and the frontend reads it as
