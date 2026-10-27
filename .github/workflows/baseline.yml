@@ -2,7 +2,11 @@
 #
 # A weekly upgrade of the managed files to the newest release of ergon. The job installs the ergon
 # of the lock, whose ergon init ci upgrade starts the newest release. That release runs ergon init
-# sync, and opens or updates the pull request of the change on the branch ergon-baseline/<base>.
+# sync, and opens or updates the pull request of the change on the branch ergon-baseline/<base>. A
+# repository with the variable ERGON_APP_CLIENT_ID and the secret ERGON_APP_PRIVATE_KEY of a GitHub
+# App with the permission workflows commits the change with a token of the App. GITHUB_TOKEN cannot
+# commit a change of a workflow, and the checks of a pull request of the App start without an
+# approval.
 
 name: Baseline
 
@@ -29,9 +33,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Create a token of the GitHub App
+        id: app
+        if: vars.ERGON_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.ERGON_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ERGON_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
       - uses: ./.github/actions/setup-ergon
       - name: Upgrade ergon
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ steps.app.outputs.token || github.token }}
         run: |
           ergon init ci upgrade
