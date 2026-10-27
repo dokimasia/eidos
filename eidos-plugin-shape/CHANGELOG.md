@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.1.0
+
+### Minor Changes
+
+- 78329d6: Add the documentary mixin `waits` for a callable that can wait until another call changes the state of its subject.
+
 ## 0.0.10
 
 ### Patch Changes
