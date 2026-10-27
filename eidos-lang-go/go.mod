@@ -8,8 +8,8 @@ go 1.27.3
 require (
 	github.com/golangci/golines v0.16.0
 	go.dokimi.dev/assert v0.7.0
-	go.dokimi.dev/eidos/lang v0.3.2
-	go.dokimi.dev/eidos/sdk v0.7.0
+	go.dokimi.dev/eidos/lang v0.3.3
+	go.dokimi.dev/eidos/sdk v0.7.1
 	golang.org/x/mod v0.42.0
 	mvdan.cc/gofumpt v0.12.0
 )
@@ -17,7 +17,7 @@ require (
 require (
 	github.com/dave/dst v0.28.0 // indirect
 	github.com/ldez/structtags v0.6.1 // indirect
-	go.dokimi.dev/eidos/core v0.9.0 // indirect
+	go.dokimi.dev/eidos/core v0.10.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect

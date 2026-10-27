@@ -1,5 +1,19 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.6.0
+
+### Minor Changes
+
+- 2b83b2b: Load each unexported method of an interface, and each unexported method of that name, in a signature-only Go parse.
+
+### Patch Changes
+
+- 2b83b2b: Fix the Go rules to keep an unexported name unique to its package in the member walk.
+- Updated dependencies [c342cf5, 4f50e1a]
+  - go.dokimi.dev/eidos/sdk@0.7.1
+  - go.dokimi.dev/eidos/core@0.10.0
+  - go.dokimi.dev/eidos/lang@0.3.3
+
 ## 0.5.1
 
 ### Patch Changes

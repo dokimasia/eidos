@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.7.1
+
+### Patch Changes
+
+- c342cf5: Copy the documentation of the unexported methods that the signature depth loads.
+- Updated dependencies [4f50e1a]
+  - go.dokimi.dev/eidos/core@0.10.0
+
 ## 0.7.0
 
 ### Minor Changes
