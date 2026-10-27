@@ -18,7 +18,7 @@ require (
 	go.dokimi.dev/eidos/lang/python v0.1.8
 	go.dokimi.dev/eidos/lang/rust v0.2.8
 	go.dokimi.dev/eidos/lang/typescript v0.4.4
-	go.dokimi.dev/eidos/plugin/shape v0.0.10
+	go.dokimi.dev/eidos/plugin/shape v0.1.0
 	go.dokimi.dev/eidos/sdk v0.7.1
 	go.stealthscale.io/cli v0.7.0
 )

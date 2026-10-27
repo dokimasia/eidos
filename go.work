@@ -51,6 +51,6 @@ replace go.dokimi.dev/eidos/lang/rust v0.2.8 => ./eidos-lang-rust
 
 replace go.dokimi.dev/eidos/lang/typescript v0.4.4 => ./eidos-lang-typescript
 
-replace go.dokimi.dev/eidos/plugin/shape v0.0.10 => ./eidos-plugin-shape
+replace go.dokimi.dev/eidos/plugin/shape v0.1.0 => ./eidos-plugin-shape
 
 replace go.dokimi.dev/eidos/sdk v0.7.1 => ./eidos-sdk
