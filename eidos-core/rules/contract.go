@@ -282,6 +282,15 @@ type MemberPolicy struct {
 	// record nothing, because an embedded interface declares no
 	// field.
 	EmbedsAreFields bool
+	// PackageScopedNames makes the name of a field or a method of
+	// package visibility unique to the package of its owner, as Go makes
+	// an unexported name unique to its package. The walk settles such a
+	// name apart from the same name of another package. [Bound.Satisfies]
+	// matches such a member of an interface only to a member whose owner
+	// is in the package of the owner of the interface member. The name of
+	// an embedded field is not scoped, because an embed has no
+	// visibility.
+	PackageScopedNames bool
 }
 
 // Registry maps each language to its [SourceRules].

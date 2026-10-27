@@ -151,6 +151,74 @@ func TestMembers(t *testing.T) {
 			assert.True(t, set.Complete(), "and that is no gap")
 		})
 
+		t.Run("takes the shallowest of two promotions at two depths", func(t *testing.T) {
+			t.Parallel()
+
+			inner := coretest.Struct(svcPath, "Inner")
+			inner.Fields = []*node.Field{field(svcPath, "Inner", "id", builtin(strSpelling))}
+			left := coretest.Struct(svcPath, "Left")
+			left.Fields = []*node.Field{field(svcPath, "Left", "id", builtin(intSpelling))}
+			right := coretest.Struct(svcPath, "Right")
+			right.Embeds = []*node.Embed{embedding(svcPath, "Inner")}
+			both := coretest.Struct(svcPath, "Both")
+			both.Embeds = []*node.Embed{embedding(svcPath, "Left"), embedding(svcPath, "Right")}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, inner, left, right, both)))
+			set, _ := b.MembersOf(both)
+			assert.Equal(t, names(set), []string{"id"}, "one id promotes")
+			assert.Equal(t, set.Members[0].Owner, left.ID,
+				"the id of Left one embed down shadows the id of Inner two embeds down")
+		})
+
+		scopes := []struct {
+			name           string
+			giveVisibility symbol.Visibility
+			giveScoped     bool
+			want           []string
+		}{
+			{
+				name:           "keeps two names of package visibility from two packages apart under PackageScopedNames",
+				giveVisibility: symbol.VisibilityPackage,
+				giveScoped:     true,
+				want:           []string{"run", "run"},
+			},
+			{
+				name:           "cancels two names of package visibility from two packages without PackageScopedNames",
+				giveVisibility: symbol.VisibilityPackage,
+				want:           []string{},
+			},
+			{
+				name:           "cancels two public names from two packages under PackageScopedNames",
+				giveVisibility: symbol.VisibilityPublic,
+				giveScoped:     true,
+				want:           []string{},
+			},
+		}
+		for _, tt := range scopes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				local := method(svcPath, "Left", "run")
+				local.Visibility = tt.giveVisibility
+				left := coretest.Struct(svcPath, "Left")
+				left.Methods = []*node.Method{local}
+				foreign := method(depPath, "Right", "run")
+				foreign.Visibility = tt.giveVisibility
+				right := coretest.Struct(depPath, "Right")
+				right.Methods = []*node.Method{foreign}
+				both := coretest.Struct(svcPath, "Both")
+				both.Embeds = []*node.Embed{embedding(svcPath, "Left"), embedding(depPath, "Right")}
+				v, _, _ := viewOver(t, coretest.Frozen(t,
+					coretest.Package(svcPath, left, both), coretest.Package(depPath, right)))
+				b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+					Contributes: []rules.Contribution{rules.ContributesEmbeds}, Shadowing: rules.ShadowPromote,
+					PackageScopedNames: tt.giveScoped,
+				}}, v, nil)
+				set, _ := b.MembersOf(both)
+				assert.Equal(t, names(set), tt.want, "the methods that the two embeds promote")
+				assert.True(t, set.Complete(), "the walk follows both embeds")
+			})
+		}
+
 		t.Run("settles under the other three rules", func(t *testing.T) {
 			t.Parallel()
 

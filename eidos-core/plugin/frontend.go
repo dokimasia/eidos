@@ -23,8 +23,12 @@ const (
 	// DepthSignatures loads the exported shape alone: no bodies,
 	// no unexported members. An unexported type whose members an
 	// exported type promotes is part of that shape, so it loads with
-	// its exported members. The same bytes at the two depths
-	// produce two graphs and key differently.
+	// its exported members. An unexported method of an interface that
+	// the depth loads is part of the shape too, because a type
+	// implements the interface only where it has the method. So is the
+	// method of that name that a type of the same package declares. The
+	// same bytes at the two depths produce two graphs and key
+	// differently.
 	DepthSignatures
 )
 

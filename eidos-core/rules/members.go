@@ -18,8 +18,12 @@ import (
 // for every contributor that yielded nothing. Each call of
 // [Bound.MembersOf] returns lists of its own.
 type MemberSet struct {
-	Members []Member // grouped by name in the order each name first arrives, the declared names first
-	Gaps    []Gap    // the contributors the walk could not follow, then the conflicts; nil for a complete set
+	// Members are grouped by name in the order each name first arrives,
+	// the declared names first. The members of a name that
+	// [MemberPolicy.PackageScopedNames] scopes form a group apart from the
+	// same name of another package.
+	Members []Member
+	Gaps    []Gap // the contributors the walk could not follow, then the conflicts; nil for a complete set
 }
 
 // Complete reports whether every contributor yielded. It allocates
@@ -175,6 +179,11 @@ func (a *arrival) signature() string {
 // chain is where a name's arrivals start and currently end.
 type chain struct{ first, last int }
 
+// nameKey is the key under which the walk files the arrivals of a name.
+// It has the name, and the package of the owner of a name that the policy
+// scopes to its package.
+type nameKey struct{ pkg, name string }
+
 // span is a range of one of the flat lists of a walk: the bases of a type,
 // or a linearization.
 type span struct{ start, end int }
@@ -209,8 +218,14 @@ type walk struct {
 	b        Bound
 	root     symbol.Identity
 	arrivals []arrival
+	// names has the chain of each name that the policy does not scope,
+	// keyed by the name alone, because a map keyed by a string takes the
+	// fast path of the runtime. scoped has the chain of each scoped name.
+	// order has the index of the first arrival of each name, in the order
+	// in which the names first arrive.
 	names    map[string]chain
-	order    []string
+	scoped   map[nameKey]chain
+	order    []int
 	gaps     []Gap
 	visiting map[symbol.Identity]bool
 	// linear reports that the root settles under [ShadowLinearise], so
@@ -228,7 +243,7 @@ type walk struct {
 // walks pools the walks of finished calls, with their storage.
 var walks = sync.Pool{New: func() any {
 	return &walk{
-		names: map[string]chain{}, visiting: map[symbol.Identity]bool{},
+		names: map[string]chain{}, scoped: map[nameKey]chain{}, visiting: map[symbol.Identity]bool{},
 		lineages: map[symbol.Identity]lineage{},
 	}
 }}
@@ -250,8 +265,8 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 	w.linear = policy.Shadowing == ShadowLinearise
 	w.visit(root, policy, b.source, nil, 0, false, nil)
 	set := MemberSet{Members: make([]Member, 0, len(w.order))}
-	for _, name := range w.order {
-		set.Members = w.settle(set.Members, name, policy, root.iface)
+	for _, head := range w.order {
+		set.Members = w.settle(set.Members, head, policy, root.iface)
 	}
 	// Settling files conflict gaps of its own, so the gaps are read
 	// after it, not before. The set keeps a copy, because the walk's
@@ -268,6 +283,7 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 func (w *walk) release() {
 	clear(w.arrivals)
 	clear(w.names)
+	clear(w.scoped)
 	clear(w.order)
 	clear(w.gaps)
 	clear(w.visiting)
@@ -275,8 +291,8 @@ func (w *walk) release() {
 	clear(w.lineages)
 	clear(w.lins)
 	*w = walk{
-		arrivals: w.arrivals[:0], names: w.names, order: w.order[:0], gaps: w.gaps[:0], visiting: w.visiting,
-		bases: w.bases[:0], lineages: w.lineages, lins: w.lins[:0], seqs: w.seqs[:0],
+		arrivals: w.arrivals[:0], names: w.names, scoped: w.scoped, order: w.order[:0], gaps: w.gaps[:0],
+		visiting: w.visiting, bases: w.bases[:0], lineages: w.lineages, lins: w.lins[:0], seqs: w.seqs[:0],
 	}
 	walks.Put(w)
 }
@@ -286,7 +302,8 @@ func (w *walk) release() {
 // it. The members record in list order: fields, embedded fields
 // where the policy records them, then methods. A field or a method
 // whose name is computed records under its name as written, such as
-// TypeScript's [Symbol.iterator]. A walk under [ShadowLinearise]
+// TypeScript's [Symbol.iterator]. A field or a method records under the
+// key that [keyOf] returns under the policy. A walk under [ShadowLinearise]
 // records the target of each contributor with a target as a base of the
 // type, once per type, before it descends. via is the contributor that
 // reached the type, nil at the root.
@@ -303,13 +320,13 @@ func (w *walk) visit(
 			continue
 		}
 		m := Member{Symbol: f, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-		w.record(f.Name, m, via)
+		w.record(keyOf(f.Name, f.Visibility, t.id.Package, policy.PackageScopedNames), m, via)
 	}
 	if policy.EmbedsAreFields && !t.iface {
 		for _, e := range t.embeds {
 			if e != nil && e.ID.Name != "" {
 				m := Member{Symbol: e, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-				w.record(e.ID.Name, m, via)
+				w.record(nameKey{name: e.ID.Name}, m, via)
 			}
 		}
 	}
@@ -318,7 +335,7 @@ func (w *walk) visit(
 			continue
 		}
 		mem := Member{Symbol: m, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-		w.record(m.Name, mem, via)
+		w.record(keyOf(m.Name, m.Visibility, t.id.Package, policy.PackageScopedNames), mem, via)
 	}
 	if _, met := w.lineages[t.id]; w.linear && !met {
 		start := len(w.bases)
@@ -457,7 +474,7 @@ func (w *walk) descendAlias(
 			return
 		}
 		if !defined {
-			w.recordOwn(at, args, path, depth+1, viaOptional, ref)
+			w.recordOwn(at, args, path, depth+1, viaOptional, ref, policy.PackageScopedNames)
 		}
 		defined = defined || at.Defined
 		under = Substitute(at.Target, at.TypeParams, args)
@@ -557,10 +574,12 @@ func (w *walk) targetOf(under *node.TypeRef, defined bool, source SourceRules) (
 // package of the alias declares outside every type with the name of the
 // alias as their owner, as Go declares the methods of a defined type. A
 // contributor with type arguments binds them into a copy of each method.
-// recordOwn records nothing for an alias whose package the view does not
-// contain.
+// Each method records under the key that [keyOf] returns, and scoped is
+// [MemberPolicy.PackageScopedNames] of the policy of the alias. recordOwn
+// records nothing for an alias whose package the view does not contain.
 func (w *walk) recordOwn(
 	alias *node.Alias, args []*node.TypeRef, path []symbol.Identity, depth int, viaOptional bool, via *node.TypeRef,
+	scoped bool,
 ) {
 	pkg, _ := w.b.view.PackageOf(alias.ID)
 	for m := range node.DeclsOf[*node.Method](pkg) {
@@ -574,8 +593,34 @@ func (w *walk) recordOwn(
 			m = &c
 		}
 		member := Member{Symbol: m, Owner: alias.ID, Through: path, Depth: depth, ViaOptional: viaOptional}
-		w.record(m.Name, member, via)
+		w.record(keyOf(m.Name, m.Visibility, alias.ID.Package, scoped), member, via)
 	}
+}
+
+// keyOf returns the key of a name of the visibility vis whose owner is in
+// the package pkg. The key has the package where scoped is true and the
+// visibility is the package's.
+func keyOf(name string, vis symbol.Visibility, pkg string, scoped bool) nameKey {
+	if scoped && vis == symbol.VisibilityPackage {
+		return nameKey{pkg: pkg, name: name}
+	}
+	return nameKey{name: name}
+}
+
+// nameOf returns the key of the name of a member, as [keyOf] returns it for
+// a field or a method. It returns the zero key for any other member.
+func nameOf(m *Member, scoped bool) nameKey {
+	switch d := m.Symbol.(type) {
+	case *node.Field:
+		if d != nil {
+			return keyOf(d.Name, d.Visibility, m.Owner.Package, scoped)
+		}
+	case *node.Method:
+		if d != nil {
+			return keyOf(d.Name, d.Visibility, m.Owner.Package, scoped)
+		}
+	}
+	return nameKey{}
 }
 
 // namedUnder returns the named reference a structural one wraps in
@@ -632,25 +677,37 @@ func bind(inner membered, ref *node.TypeRef) (membered, bool) {
 	return out, true
 }
 
-// record files one arrival under its name.
-func (w *walk) record(name string, m Member, via *node.TypeRef) {
+// record files one arrival under the key of its name.
+func (w *walk) record(key nameKey, m Member, via *node.TypeRef) {
 	at := len(w.arrivals)
 	w.arrivals = append(w.arrivals, arrival{member: m, via: via, next: -1})
-	c, met := w.names[name]
+	var (
+		c   chain
+		met bool
+	)
+	if key.pkg == "" {
+		c, met = w.names[key.name]
+	} else {
+		c, met = w.scoped[key]
+	}
 	if met {
 		w.arrivals[c.last].next = at
 		c.last = at
 	} else {
 		c = chain{first: at, last: at}
-		w.order = append(w.order, name)
+		w.order = append(w.order, at)
 	}
-	w.names[name] = c
+	if key.pkg == "" {
+		w.names[key.name] = c
+	} else {
+		w.scoped[key] = c
+	}
 }
 
-// each calls fn for every arrival of a name, in arrival order,
-// stopping early when fn reports false.
-func (w *walk) each(name string, fn func(a *arrival) bool) {
-	for i := w.names[name].first; i >= 0; i = w.arrivals[i].next {
+// each calls fn for every arrival of the name whose first arrival is at
+// the index head, in arrival order, stopping early when fn reports false.
+func (w *walk) each(head int, fn func(a *arrival) bool) {
+	for i := head; i >= 0; i = w.arrivals[i].next {
 		if !fn(&w.arrivals[i]) {
 			return
 		}
@@ -663,16 +720,17 @@ func (w *walk) each(name string, fn func(a *arrival) bool) {
 // with one signature arriving twice is one member. Under
 // [ShadowLinearise] the arrivals from the type that comes first in the C3
 // linearization of the root take the name, and a hierarchy without a
-// linearization takes the nearest arrival.
-func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool) []Member {
+// linearization takes the nearest arrival. head is the index of the first
+// arrival of the name, as each function of the settle takes it.
+func (w *walk) settle(dst []Member, head int, policy MemberPolicy, iface bool) []Member {
 	if iface {
-		w.dedupe(name)
+		w.dedupe(head)
 	}
 	if policy.Shadowing == ShadowOverride {
-		return w.nearestPerSignature(dst, name)
+		return w.nearestPerSignature(dst, head)
 	}
 	count, shallowest := 0, -1
-	w.each(name, func(a *arrival) bool {
+	w.each(head, func(a *arrival) bool {
 		if !a.dropped {
 			count++
 			if shallowest < 0 || a.member.Depth < shallowest {
@@ -686,21 +744,21 @@ func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool
 	}
 	if count == 1 || shallowest == 0 {
 		// The one arrival, or every declared one, takes the name.
-		return w.appendAt(dst, name, shallowest)
+		return w.appendAt(dst, head, shallowest)
 	}
 	switch policy.Shadowing {
 	case ShadowMerge:
-		return w.appendAt(dst, name, -1)
+		return w.appendAt(dst, head, -1)
 	case ShadowLinearise:
 		if mro, ordered := w.linearise(w.root); ordered {
-			return w.appendFirstOwner(dst, name, w.lins[mro.start:mro.end])
+			return w.appendFirstOwner(dst, head, w.lins[mro.start:mro.end])
 		}
-		return w.appendFirstAt(dst, name, shallowest)
+		return w.appendFirstAt(dst, head, shallowest)
 	case ShadowPromote:
-		if w.countAt(name, shallowest) != 1 {
+		if w.countAt(head, shallowest) != 1 {
 			return dst // two at one depth cancel both
 		}
-		return w.appendAt(dst, name, shallowest)
+		return w.appendAt(dst, head, shallowest)
 	default:
 		return dst
 	}
@@ -711,9 +769,9 @@ func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool
 // the first of those in arrival order. Each overload keeps its nearest
 // declaration. A field and an embedded field have no signature, so
 // fields settle by name alone.
-func (w *walk) nearestPerSignature(dst []Member, name string) []Member {
+func (w *walk) nearestPerSignature(dst []Member, head int) []Member {
 	var nearest []int
-	for i := w.names[name].first; i >= 0; i = w.arrivals[i].next {
+	for i := head; i >= 0; i = w.arrivals[i].next {
 		a := &w.arrivals[i]
 		if a.dropped {
 			continue
@@ -745,16 +803,16 @@ func (w *walk) nearestPerSignature(dst []Member, name string) []Member {
 // that the walk reaches twice, as the shared base of a diamond, counts
 // once. The owner of every arrival is in mro, because the walk records
 // each contributor that it follows as a base of its host.
-func (w *walk) appendFirstOwner(dst []Member, name string, mro []symbol.Identity) []Member {
-	first, rank := w.names[name].first, len(mro)
-	for i := w.names[name].first; i >= 0; i = w.arrivals[i].next {
+func (w *walk) appendFirstOwner(dst []Member, head int, mro []symbol.Identity) []Member {
+	first, rank := head, len(mro)
+	for i := head; i >= 0; i = w.arrivals[i].next {
 		a := &w.arrivals[i]
 		if r := slices.Index(mro, a.member.Owner); !a.dropped && r < rank {
 			first, rank = i, r
 		}
 	}
 	winner := w.arrivals[first].member
-	w.each(name, func(a *arrival) bool {
+	w.each(head, func(a *arrival) bool {
 		if !a.dropped && a.member.Owner == winner.Owner && slices.Equal(a.member.Through, winner.Through) {
 			dst = append(dst, a.member)
 		}
@@ -848,8 +906,8 @@ func (w *walk) mergeHead() (head symbol.Identity, found, left bool) {
 
 // appendFirstAt appends a name's first kept arrival at one depth to
 // dst.
-func (w *walk) appendFirstAt(dst []Member, name string, depth int) []Member {
-	w.each(name, func(a *arrival) bool {
+func (w *walk) appendFirstAt(dst []Member, head, depth int) []Member {
+	w.each(head, func(a *arrival) bool {
 		if a.dropped || a.member.Depth != depth {
 			return true
 		}
@@ -861,8 +919,8 @@ func (w *walk) appendFirstAt(dst []Member, name string, depth int) []Member {
 
 // appendAt appends a name's kept arrivals at one depth to dst, or
 // every kept arrival for a negative depth.
-func (w *walk) appendAt(dst []Member, name string, depth int) []Member {
-	w.each(name, func(a *arrival) bool {
+func (w *walk) appendAt(dst []Member, head, depth int) []Member {
+	w.each(head, func(a *arrival) bool {
 		if !a.dropped && (depth < 0 || a.member.Depth == depth) {
 			dst = append(dst, a.member)
 		}
@@ -872,9 +930,9 @@ func (w *walk) appendAt(dst []Member, name string, depth int) []Member {
 }
 
 // countAt counts a name's kept arrivals at one depth.
-func (w *walk) countAt(name string, depth int) int {
+func (w *walk) countAt(head, depth int) int {
 	n := 0
-	w.each(name, func(a *arrival) bool {
+	w.each(head, func(a *arrival) bool {
 		if !a.dropped && a.member.Depth == depth {
 			n++
 		}
@@ -887,15 +945,15 @@ func (w *walk) countAt(name string, depth int) int {
 // and files a conflict for a later arrival whose signature differs
 // while both are stated. The conflict names the contributor the
 // later arrival came by and the host whose list contains it.
-func (w *walk) dedupe(name string) {
-	head := &w.arrivals[w.names[name].first]
-	for i := head.next; i >= 0; i = w.arrivals[i].next {
+func (w *walk) dedupe(head int) {
+	first := &w.arrivals[head]
+	for i := first.next; i >= 0; i = w.arrivals[i].next {
 		a := &w.arrivals[i]
-		if a.signature() == head.signature() && a.signature() != "" {
+		if a.signature() == first.signature() && a.signature() != "" {
 			a.dropped = true
 			continue
 		}
-		if a.signature() != "" && head.signature() != "" {
+		if a.signature() != "" && first.signature() != "" {
 			w.gaps = append(w.gaps, Gap{Host: w.hostOf(a), Contributor: a.via, Reason: GapConflict})
 			a.dropped = true
 		}

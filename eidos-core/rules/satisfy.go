@@ -53,7 +53,10 @@ func (s Satisfaction) Satisfied() bool {
 // value of the type does not have counts as missing. It reports false
 // where t or iface does not name a declaration of the view, where iface
 // names no interface, and where the rules of the interface report that it
-// constrains a type set.
+// constrains a type set. Where the member policy of the rules sets
+// [MemberPolicy.PackageScopedNames], a member of the interface of package
+// visibility matches only a member whose owner is in the package of the
+// owner of the interface member.
 //
 // # Allocation contract
 //
@@ -171,14 +174,15 @@ func (b Bound) compare(
 	}
 	typ, _ := memberedOf(sym)
 	refined, refines := b.rulesOf(typ.id.Lang).(SatisfactionRules)
+	scoped := b.source.Members().PackageScopedNames
 	var s Satisfaction
 	for _, w := range want {
-		name := memberName(w.member.Symbol)
+		name := nameOf(&w.member, scoped)
 		var first *Member
 		matched := false
 		for n := range got.Members {
 			c := &got.Members[n]
-			if memberName(c.Symbol) != name {
+			if nameOf(c, scoped) != name {
 				continue
 			}
 			if m, isMethod := c.Symbol.(*node.Method); isMethod && !pointer && refines &&
@@ -234,20 +238,4 @@ func memberKey(sym symbol.Symbol, params []*node.TypeParam, args []*node.TypeRef
 	default:
 		return false, "", false
 	}
-}
-
-// memberName returns the name of a member: a method's or a field's, and
-// empty for any other member.
-func memberName(sym symbol.Symbol) string {
-	switch m := sym.(type) {
-	case *node.Method:
-		if m != nil {
-			return m.Name
-		}
-	case *node.Field:
-		if m != nil {
-			return m.Name
-		}
-	}
-	return ""
 }

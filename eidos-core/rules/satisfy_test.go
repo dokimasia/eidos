@@ -32,6 +32,20 @@ const (
 	intBoxName    = "IntBox"
 	valueName     = "Value"
 	typeParamName = "T"
+	labelledName  = "Labelled"
+	labelName     = "Label"
+	labelField    = "label"
+)
+
+// The names of the fixture of a method of package visibility. Sealed
+// declares seal beside Get, and Sealer, Forger and Holder are the
+// candidates that [sealing] describes.
+const (
+	sealedName = "Sealed"
+	sealerName = "Sealer"
+	forgerName = "Forger"
+	holderName = "Holder"
+	sealName   = "seal"
 )
 
 // satisfyAllocs is the comparison of the member set of Full with the
@@ -63,6 +77,8 @@ func TestSatisfy(t *testing.T) {
 
 	g := coretest.Frozen(t, satisfying())
 	contract := named(satPath, contractName, symbol.KindInterface)
+	sealedGraph := coretest.Frozen(t, sealing()...)
+	sealed := named(satPath, sealedName, symbol.KindInterface)
 
 	t.Run("Satisfies", func(t *testing.T) {
 		t.Parallel()
@@ -106,6 +122,45 @@ func TestSatisfy(t *testing.T) {
 			})
 		}
 
+		scoped := []struct {
+			name        string
+			give        *node.TypeRef
+			giveScoped  bool
+			wantMissing []string
+		}{
+			{
+				name:       "returns no miss for a type of the package of a method of package visibility",
+				give:       named(satPath, sealerName, symbol.KindStruct),
+				giveScoped: true,
+			},
+			{
+				name:        "returns the method of package visibility that a type of another package declares as missing",
+				give:        named(depPath, forgerName, symbol.KindStruct),
+				giveScoped:  true,
+				wantMissing: []string{sealName},
+			},
+			{
+				name:       "returns no miss for a type of another package that embeds the interface",
+				give:       named(depPath, holderName, symbol.KindStruct),
+				giveScoped: true,
+			},
+			{
+				name: "returns no miss for a type of another package without PackageScopedNames",
+				give: named(depPath, forgerName, symbol.KindStruct),
+			},
+		}
+		for _, tt := range scoped {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, compared := scopedSatisfier(t, sealedGraph, tt.giveScoped).Satisfies(tt.give, sealed)
+				assert.True(t, compared, "the reference and the interface name declarations")
+				expect.Equal(t, memberNames(s.Missing), tt.wantMissing, "the missing members")
+				expect.Empty(t, s.Mismatched, "no member has another signature")
+				expect.Empty(t, s.Gaps, "both walks are complete")
+			})
+		}
+
 		t.Run("substitutes the type arguments of a generic interface", func(t *testing.T) {
 			t.Parallel()
 
@@ -114,6 +169,17 @@ func TestSatisfy(t *testing.T) {
 			s, compared := satisfier(t, g).Satisfies(named(satPath, intBoxName, symbol.KindStruct), boxed)
 			assert.True(t, compared, "the reference and the interface name declarations")
 			assert.True(t, s.Satisfied(), "Value() T at int is the Value() int of IntBox")
+		})
+
+		t.Run("returns no miss for a type with the field of an interface", func(t *testing.T) {
+			t.Parallel()
+
+			s, compared := satisfier(t, g).Satisfies(named(satPath, labelName, symbol.KindStruct),
+				named(satPath, labelledName, symbol.KindInterface))
+			assert.True(t, compared, "the reference and the interface name declarations")
+			expect.Empty(t, s.Missing, "Label has the field label of Labelled")
+			expect.Empty(t, s.Mismatched, "the field label of Label has the type of the field of Labelled")
+			expect.Empty(t, s.Gaps, "both walks are complete")
 		})
 
 		t.Run("reports false for an interface that constrains a type set", func(t *testing.T) {
@@ -142,6 +208,15 @@ func TestSatisfy(t *testing.T) {
 				coretest.ID(satPath, fullName, symbol.KindStruct),
 				coretest.ID(satPath, pointeredName, symbol.KindStruct),
 			}, "Full and the pointer to Pointered satisfy Contract")
+		})
+
+		t.Run("returns the types that have the method of package visibility from its package", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Permutation(t, scopedSatisfier(t, sealedGraph, true).Implementers(sealed), []symbol.Identity{
+				coretest.ID(satPath, sealerName, symbol.KindStruct),
+				coretest.ID(depPath, holderName, symbol.KindStruct),
+			}, "Sealer declares seal in the package of Sealed, and Holder embeds Sealed")
 		})
 
 		t.Run("returns nil for an interface that constrains a type set", func(t *testing.T) {
@@ -198,11 +273,23 @@ func satisfier(tb assert.TB, g *store.Graph) rules.Bound {
 	return rules.NewBound(refining{scripted()}, v, nil)
 }
 
+// scopedSatisfier binds the refining rules under the member policy of Go to
+// a view over the graph. scoped sets PackageScopedNames of the policy.
+func scopedSatisfier(tb assert.TB, g *store.Graph, scoped bool) rules.Bound {
+	tb.Helper()
+
+	v, _, _ := viewOver(tb, g)
+	return rules.NewBound(refining{policy{scripted(), rules.MemberPolicy{
+		Contributes: []rules.Contribution{rules.ContributesEmbeds}, Shadowing: rules.ShadowPromote,
+		EmbedsAreFields: true, PackageScopedNames: scoped,
+	}}}, v, nil)
+}
+
 // satisfying builds the satisfaction fixture. Contract has the methods Get
 // and Put. Full has both, Partial has Get alone, Wrong has a Get that
 // returns an int, and Pointered has a Put that only a pointer has. Number
 // constrains a type set. Boxed[T] has Value() T, and IntBox has Value()
-// int.
+// int. Labelled has the string field label, and so does Label.
 func satisfying() *node.Package {
 	contract := coretest.Interface(satPath, contractName)
 	contract.Methods = []*node.Method{method(satPath, contractName, getName), method(satPath, contractName, putName)}
@@ -230,7 +317,37 @@ func satisfying() *node.Package {
 	intValue.Returns = []*node.Return{{Type: builtin(intSpelling)}}
 	intBox := coretest.Struct(satPath, intBoxName)
 	intBox.Methods = []*node.Method{intValue}
-	return coretest.Package(satPath, contract, full, partial, wrong, pointered, number, boxed, intBox)
+	labelled := iface(satPath, labelledName)
+	labelled.Fields = []*node.Field{field(satPath, labelledName, labelField, builtin(strSpelling))}
+	label := coretest.Struct(satPath, labelName)
+	label.Fields = []*node.Field{field(satPath, labelName, labelField, builtin(strSpelling))}
+	return coretest.Package(satPath, contract, full, partial, wrong, pointered, number, boxed, intBox, labelled, label)
+}
+
+// sealing builds the fixture of a method of package visibility. Sealed
+// has the methods Get and seal. Sealer of the package of Sealed declares
+// both. Forger of another package declares both, and Holder of the other
+// package embeds Sealed. The embedded field Sealed of Holder has the
+// identity that the load assigns to it.
+func sealing() []*node.Package {
+	sealed := coretest.Interface(satPath, sealedName)
+	sealed.Methods = []*node.Method{method(satPath, sealedName, getName), sealOf(satPath, sealedName)}
+	sealer := coretest.Struct(satPath, sealerName)
+	sealer.Methods = []*node.Method{method(satPath, sealerName, getName), sealOf(satPath, sealerName)}
+	forger := coretest.Struct(depPath, forgerName)
+	forger.Methods = []*node.Method{method(depPath, forgerName, getName), sealOf(depPath, forgerName)}
+	embed := embedOf(satPath, sealedName, symbol.KindInterface)
+	embed.ID = coretest.MemberID(depPath, holderName, sealedName, symbol.KindEmbed)
+	holder := coretest.Struct(depPath, holderName)
+	holder.Embeds = []*node.Embed{embed}
+	return []*node.Package{coretest.Package(satPath, sealed, sealer), coretest.Package(depPath, forger, holder)}
+}
+
+// sealOf returns the method seal of package visibility on a host.
+func sealOf(path, host string) *node.Method {
+	m := method(path, host, sealName)
+	m.Visibility = symbol.VisibilityPackage
+	return m
 }
 
 // memberNames returns the names of members, and nil for none.
