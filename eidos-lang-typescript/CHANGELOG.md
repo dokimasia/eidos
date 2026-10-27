@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/lang/typescript
 
+## 0.4.4
+
+### Patch Changes
+
+- 3bf527c: Raise the version of the backend for the plural s of an acronym.
+- Updated dependencies [ec6b0c7]
+  - go.dokimi.dev/eidos/lang@0.4.0
+
 ## 0.4.3
 
 ### Patch Changes
