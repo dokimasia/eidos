@@ -58,13 +58,16 @@ func (Rules) Lang() symbol.Lang { return golang.Lang }
 // embedded type's members promote unless a shallower one shadows
 // them, two at one depth cancelling both. A struct's embedded field
 // is itself a member, named by its type's bare name, so it shadows
-// a deeper member of that name. Every policy shares one contribution
-// list, so Members allocates nothing.
+// a deeper member of that name. An unexported name is unique to its
+// package, so the policy scopes a name of package visibility to the
+// package of its owner. Every policy shares one contribution list, so
+// Members allocates nothing.
 func (Rules) Members() rules.MemberPolicy {
 	return rules.MemberPolicy{
-		Contributes:     contributions,
-		Shadowing:       rules.ShadowPromote,
-		EmbedsAreFields: true,
+		Contributes:        contributions,
+		Shadowing:          rules.ShadowPromote,
+		EmbedsAreFields:    true,
+		PackageScopedNames: true,
 	}
 }
 

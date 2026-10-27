@@ -195,6 +195,7 @@ func TestRules(t *testing.T) {
 			assert.Equal(t, policy.Shadowing, rules.ShadowPromote, "a shallower member shadows a deeper one")
 			assert.Equal(t, policy.Depth, 0, "to the kernel's default depth")
 			assert.True(t, policy.EmbedsAreFields, "an embedded field is a member")
+			assert.True(t, policy.PackageScopedNames, "an unexported name is unique to its package")
 		})
 
 		t.Run("returns a policy that records an embedded field beside the members it promotes", func(t *testing.T) {

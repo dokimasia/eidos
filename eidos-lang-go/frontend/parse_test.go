@@ -1073,6 +1073,98 @@ func TestParse(t *testing.T) {
 			expect.Equal(t, common.Methods[0].Name, "Log", "the kept struct folds its exported method")
 		})
 
+		sealed := []struct {
+			name        string
+			giveSrc     string
+			wantMethods map[string][]string
+		}{
+			{
+				name:        "lowers the unexported method of an exported interface at signature depth",
+				giveSrc:     "package p\n\ntype TB interface {\n\tLog()\n\tprivate()\n}\n",
+				wantMethods: map[string][]string{"TB": {"Log", "private"}},
+			},
+			{
+				name: "keeps the unexported method of a struct that an interface of its package declares at signature depth",
+				giveSrc: "package p\n\ntype TB interface {\n\tLog()\n\tprivate()\n}\n\ntype T struct{ common }\n\n" +
+					"type common struct{}\n\nfunc (c *common) Log() {}\n\nfunc (c *common) private() {}\n\n" +
+					"func (c *common) frame() {}\n",
+				wantMethods: map[string][]string{"TB": {"Log", "private"}, "T": {}, "common": {"Log", "private"}},
+			},
+			{
+				name: "keeps the unexported method that a kept interface declares at signature depth",
+				giveSrc: "package p\n\ntype Reader interface{ reader }\n\ntype reader interface{ read() }\n\n" +
+					"type File struct{}\n\nfunc (File) read() {}\n",
+				wantMethods: map[string][]string{"Reader": {}, "reader": {"read"}, "File": {"read"}},
+			},
+			{
+				name:        "leaves out the unexported method that only an unexported interface declares at signature depth",
+				giveSrc:     "package p\n\ntype T struct{}\n\nfunc (T) hidden() {}\n\ntype secret interface{ hidden() }\n",
+				wantMethods: map[string][]string{"T": {}},
+			},
+			{
+				name:        "leaves out an unexported function of the name of an interface method at signature depth",
+				giveSrc:     "package p\n\ntype TB interface{ private() }\n\nfunc private() {}\n",
+				wantMethods: map[string][]string{"TB": {"private"}},
+			},
+		}
+		for _, tt := range sealed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				file := onlyFile(t, parsedFile(t, nil, plugin.DepthSignatures, tt.giveSrc))
+				got := map[string][]string{}
+				for _, decl := range file.Decls {
+					switch d := decl.(type) {
+					case *node.Struct:
+						got[d.Name] = methodNames(d.Methods)
+					case *node.Interface:
+						got[d.Name] = methodNames(d.Methods)
+					default:
+						got[fmt.Sprintf("%T", d)] = nil
+					}
+				}
+				assert.Equal(t, got, tt.wantMethods, "the types and the methods that the signature depth loads")
+			})
+		}
+
+		t.Run("gives the unexported method of an interface package visibility at signature depth", func(t *testing.T) {
+			t.Parallel()
+
+			file := onlyFile(t, parsedFile(t, nil, plugin.DepthSignatures,
+				"package p\n\ntype TB interface {\n\tLog()\n\tprivate()\n}\n"))
+			assert.Length(t, file.Decls, 1, "the interface loads")
+			tb, isInterface := file.Decls[0].(*node.Interface)
+			assert.True(t, isInterface, "TB loads as an interface")
+			assert.Length(t, tb.Methods, 2, "TB loads both methods")
+			assert.Equal(t, tb.Methods[1].Visibility, symbol.VisibilityPackage, "private is visible in its package")
+		})
+
+		t.Run("keeps the unexported method that an interface of another file declares at signature depth",
+			func(t *testing.T) {
+				t.Parallel()
+
+				u := parsedSources(t, plugin.DepthSignatures, fstest.MapFS{
+					"p/a.go": {Data: []byte("package p\n\ntype T struct{}\n\nfunc (T) private() {}\n")},
+					"p/b.go": {Data: []byte("package p\n\ntype TB interface{ private() }\n")},
+				})
+				assert.Length(t, u.Graph().Packages(), 1, "one package parses")
+				files := u.Graph().Packages()[0].Files
+				assert.Length(t, files, 2, "both files parse")
+				assert.Length(t, files[0].Decls, 1, "the first file loads T")
+				typ, isStruct := files[0].Decls[0].(*node.Struct)
+				assert.True(t, isStruct, "T loads as a struct")
+				assert.Equal(t, methodNames(typ.Methods), []string{"private"},
+					"T folds the method that the interface of the second file declares")
+			})
+
+		t.Run("stamps no memberless interface for an interface of an unexported method at signature depth",
+			func(t *testing.T) {
+				t.Parallel()
+
+				gb := parsedFile(t, nil, plugin.DepthSignatures, "package p\n\ntype Sealed interface{ seal() }\n")
+				assert.Empty(t, stampValues(gb, golang.EmptyInterfaceKey), "Sealed has a method")
+			})
+
 		t.Run("keeps an unexported struct that an exported struct of another file embeds at signature depth",
 			func(t *testing.T) {
 				t.Parallel()

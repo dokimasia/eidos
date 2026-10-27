@@ -43,6 +43,10 @@ type lowered struct {
 	// kept has the names of the unexported types that the signature depth
 	// loads in the package of the file. It is nil at the full depth.
 	kept map[string]bool
+	// keptMethods has the names of the unexported methods that the
+	// signature depth loads in the package of the file. It is nil at the
+	// full depth.
+	keptMethods map[string]bool
 }
 
 // at returns the position of a token position of the file.

@@ -53,7 +53,9 @@ type pendingUnderlying struct {
 // it, so a syntax error after its imports reports nothing. Every package
 // of the unit has the module of its go.mod. The parse reads every member
 // before it lowers the first, because at the signature depth an unexported
-// type that [keptTypes] keeps can be in another file than its embed.
+// type that [keptTypes] keeps can be in another file than its embed, and an
+// unexported method that [keptMethods] keeps can be in another file than
+// its interface.
 func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	place, err := placeUnit(u)
 	if err != nil {
@@ -76,12 +78,13 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		}
 		read = append(read, m)
 	}
-	var kept map[string]map[string]bool
+	var kept, methods map[string]map[string]bool
 	if u.Depth() == plugin.DepthSignatures {
 		kept = keptTypes(read)
+		methods = keptMethods(read, kept)
 	}
 	for _, m := range read {
-		f.lowerFile(u, st, m, kept[m.pkgPath])
+		f.lowerFile(u, st, m, kept[m.pkgPath], methods[m.pkgPath])
 	}
 	gb := u.Graph()
 	for _, pkgPath := range st.order {
@@ -217,8 +220,10 @@ func (f *goFrontend) readFile(u *plugin.SourceUnit, st *parseState, filePath str
 // declares nothing. A file that its constraint excludes lowers from its
 // package clause and its imports alone. kept has the names of the
 // unexported types that the signature depth loads in the package of the
-// file.
-func (f *goFrontend) lowerFile(u *plugin.SourceUnit, st *parseState, m memberFile, kept map[string]bool) {
+// file, and methods has the names of the unexported methods that it loads.
+func (f *goFrontend) lowerFile(
+	u *plugin.SourceUnit, st *parseState, m memberFile, kept, methods map[string]bool,
+) {
 	if m.err != nil {
 		reportSyntax(u, m.path, m.err)
 	}
@@ -232,7 +237,7 @@ func (f *goFrontend) lowerFile(u *plugin.SourceUnit, st *parseState, m memberFil
 	l := &lowered{
 		file: st.fset.File(parsed.Package), src: m.src,
 		intern: st.intern, consumed: map[*ast.CommentGroup]bool{},
-		comments: parsed.Comments, std: st.place.std, kept: kept,
+		comments: parsed.Comments, std: st.place.std, kept: kept, keptMethods: methods,
 	}
 	gb := u.Graph()
 	pkgPath, pkgName, built := m.pkgPath, m.pkgName, m.built
@@ -426,6 +431,53 @@ func promotedNames(dst []string, s *ast.TypeSpec) []string {
 	return dst
 }
 
+// keptMethods returns the names of the unexported methods that the
+// signature depth loads in each package of a unit. The keys of the map are
+// the import paths of the packages. The depth loads each unexported method
+// of an exported interface and of an interface that kept keeps, because a
+// type implements the interface only where it has the method. Only a type
+// of the package of the interface can declare the method, so the depth
+// also loads the method of that name of each type of the package. A blank
+// method binds nothing, and a file that its constraint excludes declares no
+// interface. keptMethods returns nil where it does not keep a method.
+func keptMethods(members []memberFile, kept map[string]map[string]bool) map[string]map[string]bool {
+	var out map[string]map[string]bool
+	for _, m := range members {
+		if m.excluded || m.pkgName == "" {
+			continue
+		}
+		for _, decl := range m.parsed.Decls {
+			gen, isGen := decl.(*ast.GenDecl)
+			if !isGen || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				s, isType := spec.(*ast.TypeSpec)
+				if !isType || s.Assign.IsValid() || !ast.IsExported(s.Name.Name) && !kept[m.pkgPath][s.Name.Name] {
+					continue
+				}
+				body, isInterface := s.Type.(*ast.InterfaceType)
+				if !isInterface {
+					continue
+				}
+				for _, method := range body.Methods.List {
+					if len(method.Names) == 0 || !named(method.Names[0]) || ast.IsExported(method.Names[0].Name) {
+						continue
+					}
+					if out == nil {
+						out = map[string]map[string]bool{}
+					}
+					if out[m.pkgPath] == nil {
+						out[m.pkgPath] = map[string]bool{}
+					}
+					out[m.pkgPath][method.Names[0].Name] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
 // span is the extent of one function body in a file.
 type span struct{ from, to token.Pos }
 
@@ -603,7 +655,8 @@ func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, spec *ast.Im
 // the signature depth it leaves out an unexported declaration and marks
 // its comments as taken, because they belong to the declaration that the
 // load left out. An unexported type that [keptTypes] keeps loads at the
-// signature depth too. It leaves out a function that no code can name at
+// signature depth too, and so does an unexported method whose name
+// [keptMethods] keeps. It leaves out a function that no code can name at
 // every depth, and refuses the carriers on it. The tool directives in the
 // doc of an import declaration are annotations of the file, and its
 // carriers are refused, as on the doc of an import.
@@ -615,7 +668,8 @@ func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File
 			u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "a function that no code can name")
 			return
 		}
-		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(d.Name.Name) {
+		keptMethod := d.Recv != nil && l.keptMethods[d.Name.Name]
+		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(d.Name.Name) && !keptMethod {
 			l.skip(d.Doc, l.trailing(d.End(), token.NoPos))
 			return
 		}
@@ -894,11 +948,12 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 func named(name *ast.Ident) bool { return name.Name != blankName }
 
 // lowerInterfaceBody lowers the method signatures and the embedded
-// interfaces of an interface body. A constraint element, such as a union
-// or an approximation, is not an embed. A stamp of the language records
-// the verbatim spellings of the constraint elements as the type set of the
-// interface. The lowering leaves out an embed whose type has no name, as
-// it does in a struct.
+// interfaces of an interface body. It lowers an unexported method at every
+// depth, because a type implements the interface only where it has the
+// method. A constraint element, such as a union or an approximation, is not
+// an embed. A stamp of the language records the verbatim spellings of the
+// constraint elements as the type set of the interface. The lowering leaves
+// out an embed whose type has no name, as it does in a struct.
 func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
 	var terms []string
 	for _, member := range t.Methods.List {
@@ -928,9 +983,6 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 		name := member.Names[0].Name
 		if name == blankName {
 			continue // a blank method binds nothing, as a blank value does
-		}
-		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name) {
-			continue
 		}
 		m := &node.Method{
 			Name: name, Pos: l.at(member.Pos()), Doc: parts.Docs,

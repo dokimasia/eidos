@@ -140,7 +140,15 @@
 // unexported type that a kept type reaches the same way. testing.T embeds
 // testing.common, so the member walk of a struct that embeds *testing.T
 // lists the methods of testing.common. A kept type loads its exported
-// fields and methods alone.
+// fields and methods.
+//
+// A signature-only parse also lowers each unexported method of an
+// interface that it loads, because a type implements the interface only
+// where it has the method. Only a type of the package of the interface can
+// declare such a method, so the parse keeps the method of that name of
+// each type of the package. testing.TB declares the method private, and
+// testing.common implements it, so the walk of testing.TB lists private
+// and testing.T still implements testing.TB.
 //
 // # Stamps
 //
