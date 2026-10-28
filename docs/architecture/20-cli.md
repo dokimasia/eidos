@@ -241,7 +241,10 @@ promotes a non-empty diff, meaning any path that the run would create,
 update or remove, or would refuse to write, to an `OutOfDate` Error at
 that path. Staleness
 therefore exits 1 through the ordinary contract, and enforcing
-"committed output is current" needs no JSON parsing.
+"committed output is current" needs no JSON parsing. For the file of
+a line-set family, `--check` also reports the finding that the
+generator returns for each line that the committed file has and the
+fresh file lacks ([18-routing-and-layout.md](18-routing-and-layout.md)).
 
 ### plan
 

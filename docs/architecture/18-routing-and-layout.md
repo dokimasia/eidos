@@ -218,6 +218,16 @@ wants module identity uses the neutral `gen.module` facts the
 frontend stamped
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
+A data family is the exception. Its `Name`, such as
+`dokimi.golang.lock`, is the file name of its one file per plan, under
+the directory of the family. Its template writes the whole file, and
+the run writes the bytes without a header, a frame or a format step.
+The file does not declare a package. A sink recognises a data file of the
+brand by the digest that the manifest records for its path, because
+the file has no frame. A data family with `LineSet` is a set of lines,
+and `run --check` passes each line that the committed file has and the
+fresh file lacks to the `LineSetReader` of the generator.
+
 ## Package identity
 
 A routed file declares a package. The target names it from the

@@ -130,3 +130,5 @@ way.
 | [0109](0109-an-unexported-method-is-a-member-of-its-package.md) | An unexported method is a member of its package | Accepted |
 | [0110](0110-an-acronym-keeps-the-s-of-its-plural.md) | An acronym keeps the s of its plural | Accepted |
 | [0111](0111-a-run-reports-no-finding-in-a-dependency.md) | A run reports no finding in a dependency | Accepted |
+| [0112](0112-a-unit-warns-about-a-mark-near-its-brand.md) | A unit warns about a mark near its brand | Accepted |
+| [0113](0113-a-data-family-writes-one-file-under-a-name-of-its-own.md) | A data family writes one file under a name of its own | Accepted |

@@ -111,6 +111,13 @@ The rules around it, decided:
   continuation, as gofmt does. The frontend refuses it with a
   positioned Error under `ContinuedCarrier`, whose message gives
   the carrier in the `+acme:` form.
+- **A mark near the brand is a Warning.** A comment line whose mark
+  is near the brand and is not the brand, such as `//acne:stub`
+  under the brand `acme`, remains comment text. The unit reports a
+  Warning under `MisspelledBrand`, and so does a decorator or an
+  annotation whose first name is near the brand. A name is near
+  within two edits and within a third of the length of the longer
+  spelling, the bound of a suggestion of a directive name.
 - **Keys are flat.** No dotted or nested keys. A directive that
   needs structure uses a list or splits into two directives.
 - **Namespacing.** A plugin's directives become `<plugin>:<name>`
