@@ -5,8 +5,11 @@ package backend
 
 import (
 	"fmt"
+	"slices"
 
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The syntax of a service and of an rpc.
@@ -46,6 +49,12 @@ func (v *Vocabulary) service(p parent, i *emit.Interface) (*Block, error) {
 	return b, nil
 }
 
+// bodied reports whether the annotations of an rpc state the body marker,
+// which writes an rpc without options with an empty body.
+func bodied(as symbol.Annotations) bool {
+	return slices.ContainsFunc(as, func(a symbol.Annotation) bool { return a.Name == string(protobuf.BodyMarker) })
+}
+
 // rpc writes the method m as an rpc of its service, by the rules of
 // [Vocabulary.service].
 func (v *Vocabulary) rpc(m *emit.Method) (string, error) {
@@ -66,6 +75,9 @@ func (v *Vocabulary) rpc(m *emit.Method) (string, error) {
 		response + paramsClose
 	options := optionStatements(m.Annotations, nil, nestedIndent)
 	if options == "" {
+		if bodied(m.Annotations) {
+			return head + space + blockOpen + blockClose + trailing(m.Comment) + "\n", nil
+		}
 		return head + memberEnd + trailing(m.Comment) + "\n", nil
 	}
 	return head + space + opening(m.Comment, true) + options + memberIndent + blockClose + "\n", nil

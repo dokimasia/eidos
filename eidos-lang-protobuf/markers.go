@@ -55,6 +55,16 @@ const (
 	// LocalMarker marks a message or an enum that another file cannot
 	// reference, which the editions 2024 and 2026 write with local.
 	LocalMarker Marker = MarkerPrefix + "local"
+	// FollowsMarker places a nested message, enum, oneof or extension
+	// among the members of its message. Its one argument is the name of the
+	// member that the declaration follows, and the empty name places it
+	// before every member. The backend writes a nested declaration without
+	// it after the fields.
+	FollowsMarker Marker = MarkerPrefix + "follows"
+	// BodyMarker marks an rpc that the backend writes with a body in
+	// braces, as rpc Get(Row) returns (Row) {}, also where it states no
+	// option.
+	BodyMarker Marker = MarkerPrefix + "body"
 )
 
 // Valid reports whether m is one of the markers that the satellite
@@ -63,7 +73,7 @@ const (
 func (m Marker) Valid() bool {
 	switch m {
 	case SyntaxMarker, PackageMarker, ImportMarker, RequiredMarker, DelimitedMarker,
-		NumberMarker, ReservedMarker, ExtensionsMarker, ClosedMarker, LocalMarker:
+		NumberMarker, ReservedMarker, ExtensionsMarker, ClosedMarker, LocalMarker, FollowsMarker, BodyMarker:
 		return true
 	default:
 		return false

@@ -57,6 +57,11 @@ const (
 	// naming the side: request, response or both.
 	StreamKey meta.KeyName = "protobuf.stream"
 
+	// BodyKey marks an rpc that the schema wrote with a body in braces,
+	// as rpc Get(Row) returns (Row) {}, which gives the rpc its options
+	// also where the body states none.
+	BodyKey meta.KeyName = "protobuf.body"
+
 	// MapEntryKey marks a field the schema wrote as a map, whose
 	// projection is the Map form over its key and value.
 	MapEntryKey meta.KeyName = "protobuf.mapEntry"
@@ -127,9 +132,9 @@ const (
 //
 // # Allocation contract
 //
-// Keys allocates the fourteen kind lists of the keys, and the registry
+// Keys allocates the fifteen kind lists of the keys, and the registry
 // allocates its namespace claim and the growth of its lists and maps to
-// sixteen keys: 31 allocations into a fresh registry.
+// seventeen keys: 33 allocations into a fresh registry.
 func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err
@@ -160,6 +165,10 @@ func Keys(r *meta.Registry) error {
 		{
 			Name: StreamKey, Kinds: []symbol.Kind{symbol.KindMethod},
 			Doc: "marks an rpc that streams, naming the side",
+		},
+		{
+			Name: BodyKey, Kinds: []symbol.Kind{symbol.KindMethod},
+			Doc: "marks an rpc written with a body in braces",
 		},
 		{
 			Name: MapEntryKey, Kinds: []symbol.Kind{symbol.KindField},

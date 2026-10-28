@@ -25,6 +25,7 @@ const (
 	storePkg   = "svc.store"
 	editionPkg = "svc.edition"
 	barePkg    = "svc.bare"
+	orderPkg   = "svc.order"
 )
 
 // restatedTree is a proto2 file with every residue of a declaration and of
@@ -76,6 +77,25 @@ enum Mode {
 }
 `)},
 	"svc/bare.proto": {Data: []byte("package svc.bare;\n\nmessage Bare {}\n")},
+	"svc/order.proto": {Data: []byte(`syntax = "proto3";
+
+package svc.order;
+
+message Order {
+  enum Kind {
+    KIND_UNSET = 0;
+  }
+  string id = 1;
+  oneof pick {
+    string a = 2;
+  }
+  string b = 3;
+}
+
+service Orders {
+  rpc Get(Order) returns (Order) {}
+}
+`)},
 }
 
 // restated returns what Stated returns for each identity and what Header
@@ -178,6 +198,21 @@ func TestStated(t *testing.T) {
 				name: "returns the closed marker of an enum that the features of its file close",
 				give: protoID(editionPkg, "", "Mode", symbol.KindEnum),
 				want: protobuf.Statement{Annotations: symbol.Annotations{marker(protobuf.ClosedMarker)}},
+			},
+			{
+				name: "returns the follows marker without a name for a nested declaration before every member",
+				give: protoID(orderPkg, "Order", "Kind", symbol.KindEnum),
+				want: protobuf.Statement{Annotations: symbol.Annotations{marker(protobuf.FollowsMarker, "")}},
+			},
+			{
+				name: "returns the follows marker with the field before a oneof",
+				give: protoID(orderPkg, "Order", "pick", symbol.KindSum),
+				want: protobuf.Statement{Annotations: symbol.Annotations{marker(protobuf.FollowsMarker, "id")}},
+			},
+			{
+				name: "returns the body marker of an rpc with a body",
+				give: protoID(orderPkg, "Orders", "Get", symbol.KindMethod),
+				want: protobuf.Statement{Annotations: symbol.Annotations{marker(protobuf.BodyMarker)}},
 			},
 			{
 				name: "returns nothing for a declaration without residue",

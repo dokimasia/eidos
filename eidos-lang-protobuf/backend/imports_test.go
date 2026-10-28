@@ -9,8 +9,11 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/lang/protobuf/backend"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The files that the import cases import, and the modifiers of an import.
@@ -106,6 +109,66 @@ func TestImports(t *testing.T) {
 				var set render.ImportSet
 				tt.give(&set)
 				assert.Equal(t, backend.Imports(&set), tt.want, "the import block")
+			})
+		}
+	})
+
+	t.Run("ImportBlock", func(t *testing.T) {
+		t.Parallel()
+
+		header := func(paths ...string) *emit.File {
+			h := &emit.File{}
+			for _, p := range paths {
+				h.Annotations = append(
+					h.Annotations,
+					symbol.Annotation{Name: string(protobuf.ImportMarker), Args: []string{p}},
+				)
+			}
+			return h
+		}
+		tests := []struct {
+			name       string
+			giveHeader *emit.File
+			give       func(set *render.ImportSet)
+			want       string
+		}{
+			{
+				name:       "returns the imports of the header in the order of the header",
+				giveHeader: header(typesProto, commonProto),
+				give: func(set *render.ImportSet) {
+					set.Add(typesProto)
+					set.Add(commonProto)
+				},
+				want: "import \"" + typesProto + "\";\nimport \"" + commonProto + "\";\n",
+			},
+			{
+				name:       "returns an import that the header does not state after the imports of the header",
+				giveHeader: header(typesProto),
+				give: func(set *render.ImportSet) {
+					set.Add(typesProto)
+					set.Add(commonProto)
+				},
+				want: "import \"" + typesProto + "\";\nimport \"" + commonProto + "\";\n",
+			},
+			{
+				name:       "returns the modifier of an import of the header",
+				giveHeader: header("public " + typesProto),
+				give:       func(set *render.ImportSet) { set.AddNamed(typesProto, publicMod) },
+				want:       "import public \"" + typesProto + "\";\n",
+			},
+			{
+				name:       "returns nothing for a file without imports",
+				giveHeader: header(),
+				give:       func(*render.ImportSet) {},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var set render.ImportSet
+				tt.give(&set)
+				assert.Equal(t, backend.NewVocabulary(&set).ImportBlock(tt.giveHeader), tt.want, "the import block")
 			})
 		}
 	})

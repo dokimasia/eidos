@@ -48,6 +48,11 @@ func TestFilename(t *testing.T) {
 				want: "store_rules.proto",
 			},
 			{
+				name: "keeps the hyphen of a lower-case stem, so it differs from the stem with an underscore",
+				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/test-extension.proto", Word: "mirror"},
+				want: "test-extension_mirror.proto",
+			},
+			{
 				name: "returns the tag after the word",
 				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "schema", Tag: "v1"},
 				want: "store_schema_v1.proto",

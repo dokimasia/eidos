@@ -26,11 +26,11 @@ const (
 	rivalKey    meta.KeyName = "protobuf.rival"
 )
 
-// keysAllocs is a registration into a fresh registry: the fourteen kind
-// lists of the keys, and seventeen allocations of the registry, its
+// keysAllocs is a registration into a fresh registry: the fifteen kind
+// lists of the keys, and eighteen allocations of the registry, its
 // namespace claim and the growth of its spec list, type list and name
-// map to sixteen keys.
-const keysAllocs = 14 + 17
+// map to seventeen keys.
+const keysAllocs = 15 + 18
 
 // A consumer reads the residue through these keys. Their spellings,
 // the value type of each, the kinds each admits and the namespace claim

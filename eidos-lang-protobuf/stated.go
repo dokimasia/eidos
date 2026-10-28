@@ -11,6 +11,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/store"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -88,6 +89,7 @@ func Stated(m eidos.Matcher, id symbol.Identity) Statement {
 		{key: DelimitedKey, marker: DelimitedMarker},
 		{key: ClosedKey, marker: ClosedMarker},
 		{key: LocalKey, marker: LocalMarker},
+		{key: BodyKey, marker: BodyMarker},
 	} {
 		if _, stated := eidos.FactOf(m, id, meta.Named[string](mark.key)); stated {
 			s.Annotations = append(s.Annotations, symbol.Annotation{Name: string(mark.marker)})
@@ -113,7 +115,74 @@ func Stated(m eidos.Matcher, id symbol.Identity) Statement {
 		})
 	}
 	s.Annotations = appendOptions(m, id, s.Annotations)
+	if r, reads := m.(Match); reads {
+		if after, nested := follows(r, id); nested {
+			s.Annotations = append(s.Annotations, symbol.Annotation{Name: string(FollowsMarker), Args: []string{after}})
+		}
+	}
 	return s
+}
+
+// follows returns the name of the member of its message that the source
+// declares right before the nested declaration id, a message, an enum, a
+// oneof or an extension: a field, a oneof, a nested message or enum, or an
+// extension. It returns the empty name for a declaration before every
+// member. It returns false for a declaration at file level, for a field of
+// its message, for a declaration without a position, and for a message
+// that the reader does not hold.
+func follows(m Match, id symbol.Identity) (string, bool) {
+	if id.Owner == "" {
+		return "", false
+	}
+	owner := symbol.Identity{Lang: id.Lang, Package: id.Package, Name: id.Owner, Kind: symbol.KindStruct}
+	if at := strings.LastIndex(id.Owner, symbol.OwnerSep); at >= 0 {
+		owner.Owner, owner.Name = id.Owner[:at], id.Owner[at+1:]
+	}
+	held, found := m.Reader().Lookup(owner)
+	s, message := held.(*node.Struct)
+	if !found || !message {
+		return "", false
+	}
+	var (
+		self    position.Pos
+		nested  bool
+		after   string
+		closest position.Pos
+	)
+	for _, t := range s.Types {
+		if d, named := t.(node.Declaration); named && d.Identity() == id {
+			self, nested = d.Position(), true
+		}
+	}
+	if !nested || self.Line == 0 {
+		return "", false
+	}
+	consider := func(name string, at position.Pos) {
+		if before(at, self) && (closest.Line == 0 || before(closest, at)) {
+			after, closest = name, at
+		}
+	}
+	for _, f := range s.Fields {
+		consider(f.Name, f.Pos)
+	}
+	for _, t := range s.Types {
+		switch n := t.(type) {
+		case *node.Struct:
+			consider(n.Name, n.Pos)
+		case *node.Enum:
+			consider(n.Name, n.Pos)
+		case *node.Sum:
+			consider(n.Name, n.Pos)
+		case *node.Field:
+			consider(n.Name, n.Pos)
+		}
+	}
+	return after, true
+}
+
+// before reports whether a starts before b in one file.
+func before(a, b position.Pos) bool {
+	return a.Line < b.Line || (a.Line == b.Line && a.Col < b.Col)
 }
 
 // Header returns the header of the file that declares d. The header has

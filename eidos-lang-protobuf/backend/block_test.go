@@ -98,6 +98,39 @@ func TestBlock(t *testing.T) {
 					}}},
 				},
 				{
+					name: "places each nested declaration after the member that its follows marker names",
+					head: proto3File,
+					give: &emit.Struct{
+						Name: rowName,
+						Fields: emit.SlotOf(
+							&emit.Field{Name: nameField, Type: stringRef, Tags: tag1},
+							&emit.Field{
+								Name: "count",
+								Type: stringRef,
+								Tags: emit.SlotOf(&emit.TagEntry{Key: protobuf.NumberTag, Value: "2"}),
+							},
+						),
+						Types: emit.SlotOf[symbol.Symbol](
+							&emit.Enum{Name: kindName, Annotations: symbol.Annotations{
+								{Name: string(protobuf.FollowsMarker), Args: []string{""}},
+							}},
+							&emit.Struct{Name: innerName, Annotations: symbol.Annotations{
+								{Name: string(protobuf.FollowsMarker), Args: []string{nameField}},
+							}},
+						),
+					},
+					want: &backend.Block{Head: "message row", Open: "{\n", Items: []backend.Item{
+						{Nested: &emit.Enum{Name: kindName, Annotations: symbol.Annotations{
+							{Name: string(protobuf.FollowsMarker), Args: []string{""}},
+						}}, Indent: "  "},
+						{Text: "  string name = 1;\n"},
+						{Nested: &emit.Struct{Name: innerName, Annotations: symbol.Annotations{
+							{Name: string(protobuf.FollowsMarker), Args: []string{nameField}},
+						}}, Indent: "  "},
+						{Text: "  string count = 2;\n"},
+					}},
+				},
+				{
 					name: "returns the nested declarations of a message as items behind the indentation of a member",
 					head: proto3File,
 					give: &emit.Struct{Name: rowName, Types: emit.SlotOf[symbol.Symbol](

@@ -19,7 +19,7 @@ import (
 const FileTemplate = "{{$h := " + render.BuiltinHeader + "}}{{" + FuncUseImports + " $h}}" +
 	"{{" + FuncDocs + " $h.Doc}}{{" + FuncSyntax + " $h}}\n" +
 	"{{with .Pkg.Name}}\npackage {{.}};\n{{end}}" +
-	"{{with " + render.BuiltinImports + "}}\n{{.}}{{end}}" +
+	"{{with " + FuncImportBlock + " $h}}\n{{.}}{{end}}" +
 	"{{with " + FuncFileOptions + " $h}}\n{{.}}{{end}}" +
 	"{{with " + render.BuiltinDecls + "}}\n{{.}}{{end}}"
 

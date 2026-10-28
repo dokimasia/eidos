@@ -5,6 +5,7 @@ package backend
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 
 	"go.dokimi.dev/eidos/lang/protobuf"
@@ -144,9 +145,21 @@ func (v *Vocabulary) message(p parent, s *emit.Struct) (*Block, error) {
 	if text := optionStatements(s.Annotations, nil, memberIndent) + reserved + extensions; text != "" {
 		b.Items = append(b.Items, Item{Text: text})
 	}
+	types := s.Types.Items()
+	// names lists the names of each member item after the options, and
+	// stays nil for a message whose nested declarations have no follows
+	// marker, which keeps the order of the fields and then the types.
+	var names []memberNames
+	if slices.ContainsFunc(types, func(t symbol.Symbol) bool { _, marked := followsOf(t); return marked }) {
+		names = make([]memberNames, 0, s.Fields.Len()+s.Types.Len())
+	}
+	start := len(b.Items)
 	for _, f := range s.Fields.Items() {
 		if g, grouped := v.groups[f]; grouped {
 			b.Items = append(b.Items, Item{Nested: g, Indent: memberIndent})
+			if names != nil {
+				names = append(names, memberNames{f.Name, groupName(g)})
+			}
 			continue
 		}
 		text, err := v.field(inner, f, memberIndent)
@@ -154,25 +167,115 @@ func (v *Vocabulary) message(p parent, s *emit.Struct) (*Block, error) {
 			return nil, err
 		}
 		b.Items = append(b.Items, Item{Text: text})
+		if names != nil {
+			names = append(names, memberNames{f.Name, ""})
+		}
 	}
-	types := s.Types.Items()
 	for i, t := range types {
+		var (
+			items []Item
+			name  string
+		)
 		if f, extension := t.(*emit.Field); extension && f.Receives != nil {
-			items, err := v.extendBlock(inner, types, i, f)
-			if err != nil {
+			var err error
+			if items, err = v.extendBlock(inner, types, i, f); err != nil {
 				return nil, err
 			}
+			name = f.Name
+		} else {
+			if prior, grouped := v.parents[t]; grouped && prior.group != nil {
+				continue
+			}
+			v.parents[t] = parent{scope: inner, host: s}
+			items, name = []Item{{Nested: t, Indent: memberIndent}}, nestedName(t)
+		}
+		if names == nil {
 			b.Items = append(b.Items, items...)
 			continue
 		}
-		if prior, grouped := v.parents[t]; grouped && prior.group != nil {
-			continue
+		at := placeAt(names, t)
+		b.Items = slices.Insert(b.Items, start+at, items...)
+		for range items {
+			names = slices.Insert(names, at, memberNames{})
 		}
-		v.parents[t] = parent{scope: inner, host: s}
-		b.Items = append(b.Items, Item{Nested: t, Indent: memberIndent})
+		names[at] = memberNames{name, ""}
 	}
 	b.Open = opening(comment, len(b.Items) > 0)
 	return b, nil
+}
+
+// memberNames are the names that a follows marker refers to a member item
+// by: the name of a field or a nested declaration, and for a group also
+// the name of its message. An item that continues a member has none.
+type memberNames [2]string
+
+// placeAt returns the index among the member items at which the nested
+// declaration t goes: after the item that its follows marker names, first
+// for the empty name, and last for a declaration without the marker or
+// with a name that no item before it has.
+func placeAt(names []memberNames, t symbol.Symbol) int {
+	after, marked := followsOf(t)
+	switch {
+	case !marked:
+		return len(names)
+	case after == "":
+		return 0
+	}
+	for i, n := range names {
+		if n[0] == after || n[1] == after {
+			end := i + 1
+			for end < len(names) && names[end] == (memberNames{}) {
+				end++
+			}
+			return end
+		}
+	}
+	return len(names)
+}
+
+// followsOf returns the argument of the follows marker of a nested
+// declaration, and false for a declaration without one.
+func followsOf(t symbol.Symbol) (string, bool) {
+	var as symbol.Annotations
+	switch n := t.(type) {
+	case *emit.Struct:
+		as = n.Annotations
+	case *emit.Enum:
+		as = n.Annotations
+	case *emit.Sum:
+		as = n.Annotations
+	case *emit.Field:
+		as = n.Annotations
+	}
+	for _, a := range as {
+		if a.Name == string(protobuf.FollowsMarker) && len(a.Args) == 1 {
+			return a.Args[0], true
+		}
+	}
+	return "", false
+}
+
+// nestedName returns the name of a nested declaration of a message.
+func nestedName(t symbol.Symbol) string {
+	switch n := t.(type) {
+	case *emit.Struct:
+		return n.Name
+	case *emit.Enum:
+		return n.Name
+	case *emit.Sum:
+		return n.Name
+	default:
+		return ""
+	}
+}
+
+// groupName returns the name of the message of a group, and the empty
+// name for a nested declaration that is no message.
+func groupName(g symbol.Symbol) string {
+	if m, message := g.(*emit.Struct); message {
+		return m.Name
+	}
+	return ""
 }
 
 // opening returns the opening brace of a block whose trailing comment is

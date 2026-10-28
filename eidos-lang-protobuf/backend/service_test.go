@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/lang/protobuf/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -80,6 +81,22 @@ func TestService(t *testing.T) {
 							{Text: "  rpc Watch(stream Query) returns (stream Rows) { // until closed\n" +
 								"    option idempotency_level = NO_SIDE_EFFECTS;\n  }\n"},
 						},
+					},
+				},
+				{
+					name: "returns an rpc with the body marker and without options with an empty body",
+					give: &emit.Interface{Name: storeName, Methods: emit.SlotOf(&emit.Method{
+						Name:        "Get",
+						Comment:     "by key",
+						Annotations: symbol.Annotations{{Name: string(protobuf.BodyMarker)}},
+						Params: emit.SlotOf(
+							&emit.Param{Name: requestParam, Type: &emit.TypeRef{Spelling: queryType}},
+						),
+						Returns: emit.SlotOf(&emit.Return{Type: &emit.TypeRef{Spelling: rowType}}),
+					})},
+					want: &backend.Block{
+						Head: "service store", Open: "{\n",
+						Items: []backend.Item{{Text: "  rpc Get(Query) returns (Row) {} // by key\n"}},
 					},
 				},
 				{

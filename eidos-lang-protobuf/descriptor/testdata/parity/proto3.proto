@@ -44,4 +44,6 @@ service Events {
   }
   // Send takes a stream of events.
   rpc Send(stream Event) returns (Event);
+  // Ping has a body without options.
+  rpc Ping(Event) returns (Event) {}
 }

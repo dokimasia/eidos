@@ -46,6 +46,15 @@ func TestName(t *testing.T) {
 				kind: symbol.KindStruct, vis: symbol.VisibilityPublic, give: "HttpRule", want: "HttpRule",
 			},
 			{
+				name: "returns a field name in snake case with a digit unchanged",
+				kind: symbol.KindField, vis: symbol.VisibilityPublic, give: "google_re2", want: "google_re2",
+			},
+			{
+				name: "returns an enum value in screaming snake case unchanged",
+				host: symbol.KindEnum, kind: symbol.KindEnumVariant, vis: symbol.VisibilityPublic,
+				give: "IPV6_ONLY", want: "IPV6_ONLY",
+			},
+			{
 				name: "returns the Pascal-case spelling of a nested message",
 				host: symbol.KindStruct, kind: symbol.KindStruct, vis: symbol.VisibilityPublic,
 				give: "entry", want: "Entry",

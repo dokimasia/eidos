@@ -27,6 +27,7 @@ const (
 	streamResponse = "response"
 	streamBoth     = "both"
 	streamKeyword  = "stream"
+	bodyValue      = "{}"
 	requestParam   = "request"
 	mapSpelling    = "map"
 	labelRepeated  = "repeated"
@@ -744,6 +745,11 @@ func (l *lowered) rpc(m *descriptorpb.MethodDescriptorProto, path []int32) *node
 	out.Async = result.Form != symbol.FormStream
 	if side := streamSide(m); side != "" {
 		l.unit.Graph().Stamp(out, meta.RawStamp{Key: protobuf.StreamKey, Value: side, Pos: out.Pos})
+	}
+	// protoc gives an rpc with a body in braces its options, also an
+	// empty body.
+	if m.Options != nil {
+		l.unit.Graph().Stamp(out, meta.RawStamp{Key: protobuf.BodyKey, Value: bodyValue, Pos: out.Pos})
 	}
 	l.stampOptions(out, out.Pos, l.optionsAt(m.GetOptions(), pathOf(path, methodOptions)))
 	return out

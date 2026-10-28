@@ -32,6 +32,8 @@ const (
 	FuncUseImports = "useimports"
 	// FuncFileOptions is the template name of [FileOptions].
 	FuncFileOptions = "fileoptions"
+	// FuncImportBlock is the template name of [Vocabulary.ImportBlock].
+	FuncImportBlock = "importblock"
 )
 
 // The layout of a block. A member is two spaces deeper than its block, as
@@ -132,6 +134,7 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 		FuncExtension:   v.Extension,
 		FuncSyntax:      Syntax,
 		FuncUseImports:  v.UseImports,
+		FuncImportBlock: v.ImportBlock,
 		FuncFileOptions: FileOptions,
 	}
 }

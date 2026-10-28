@@ -33,7 +33,7 @@ const (
 	// template, the block template of each of the four kinds and the extend
 	// template, and the function maps that text/template keeps for each
 	// template.
-	newAllocs = 1_027
+	newAllocs = 1_032
 	// renderAllocs is one render of the scaled corpus of 10,000 files. One
 	// run counted 13,660,874: about 6.1 million in the parse that checks
 	// each written file, and nearly all of the rest in text/template's

@@ -34,9 +34,9 @@ const (
 	// its two record maps.
 	newVocabularyAllocs = 3
 	// funcsAllocs is the template vocabulary of a file: the vocabulary, the
-	// map of the helpers and the three helpers that are methods of the
+	// map of the helpers and the four helpers that are methods of the
 	// vocabulary.
-	funcsAllocs = 8
+	funcsAllocs = 9
 )
 
 // TestVocabulary pins the names of the template vocabulary and the
@@ -53,7 +53,8 @@ func TestVocabulary(t *testing.T) {
 			got := slices.Sorted(maps.Keys(backend.Funcs(&render.ImportSet{})))
 			assert.Equal(t, got, []string{
 				backend.FuncBlock, backend.FuncDocs, backend.FuncExtension,
-				backend.FuncFileOptions, backend.FuncSyntax, backend.FuncUseImports, backend.FuncWrapDocs,
+				backend.FuncFileOptions, backend.FuncImportBlock, backend.FuncSyntax, backend.FuncUseImports,
+				backend.FuncWrapDocs,
 			}, "the names of the vocabulary")
 		})
 	})
@@ -126,7 +127,7 @@ func TestVocabularyAllocs(t *testing.T) {
 	assert.NotNil(t, v, "NewVocabulary returns the vocabulary")
 	assert.MaxAllocs(t, func() { funcs = backend.Funcs(set) }, funcsAllocs,
 		"Funcs allocates the vocabulary and the map of its helpers")
-	assert.Length(t, funcs, 7, "Funcs returns the seven helpers")
+	assert.Length(t, funcs, 8, "Funcs returns the eight helpers")
 
 	lines := []string{"Row is one record.", "It has a key."}
 	assert.MaxAllocs(t, func() { got = backend.Docs(lines) }, docsAllocs, "Docs allocates the comments once")

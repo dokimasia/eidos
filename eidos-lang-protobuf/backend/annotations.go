@@ -53,11 +53,17 @@ var markers = map[symbol.Kind]map[protobuf.Marker]argCount{
 		protobuf.ReservedMarker:   someArguments,
 		protobuf.ExtensionsMarker: someArguments,
 		protobuf.LocalMarker:      noArgument,
+		protobuf.FollowsMarker:    oneArgument,
 	},
 	symbol.KindEnum: {
 		protobuf.ReservedMarker: someArguments, protobuf.ClosedMarker: noArgument, protobuf.LocalMarker: noArgument,
+		protobuf.FollowsMarker: oneArgument,
 	},
-	symbol.KindField:      {protobuf.RequiredMarker: noArgument, protobuf.DelimitedMarker: noArgument},
+	symbol.KindSum:    {protobuf.FollowsMarker: oneArgument},
+	symbol.KindMethod: {protobuf.BodyMarker: noArgument},
+	symbol.KindField: {
+		protobuf.RequiredMarker: noArgument, protobuf.DelimitedMarker: noArgument, protobuf.FollowsMarker: oneArgument,
+	},
 	symbol.KindSumVariant: {protobuf.NumberMarker: oneArgument},
 }
 

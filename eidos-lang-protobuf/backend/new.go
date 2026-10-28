@@ -28,6 +28,7 @@ func New() backend.Backend {
 		Packages(spell.Package).
 		NameScopes(spell.NameScope).
 		Respell(spell.Name).
+		KeepsOwnNames().
 		Types(spell.Type).
 		Policies(protobuf.Policies()...).
 		Lower(Lower).

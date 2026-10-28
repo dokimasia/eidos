@@ -4,9 +4,13 @@
 package backend
 
 import (
+	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/lang/protobuf"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
@@ -42,7 +46,12 @@ const (
 // and a path whose quoting is longer than 256 bytes quotes into memory of
 // its own. An empty set allocates nothing.
 func Imports(set *render.ImportSet) string {
-	entries := set.Entries()
+	return block(set.Entries())
+}
+
+// block writes the statements of entries in their order, the option
+// imports last, and the empty string for no entry. It sizes the block once.
+func block(entries []render.Entry) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -55,6 +64,42 @@ func Imports(set *render.ImportSet) string {
 	writeImports(&b, entries, false)
 	writeImports(&b, entries, true)
 	return b.String()
+}
+
+// ImportBlock renders the import block of the file whose header is h, as
+// [Imports] does, with the files that the header imports first in the
+// order of the header and every other file after them in the order of its
+// path. The order of the imports of a file is the order of the dependencies
+// of its descriptor, so a file keeps the order of its source. The file
+// skeleton calls it after the declarations rendered, so the import set is
+// complete.
+//
+// # Allocation contract
+//
+// ImportBlock allocates what [Imports] allocates, and the reordered
+// entries and the order of the header where the header imports a file.
+func (v *Vocabulary) ImportBlock(h *emit.File) string {
+	entries := v.set.Entries()
+	var order []string
+	for _, a := range h.Annotations {
+		if a.Name == string(protobuf.ImportMarker) && len(a.Args) == 1 {
+			_, path := importOf(a.Args[0])
+			if !slices.Contains(order, path) {
+				order = append(order, path)
+			}
+		}
+	}
+	if len(order) > 0 {
+		rank := func(path string) int {
+			if i := slices.Index(order, path); i >= 0 {
+				return i
+			}
+			return len(order)
+		}
+		entries = slices.Clone(entries)
+		slices.SortStableFunc(entries, func(a, b render.Entry) int { return cmp.Compare(rank(a.Path), rank(b.Path)) })
+	}
+	return block(entries)
 }
 
 // TemplateImport returns the binding of an import that a template states

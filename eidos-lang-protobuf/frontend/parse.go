@@ -35,6 +35,8 @@ const (
 	streamBoth     = "both"
 	// streamKeyword marks a streaming side of an rpc.
 	streamKeyword = "stream"
+	// bodyValue is the value of the body stamp of an rpc with a body.
+	bodyValue = "{}"
 	// requestParam is the name of the one parameter that an rpc takes.
 	requestParam = "request"
 	// mapSpelling is the value of the map-entry stamp of a field that the
@@ -825,6 +827,7 @@ func (l *lowered) rpc(def ast.DeclDef) *node.Method {
 		l.unit.Graph().Stamp(m, meta.RawStamp{Key: protobuf.StreamKey, Value: side, Pos: m.Pos})
 	}
 	if body := def.Body(); !body.IsZero() {
+		l.unit.Graph().Stamp(m, meta.RawStamp{Key: protobuf.BodyKey, Value: bodyValue, Pos: m.Pos})
 		l.stampOptions(m, m.Pos, statementOptions(body.Decls()))
 	}
 	return m
