@@ -22,9 +22,12 @@ import (
 	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
+	golang "go.dokimi.dev/eidos/lang/go"
+	gobackend "go.dokimi.dev/eidos/lang/go/backend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
 	"go.dokimi.dev/eidos/protoc"
 )
@@ -72,6 +75,30 @@ func compose() *workspace.Builder {
 		Targets(target).
 		Rules(protorules.New()).
 		Plans(workspace.Plan{Name: "lists", Generators: []plugin.Generator{lister}, Backend: printer()})
+}
+
+// goCompose returns a composition whose plan writes a Go struct with the
+// fields of each message of a file to generate, through the Go backend.
+func goCompose() *workspace.Builder {
+	models := eidos.NewPlugin("models").
+		Output(plugin.Output{Per: plugin.PerSource, Word: "models"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			fields, spelled := e.Fields(m.Struct.Fields, nil)
+			if !spelled {
+				return nil
+			}
+			e.File().
+				Append(&emit.Struct{Origin: m.Struct.Identity(), Name: m.Struct.Name, Fields: emit.SlotOf(fields...)})
+			return nil
+		})).Generator()
+	return workspace.New().
+		Brand(brand).
+		Targets(golang.Target).
+		Rules(protorules.New()).
+		Plans(workspace.Plan{
+			Name: "go", Generators: []plugin.Generator{models}, Backend: gobackend.New(),
+			Layout: layout.Config{ImportBase: "example.com/app/gen"},
+		})
 }
 
 // printer returns a kit backend of the target that writes each struct as

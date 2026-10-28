@@ -4,6 +4,7 @@
 package protoc
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/pluginpb"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/position"
 )
@@ -55,14 +57,32 @@ func filesOf(sinks []*output.Mem) []*pluginpb.CodeGeneratorResponse_File {
 	return out
 }
 
+// ErrImportedReference opens the error field of a response whose run
+// refused a reference to a declaration that the plan does not emit, where
+// the request imports files that it does not generate. buf calls a local
+// plugin once for each directory unless buf.gen.yaml sets strategy: all, so
+// such a reference most often names a file of another directory.
+var ErrImportedReference = errors.New("protoc: a generated declaration refers to a declaration of a file " +
+	"that this call does not generate: set strategy: all in buf.gen.yaml, " +
+	"so that one call generates every file of the input")
+
 // errorText returns the Error findings of a sink, one line each in the form
-// of eidos run, and the empty string for a sink without one.
-func errorText(sink *diag.Sink) string {
-	var lines []string
+// of eidos run, and the empty string for a sink without one. Where imports
+// is set and a finding refuses a reference that the plan does not emit,
+// the first line is [ErrImportedReference].
+func errorText(sink *diag.Sink, imports bool) string {
+	var (
+		lines     []string
+		unemitted bool
+	)
 	for d := range sink.All() {
 		if d.Severity == diag.SeverityError {
 			lines = append(lines, lineOf(d))
+			unemitted = unemitted || d.Code == layout.UntranslatedReference || d.Code == layout.UnemittedReference
 		}
+	}
+	if unemitted && imports {
+		lines = slices.Insert(lines, 0, ErrImportedReference.Error())
 	}
 	return strings.Join(lines, "\n")
 }

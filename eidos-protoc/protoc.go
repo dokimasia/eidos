@@ -114,7 +114,8 @@ func answer(
 		return nil, fmt.Errorf("protoc: run the composition: %w", err)
 	}
 	logFindings(log, report.Sink)
-	if failed := errorText(report.Sink); failed != "" {
+	imports := len(req.GetProtoFile()) > len(req.GetFileToGenerate())
+	if failed := errorText(report.Sink, imports); failed != "" {
 		resp.Error = new(failed)
 		return resp, nil
 	}

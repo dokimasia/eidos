@@ -5,12 +5,17 @@ package protoc_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"testing"
+	"testing/iotest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/pluginpb"
 
 	"go.dokimi.dev/eidos/core/workspace"
 	"go.dokimi.dev/eidos/protoc"
@@ -23,6 +28,32 @@ const misspelledSrc = "syntax = \"proto3\";\n\npackage acme.v1;\n\nimport \"acme
 
 func TestProtoc(t *testing.T) {
 	t.Parallel()
+
+	t.Run("Main", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes the response to standard output and exits with status 0", func(t *testing.T) {
+			t.Parallel()
+
+			in, err := proto.Marshal(request(t, ""))
+			assert.NoError(t, err, "the request encodes")
+			out, _, status := mainRun(t, in)
+			assert.Equal(t, status, 0, "the plugin succeeds")
+			resp := &pluginpb.CodeGeneratorResponse{}
+			assert.NoError(t, proto.Unmarshal(out, resp), "the response decodes")
+			expect.Equal(t, resp.GetFile()[0].GetName(), rowsList, "the response has the file")
+		})
+
+		t.Run("exits with status 1 and the error on standard error for a request that does not decode",
+			func(t *testing.T) {
+				t.Parallel()
+
+				out, errOut, status := mainRun(t, []byte{0xff})
+				assert.Equal(t, status, 1, "the plugin fails")
+				expect.Empty(t, out, "no response is written")
+				expect.That(t, errOut).Contains("protoc: decode the request", "the error names the step")
+			})
+	})
 
 	t.Run("Run", func(t *testing.T) {
 		t.Parallel()
@@ -65,6 +96,25 @@ func TestProtoc(t *testing.T) {
 			assert.Equal(t, out.Len(), 0, "no response is written")
 		})
 
+		t.Run("returns the error of a request that does not read", func(t *testing.T) {
+			t.Parallel()
+
+			var out, log bytes.Buffer
+			err := protoc.Run(t.Context(), iotest.ErrReader(errRead), &out, &log, compose)
+			assert.ErrorIs(t, err, errRead, "the read fails")
+		})
+
+		t.Run("returns the error of a run that a cancellation ends", func(t *testing.T) {
+			t.Parallel()
+
+			in, err := proto.Marshal(request(t, ""))
+			assert.NoError(t, err, "the request encodes")
+			assert.HonoursCancellation(t, func(ctx context.Context) error {
+				var out, log bytes.Buffer
+				return protoc.Run(ctx, bytes.NewReader(in), &out, &log, compose)
+			}, "a cancelled run returns its error")
+		})
+
 		t.Run("returns an error for a composition that does not build", func(t *testing.T) {
 			t.Parallel()
 
@@ -86,6 +136,39 @@ func TestProtoc(t *testing.T) {
 		})
 	})
 }
+
+// mainEnv makes the test binary run [protoc.Main] with the composition of
+// the specs, as a plugin binary does.
+const mainEnv = "PROTOC_SPEC_MAIN"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(mainEnv) != "" {
+		protoc.Main(compose)
+		return
+	}
+	os.Exit(m.Run())
+}
+
+// mainRun runs the test binary as a plugin over stdin, and returns its
+// standard output, its standard error and its exit status.
+func mainRun(tb testing.TB, stdin []byte) ([]byte, string, int) {
+	tb.Helper()
+
+	cmd := exec.CommandContext(tb.Context(), os.Args[0])
+	cmd.Env = append(os.Environ(), mainEnv+"=1")
+	cmd.Stdin = bytes.NewReader(stdin)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err := cmd.Run()
+	if exit, failed := errors.AsType[*exec.ExitError](err); failed {
+		return out.Bytes(), errOut.String(), exit.ExitCode()
+	}
+	assert.NoError(tb, err, "the plugin runs")
+	return out.Bytes(), errOut.String(), 0
+}
+
+// errRead is the failure of the reader of a request.
+var errRead = errors.New("the request does not read")
 
 // errWrite is the failure of the writer of a response.
 var errWrite = errors.New("the response does not write")
