@@ -7,15 +7,15 @@ go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.10.0
-	go.dokimi.dev/eidos/cli v0.3.3
-	go.dokimi.dev/eidos/core v0.11.0
-	go.dokimi.dev/eidos/lang/go v0.6.2
-	go.dokimi.dev/eidos/lang/graphql v0.1.9
-	go.dokimi.dev/eidos/lang/java v0.2.9
-	go.dokimi.dev/eidos/lang/protobuf v0.2.9
-	go.dokimi.dev/eidos/lang/python v0.1.9
-	go.dokimi.dev/eidos/lang/rust v0.2.9
-	go.dokimi.dev/eidos/lang/typescript v0.4.5
+	go.dokimi.dev/eidos/cli v0.3.4
+	go.dokimi.dev/eidos/core v0.12.0
+	go.dokimi.dev/eidos/lang/go v0.6.3
+	go.dokimi.dev/eidos/lang/graphql v0.1.10
+	go.dokimi.dev/eidos/lang/java v0.2.10
+	go.dokimi.dev/eidos/lang/protobuf v0.3.0
+	go.dokimi.dev/eidos/lang/python v0.1.10
+	go.dokimi.dev/eidos/lang/rust v0.2.10
+	go.dokimi.dev/eidos/lang/typescript v0.4.6
 	go.stealthscale.io/cli v0.7.0
 )
 
@@ -39,9 +39,9 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
-	go.dokimi.dev/eidos/declarative v0.1.10 // indirect
-	go.dokimi.dev/eidos/lang v0.4.1 // indirect
-	go.dokimi.dev/eidos/sdk v0.7.2 // indirect
+	go.dokimi.dev/eidos/declarative v0.1.11 // indirect
+	go.dokimi.dev/eidos/lang v0.4.2 // indirect
+	go.dokimi.dev/eidos/sdk v0.8.0 // indirect
 	go.stealthscale.io/cli/yaml v0.1.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect

@@ -7,7 +7,7 @@ go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.10.0
-	go.dokimi.dev/eidos/core v0.11.0
+	go.dokimi.dev/eidos/core v0.12.0
 	go.yaml.in/yaml/v3 v3.0.5
 )
 

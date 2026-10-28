@@ -1,5 +1,18 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.8.0
+
+### Minor Changes
+
+- c733802: Add plugin.NameKeeper to the facade.
+
+### Patch Changes
+
+- 45db435: Add `plugin.RemovedLine`, `plugin.LineSetReader`, `output.Owner` and `output.ErrRecordedDigest` to the facade.
+- 45db435: Add `plugin.MisspelledBrand` to the facade.
+- Updated dependencies [510c973, dcbf4b0, 9996ac3, e938a44]
+  - go.dokimi.dev/eidos/core@0.12.0
+
 ## 0.7.2
 
 ### Patch Changes

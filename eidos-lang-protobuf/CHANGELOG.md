@@ -1,5 +1,23 @@
 # go.dokimi.dev/eidos/lang/protobuf
 
+## 0.3.0
+
+### Minor Changes
+
+- 5f00ece: Add the package `descriptor`, a frontend that lowers the `FileDescriptorProto`s of a protoc request into the graph of the source frontend.
+- 5f00ece: Export `frontend.Resolve` and `frontend.ImportPath`, so the descriptor frontend resolves references and imports as the source frontend does.
+- 241fa56: Declare the backend a NameKeeper, add the markers protobuf.follows and protobuf.body and the stamp protobuf.body, write the imports in the order of the header, and keep the hyphen of a source stem in a filename.
+
+### Patch Changes
+
+- b4c073a: Spell an option set one field at a time and the value of a map as the source writes them, and resolve the registry once for every unit of the descriptor frontend.
+- 482b0bb: Spell a message option of the descriptor frontend in one fixed form, so a plugin binary writes the same bytes whatever its build.
+- 347cd27: Spell each type reference of the descriptor frontend as the source writes it, and keep the location of the type name of a message field.
+- Updated dependencies [510c973, dcbf4b0, 45db435, c733802, 9996ac3, e938a44]
+  - go.dokimi.dev/eidos/core@0.12.0
+  - go.dokimi.dev/eidos/sdk@0.8.0
+  - go.dokimi.dev/eidos/lang@0.4.2
+
 ## 0.2.9
 
 ### Patch Changes
