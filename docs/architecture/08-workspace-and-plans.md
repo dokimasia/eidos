@@ -409,7 +409,10 @@ dependency packages of its language, so a member walk in a plan that
 A rule of the generate phase does not run on a declaration of a
 dependency package, so a generator does not write into a vendor tree.
 An annotator runs on such a declaration, and a rule of the emit phase
-runs on an emit value whose origin is such a declaration.
+runs on an emit value whose origin is such a declaration. A run reports
+no finding at a carrier of a dependency package and no finding of the
+validation of its directives. The directives that pass validation
+attach, and a directive that fails does not give a fact.
 
 Each run binds a plan's sources to the frozen graph before the plan
 generates, and the composition's fingerprint folds them. When a change

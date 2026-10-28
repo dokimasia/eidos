@@ -129,3 +129,4 @@ way.
 | [0108](0108-a-plugin-checks-the-declarations-of-a-value-against-the-package-of-a-file.md) | A plugin checks the declarations of a value against the package of a file | Accepted |
 | [0109](0109-an-unexported-method-is-a-member-of-its-package.md) | An unexported method is a member of its package | Accepted |
 | [0110](0110-an-acronym-keeps-the-s-of-its-plural.md) | An acronym keeps the s of its plural | Accepted |
+| [0111](0111-a-run-reports-no-finding-in-a-dependency.md) | A run reports no finding in a dependency | Accepted |
