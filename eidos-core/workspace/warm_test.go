@@ -6,6 +6,7 @@ package workspace_test
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"slices"
 	"strconv"
 	"strings"
@@ -351,6 +352,29 @@ func TestWarm(t *testing.T) {
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the kept finding is an Error")
 			assert.Length(t, findings(report.Sink, directive.UnknownKey), 1,
 				"the run reports the finding on the row again")
+		})
+
+		t.Run("reports nothing for a validation of a dependency package", func(t *testing.T) {
+			t.Parallel()
+
+			marker := eidos.NewPlugin(markerID).
+				Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+				Handle(eidos.Directive(markSchema, eidos.OnStruct(mirrored))).Generator()
+			w := dependentOf(t, workspace.Sources{Lang: frontendtest.ScriptedLang}, marker)
+			first := map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{
+				libSource: {Data: []byte(libBody + bogusMark)},
+			}}
+			cold, err := w.Run(t.Context(), workspace.Input{Tree: dependentTree(), Stores: first})
+			assert.NoError(t, err, "the cold run is clean")
+			assert.Empty(t, slices.Collect(cold.Sink.All()), "the cold run reports no finding of the dependency")
+			edited := map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{
+				libSource: {Data: []byte(libBody + colLine + bogusMark), ModTime: warmEdit},
+			}}
+			report, err := w.Run(t.Context(), workspace.Input{Tree: dependentTree(), Stores: edited})
+			assert.NoError(t, err, "the warm run is clean")
+			assert.False(t, report.Stats.Cold, "the second run reads the sealed state")
+			assert.Equal(t, report.Stats.Validated, 1, "the run validates Col alone")
+			assert.Empty(t, slices.Collect(report.Sink.All()), "the warm run reports no finding of the dependency")
 		})
 
 		t.Run("reports the finding of an annotator invocation that the run keeps", func(t *testing.T) {

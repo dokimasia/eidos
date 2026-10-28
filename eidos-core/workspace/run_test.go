@@ -1610,6 +1610,25 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, bound, symbol.Identity{}, "the rejected instance never gated the rule")
 		})
 
+		t.Run("reports nothing for a reference of a dependency package that the rules bind to nothing",
+			func(t *testing.T) {
+				t.Parallel()
+
+				var bound symbol.Identity
+				w, err := pointing(&bound).Rules(native{}).Build()
+				assert.NoError(t, err, "the composition composes")
+				s := coretest.Struct(coretest.StorePath, "Alpha")
+				s.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+				g := store.New()
+				assert.NoError(t, g.AddDependencyPackage(coretest.Package(coretest.StorePath, s)),
+					"the dependency package is admitted")
+				assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Ghost", 2)}),
+					"the directive attaches")
+				report, err := w.Run(t.Context(), workspace.Input{Graph: g})
+				assert.NoError(t, err, "the run is clean")
+				assert.Empty(t, slices.Collect(report.Sink.All()), "the run reports no finding of the dependency")
+			})
+
 		t.Run("reports UnresolvedReference for a language without rules", func(t *testing.T) {
 			t.Parallel()
 

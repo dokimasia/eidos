@@ -99,6 +99,10 @@ const (
 	otherOutput = "other/gen.zz"
 )
 
+// continuedCarrier is a carrier of the brand in the tool-directive shape
+// that continues onto the next line, which a workspace unit refuses.
+const continuedCarrier = "//" + string(ownBrand) + ":out user.go \\"
+
 // The uses of the use tree: the declaration that the workspace uses, and
 // the declaration that it uses in turn.
 var (
@@ -133,6 +137,26 @@ func TestDependency(t *testing.T) {
 				Lang: frontendtest.ScriptedLang, Package: libPath, Name: hiddenName, Kind: symbol.KindConstant,
 			})
 			assert.False(t, held, "the signature-only parse skips the constant")
+		})
+
+		t.Run("reports no finding at a carrier of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			store := depStore()
+			store[libFile] = &fstest.MapFile{Data: []byte("package " + libPath + "\nimport deep " + deepPath +
+				"\n" + continuedCarrier + "\ntype " + libName + " deep." + deepName + "\n")}
+			_, _, sink := loadTree(t, depTree(), with(recorded()), stores(store))
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports ContinuedCarrier at a carrier of a workspace unit", func(t *testing.T) {
+			t.Parallel()
+
+			tree := depTree()
+			tree[appFile] = &fstest.MapFile{Data: []byte("package " + appPath + "\nimport ext " + libPath +
+				"\n" + continuedCarrier + "\ntype " + appName + " ext." + libName + "\n")}
+			_, _, sink := loadTree(t, tree, with(recorded()), stores(depStore()))
+			coretest.AssertCodes(t, sink, plugin.ContinuedCarrier)
 		})
 
 		t.Run("resolves a workspace reference to a dependency's declaration", func(t *testing.T) {

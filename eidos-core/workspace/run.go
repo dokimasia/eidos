@@ -667,11 +667,16 @@ func failure(sink *diag.Sink) error {
 // rejected instance. validated also returns the number of subjects that
 // it validated. A dangling subject is not validated.
 //
+// A subject of a dependency package validates into a sink that the run
+// discards. Its directives that pass enter the table, and the run reports
+// no finding of the subject.
+//
 // Where rec is set, each worker records the validation of each subject
 // into a lane of its own. The record contains the directives that passed,
 // the edges through which the references of the subject resolved, and the
 // findings. A sink of the subject collects the findings before they
-// merge. The record of a dangling subject contains its one finding.
+// merge. The record of a dangling subject contains its one finding, and
+// the record of a dependency subject contains none.
 func (w *Workspace) validated(
 	g *store.Graph, facts *meta.Facts, sink *diag.Sink, rec *state.Recorder,
 ) (map[symbol.Identity][]directive.Directive, int) {
@@ -714,15 +719,20 @@ func (w *Workspace) validated(
 					continue
 				}
 				reads.Reset()
+				quiet := g.Dependency(s.subject)
 				target := local
-				if lane != nil {
+				if lane != nil || quiet {
 					target = diag.NewSink()
 				}
 				results[i] = directive.Validate(
 					s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts, reads), target,
 				)
 				if lane != nil {
-					lane.Validation(s.subject, results[i], reads, reported(target, local))
+					var found []diag.Diag
+					if !quiet {
+						found = reported(target, local)
+					}
+					lane.Validation(s.subject, results[i], reads, found)
 				}
 				count++
 			}

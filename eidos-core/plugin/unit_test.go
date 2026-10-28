@@ -273,6 +273,39 @@ func TestSourceUnit(t *testing.T) {
 					goSyntax(), "", diag.NewSink(), frontendOrigin)
 			}, "a unit without a brand is a driver defect")
 		})
+
+		t.Run("returns a unit outside a dependency", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, unitOf(t, unitTree()).Dependency(), "a workspace unit is no dependency")
+		})
+	})
+
+	t.Run("NewDependencyUnit", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a unit of a dependency", func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := dependencyUnit(t)
+			assert.True(t, u.Dependency(), "the unit is a dependency")
+		})
+
+		t.Run("returns a unit at the signature depth", func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := dependencyUnit(t)
+			assert.Equal(t, u.Depth(), plugin.DepthSignatures, "a dependency loads signature-only")
+		})
+
+		t.Run("panics on an empty brand", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, func() {
+				plugin.NewDependencyUnit([]plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), "",
+					diag.NewSink(), frontendOrigin)
+			}, "a unit without a brand is a driver defect")
+		})
 	})
 
 	t.Run("Read", func(t *testing.T) {
@@ -537,6 +570,14 @@ func TestSourceUnit(t *testing.T) {
 			u, sink := reporting(t, unitTree())
 			u.Comment("//"+bareMark+continuedPayload+"\n// "+continuationLine, continuedAt)
 			coretest.AssertCodes(t, sink, plugin.ContinuedCarrier)
+		})
+
+		t.Run("reports nothing for a continued carrier of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			u.Comment("//"+bareMark+continuedPayload+"\n// "+continuationLine, continuedAt)
+			coretest.AssertCodes(t, sink)
 		})
 
 		t.Run("reports the refusal at the line of the carrier", func(t *testing.T) {
@@ -937,6 +978,25 @@ func TestSourceUnit(t *testing.T) {
 			assert.Empty(t, u.Graph().Attachments(), "the carrier attaches nothing")
 		})
 
+		t.Run("reports nothing for a carrier outside the grammar of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			u.AttachCarriers(&node.Struct{Name: "Row"},
+				[]plugin.Carrier{{Mark: setMark, Payload: brokenPayload, Pos: carrierAt}}, unitCode)
+			coretest.AssertCodes(t, sink)
+			assert.Empty(t, u.Graph().Attachments(), "the carrier attaches nothing")
+		})
+
+		t.Run("attaches a carrier of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, _ := dependencyUnit(t)
+			u.AttachCarriers(&node.Struct{Name: "Row"},
+				[]plugin.Carrier{{Mark: setMark, Payload: tablePayload, Pos: carrierAt}}, unitCode)
+			assert.Length(t, u.Graph().Attachments(), 1, "an annotator reads the directive of a dependency")
+		})
+
 		t.Run("quotes a refused carrier with its mark", func(t *testing.T) {
 			t.Parallel()
 
@@ -1025,6 +1085,16 @@ func TestSourceUnit(t *testing.T) {
 			u, sink := reporting(t, unitTree())
 			marker := plugin.Sugar{Path: []string{"log"}, Refusal: sugarRefusal, Pos: carrierAt}
 			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode), "the marker is metadata")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports nothing for a marker of the brand with a refusal of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			marker := plugin.Sugar{Path: []string{unitBrand, string(stubName)}, Refusal: sugarRefusal, Pos: carrierAt}
+			assert.True(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode),
+				"a marker of the brand is a directive")
 			coretest.AssertCodes(t, sink)
 		})
 
@@ -1146,6 +1216,15 @@ func TestSourceUnit(t *testing.T) {
 			u.RefuseCarriers(unitCode, nil, unaddressed)
 			coretest.AssertCodes(t, sink)
 		})
+
+		t.Run("reports nothing for a carrier of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			u.RefuseCarriers(unitCode, []plugin.Carrier{{Mark: setMark, Payload: tablePayload, Pos: carrierAt}},
+				unaddressed)
+			coretest.AssertCodes(t, sink)
+		})
 	})
 
 	t.Run("RefuseSugar", func(t *testing.T) {
@@ -1166,6 +1245,15 @@ func TestSourceUnit(t *testing.T) {
 			expect.Equal(t, got[0].Pos, carrierAt, "the first finding is at the first marker")
 			expect.Equal(t, got[1].Pos, next, "the second finding is at the second marker")
 			expect.Equal(t, got[0].Severity, diag.SeverityError, "the finding is an Error")
+		})
+
+		t.Run("reports nothing for a marker of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			u.RefuseSugar(unitCode, []plugin.Sugar{{Path: []string{unitBrand, string(stubName)}, Pos: carrierAt}},
+				markerSep, unaddressed)
+			coretest.AssertCodes(t, sink)
 		})
 
 		t.Run("joins the path of the marker with the separator", func(t *testing.T) {
@@ -2169,6 +2257,17 @@ func reporting(tb assert.TB, tree fstest.MapFS) (*plugin.SourceUnit, *diag.Sink)
 	return plugin.NewSourceUnit(
 		[]plugin.SourceRef{unitFile()}, tree, plugin.DepthFull, goSyntax(),
 		unitBrand, sink, frontendOrigin,
+	), sink
+}
+
+// dependencyUnit builds the fixture unit as a unit of a dependency,
+// together with the sink of its findings.
+func dependencyUnit(tb assert.TB) (*plugin.SourceUnit, *diag.Sink) {
+	tb.Helper()
+
+	sink := diag.NewSink()
+	return plugin.NewDependencyUnit(
+		[]plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), unitBrand, sink, frontendOrigin,
 	), sink
 }
 

@@ -248,6 +248,17 @@ type unit struct {
 // parsed reports whether the load parsed the unit.
 func (u *unit) parsed() bool { return u.from == FromParse }
 
+// sourceUnit returns the unit that the frontend of u parses. A unit of a
+// dependency round gets a dependency unit, which reports no finding at a
+// carrier. Every other unit gets a workspace unit at the depth of u. The
+// reads of the unit resolve in fsys.
+func (u *unit) sourceUnit(fsys fs.FS, brand output.Brand, sink *diag.Sink) *plugin.SourceUnit {
+	if u.round > 0 {
+		return plugin.NewDependencyUnit(u.files, fsys, u.frontend.Syntax(), string(brand), sink, u.frontend.Name())
+	}
+	return plugin.NewSourceUnit(u.files, fsys, u.depth, u.frontend.Syntax(), string(brand), sink, u.frontend.Name())
+}
+
 // Load drives every frontend over the tree: the gate, select, locate the
 // stores, partition, key, keep or restore or parse, load the
 // dependencies, splice, resolve, and build one region per parsed unit. It
@@ -851,10 +862,7 @@ func parseAll(ctx context.Context, cfg Config, tree storeTree, units []*unit) er
 				return
 			}
 			u.sink = diag.NewSink()
-			u.src = plugin.NewSourceUnit(
-				u.files, tree, u.depth, u.frontend.Syntax(),
-				string(cfg.Brand), u.sink, u.frontend.Name(),
-			)
+			u.src = u.sourceUnit(tree, cfg.Brand, u.sink)
 			if err := u.frontend.Parse(ctx, u.src); err != nil {
 				failures[i] = fmt.Errorf("load: parse %s: %w", u.frontend.Name(), err)
 				cancel()

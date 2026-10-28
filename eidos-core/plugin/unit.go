@@ -44,7 +44,10 @@ type SourceUnit struct {
 	allowed map[string]bool
 	fsys    fs.FS
 	depth   Depth
-	syntax  CommentSyntax
+	// dependency is true for a unit that a dependency round placed. Such a
+	// unit reports no finding at a carrier.
+	dependency bool
+	syntax     CommentSyntax
 	// brand is the name that opens every carrier mark under the load.
 	brand  string
 	sink   *diag.Sink
@@ -87,6 +90,23 @@ func NewSourceUnit(
 		graph:   newGraphBuilder(),
 	}
 }
+
+// NewDependencyUnit builds a unit that a dependency round placed, as
+// [NewSourceUnit] builds a unit of the workspace. The unit loads at
+// [DepthSignatures]. It attaches the directives of its carriers for the
+// annotators of a run, and it reports no finding at a carrier.
+// NewDependencyUnit panics on an empty brand, as NewSourceUnit does.
+func NewDependencyUnit(
+	files []SourceRef, fsys fs.FS, syntax CommentSyntax, brand string, sink *diag.Sink, origin diag.Origin,
+) *SourceUnit {
+	u := NewSourceUnit(files, fsys, DepthSignatures, syntax, brand, sink, origin)
+	u.dependency = true
+	return u
+}
+
+// Dependency reports whether a dependency round placed the unit. It
+// allocates nothing.
+func (u *SourceUnit) Dependency() bool { return u.dependency }
 
 // Files returns the members of the unit in partition order.
 func (u *SourceUnit) Files() []SourceRef { return u.files }
@@ -256,7 +276,8 @@ func (u *SourceUnit) Doc(raw string) []string {
 // carrier whose own line has the tool-directive shape, and returns no
 // carrier for it, because a formatter may move such a line away from its
 // continuation, as gofmt does. The Error quotes the carrier with the set
-// mark. Comment reads the lines after it as they are written.
+// mark. Comment reads the lines after it as they are written. A unit of a
+// dependency reports no such Error.
 func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	var parts CommentParts
 	lines := commentLines(raw, u.syntax)
@@ -272,7 +293,7 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 			var span []string
 			if strings.HasSuffix(payload, directive.Continuation) {
 				if shaped {
-					u.Errorf(ContinuedCarrier, lineAt,
+					u.carrierf(ContinuedCarrier, lineAt,
 						"%q continues onto the next line, and a formatter may move a carrier in this "+
 							"form away from its continuation: write it as %q",
 						mark+payload, carrierSet+u.brand+carrierClose+payload)
@@ -314,14 +335,14 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 // directive-shaped when the line of the carrier has the tool-directive
 // shape. AttachCarriers reports a carrier that the grammar refuses as an
 // Error under refused, at the line of the carrier, and attaches nothing
-// for it. The finding quotes the carrier as the author wrote it.
-// AttachCarriers panics on a nil subject with a carrier to attach, as
-// [GraphBuilder.Attach] does.
+// for it. The finding quotes the carrier as the author wrote it. A unit of
+// a dependency reports no such Error. AttachCarriers panics on a nil
+// subject with a carrier to attach, as [GraphBuilder.Attach] does.
 func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused diag.Code) {
 	for _, c := range cs {
 		raw, err := directive.Parse(c.Payload)
 		if err != nil {
-			u.Errorf(refused, c.Pos, "%q: %v", c.Mark+c.Payload, err)
+			u.carrierf(refused, c.Pos, "%q: %v", c.Mark+c.Payload, err)
 			continue
 		}
 		raw.Pos = c.Pos
@@ -349,7 +370,8 @@ func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused
 //     marker is set.
 //
 // AttachSugar attaches nothing for such a marker, and reports true for it.
-// An attached directive has the arguments and the position of the marker.
+// A unit of a dependency does not report the marker under refused. An
+// attached directive has the arguments and the position of the marker.
 // It is set, because a marker has no negated form. AttachSugar panics on a
 // nil subject with a marker of the brand, as [GraphBuilder.Attach] does.
 //
@@ -373,19 +395,19 @@ func (u *SourceUnit) AttachSugar(subject symbol.Symbol, s Sugar, refused diag.Co
 			name = directive.Schema{Plugin: s.Path[1], Name: directive.Name(s.Path[2])}.Canonical()
 		}
 	default:
-		u.Errorf(refused, s.Pos,
+		u.carrierf(refused, s.Pos,
 			"a marker of the brand %s has %d names after the brand, but a directive has a name, "+
 				"or a plugin and a name", u.brand, len(s.Path)-1)
 		return true
 	}
 	if !name.Valid() {
-		u.Errorf(refused, s.Pos,
+		u.carrierf(refused, s.Pos,
 			"a marker of the brand %s has the name %q, but a directive name is a letter followed by letters, "+
 				"digits, hyphens and underscores", u.brand, strings.Join(s.Path[1:], " "))
 		return true
 	}
 	if s.Refusal != "" {
-		u.Errorf(refused, s.Pos,
+		u.carrierf(refused, s.Pos,
 			"the marker of the directive %s has an argument that is not a directive value: %s", name, s.Refusal)
 		return true
 	}
@@ -398,14 +420,18 @@ func (u *SourceUnit) AttachSugar(subject symbol.Symbol, s Sugar, refused diag.Co
 // address, so the frontend drops no directive without a report. Each
 // finding is at the line of its carrier, and it quotes the carrier as the
 // author wrote it. The caller passes a description of the subject in what,
-// such as "a parameter". RefuseCarriers reports nothing for an empty cs.
+// such as "a parameter". RefuseCarriers reports nothing for an empty cs,
+// and nothing for a unit of a dependency.
 //
 // # Allocation contract
 //
-// RefuseCarriers allocates nothing for an empty cs. A carrier costs its
-// quoted text, the boxing of the two arguments and the message of the
-// finding.
+// RefuseCarriers allocates nothing for an empty cs or a unit of a
+// dependency. A carrier costs its quoted text, the boxing of the two
+// arguments and the message of the finding.
 func (u *SourceUnit) RefuseCarriers(code diag.Code, cs []Carrier, what string) {
+	if u.dependency {
+		return
+	}
 	for _, c := range cs {
 		u.Errorf(
 			code,
@@ -423,13 +449,18 @@ func (u *SourceUnit) RefuseCarriers(code diag.Code, cs []Carrier, what string) {
 // address. Each finding is at the position of its marker. The finding
 // contains the path of the marker, joined by sep, such as "." for a
 // TypeScript decorator. The caller passes a description of the subject in
-// what. RefuseSugar reports nothing for an empty ss.
+// what. RefuseSugar reports nothing for an empty ss, and nothing for a
+// unit of a dependency.
 //
 // # Allocation contract
 //
-// RefuseSugar allocates nothing for an empty ss. A marker costs its joined
-// path, the boxing of the two arguments and the message of the finding.
+// RefuseSugar allocates nothing for an empty ss or a unit of a dependency.
+// A marker costs its joined path, the boxing of the two arguments and the
+// message of the finding.
 func (u *SourceUnit) RefuseSugar(code diag.Code, ss []Sugar, sep, what string) {
+	if u.dependency {
+		return
+	}
 	for _, s := range ss {
 		u.Errorf(
 			code,
@@ -510,6 +541,15 @@ func (u *SourceUnit) Warnf(c diag.Code, at position.Pos, format string, a ...any
 // the origin of the frontend.
 func (u *SourceUnit) Infof(c diag.Code, at position.Pos, format string, a ...any) {
 	u.sink.Infof(c, at, u.origin, format, a...)
+}
+
+// carrierf reports a finding at a carrier of the unit as an Error under c,
+// and reports nothing for a unit of a dependency.
+func (u *SourceUnit) carrierf(c diag.Code, at position.Pos, format string, a ...any) {
+	if u.dependency {
+		return
+	}
+	u.Errorf(c, at, format, a...)
 }
 
 // directiveShaped reports whether a comment line has the tool-directive

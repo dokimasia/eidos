@@ -169,10 +169,7 @@ func (k *keptIndex) err() error {
 //
 // Error modes: the frontend's error, wrapped.
 func (l *loader) scopes(u *unit) ([]scopeEntry, error) {
-	src := plugin.NewSourceUnit(
-		u.files, l.tree, u.depth, u.frontend.Syntax(),
-		string(l.cfg.Brand), diag.NewSink(), u.frontend.Name(),
-	)
+	src := u.sourceUnit(l.tree, l.cfg.Brand, diag.NewSink())
 	if err := u.frontend.Parse(l.ctx, src); err != nil {
 		return nil, fmt.Errorf("load: parse %s: %w", u.frontend.Name(), err)
 	}

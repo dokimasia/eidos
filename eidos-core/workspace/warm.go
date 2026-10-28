@@ -283,8 +283,10 @@ func (r *warmRun) seed() error {
 // because a cold run validates before it files any fact. Each validation
 // replaces the subject's record, and a subject without a raw instance
 // loses its record. The findings merge into the run's sink in the
-// canonical finding order. A subject whose validated directives changed
-// becomes a candidate and makes its declaration edge dirty.
+// canonical finding order. The run reports no finding of a subject of a
+// dependency package, and its record contains none. A subject whose
+// validated directives changed becomes a candidate and makes its
+// declaration edge dirty.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record of the
 // generation that does not read whole.
@@ -317,7 +319,10 @@ func (r *warmRun) validate() error {
 			reads.Reset()
 			local := diag.NewSink()
 			ds = directive.Validate(id, raws, r.w.directives, r.w.keys, r.w.resolver(r.g, empty, reads), local)
-			reported := slices.Collect(local.All())
+			var reported []diag.Diag
+			if !r.g.Dependency(id) {
+				reported = slices.Collect(local.All())
+			}
 			lane.Validation(id, ds, reads, reported)
 			found = append(found, reported...)
 			r.stats.Validated++
