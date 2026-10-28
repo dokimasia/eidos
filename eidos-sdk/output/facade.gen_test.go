@@ -141,6 +141,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ErrRecordedDigest", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, output.ErrRecordedDigest, core.ErrRecordedDigest, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Action", func(t *testing.T) {
 		t.Parallel()
 
@@ -278,6 +288,16 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[output.Sink](), reflect.TypeFor[core.Sink](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("Owner", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[output.Owner](), reflect.TypeFor[core.Owner](), "the facade aliases the kernel's type")
 		})
 	})
 

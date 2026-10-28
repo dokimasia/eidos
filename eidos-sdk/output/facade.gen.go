@@ -115,7 +115,8 @@ func HasTrailerKey(tail []byte) bool {
 // edited since it was stamped are refused, naming the path, and
 // remain as they are, unless [Disk.Overwrite] allowed their verdict. A
 // staged removal deletes only the brand's intact output, and leaves any
-// other file in place.
+// other file in place. A file without a frame is the brand's output only
+// at the recorded digest that [Disk.Own] declared for its path.
 //
 // # Concurrency
 //
@@ -173,6 +174,12 @@ func NewMem() *Mem {
 // serves one staging and is not reused.
 var ErrFinished = core.ErrFinished
 
+// ErrRecordedDigest reports a file without a frame whose bytes differ
+// from the digest that [Owner.Own] declared for its path. A commit
+// refuses to write over such a file unless the sink writes over foreign
+// files.
+var ErrRecordedDigest = core.ErrRecordedDigest
+
 // Action is what one commit did to one path.
 type Action = core.Action
 
@@ -224,6 +231,17 @@ type Change = core.Change
 //
 // A Sink belongs to one goroutine and serves one staging.
 type Sink = core.Sink
+
+// Owner is implemented by a sink whose destination has files of its own.
+// Own declares that the brand wrote the file at path with the digest
+// hash, "sha256:" and 64 lowercase hex digits, as the manifest of the
+// previous generation records it. Prepare and Commit then classify a file
+// at path without a frame through the digest: the same digest is the
+// brand's intact output, and any other file without a frame is foreign.
+// The frame decides the classification of a file with one. Own does not
+// check the path, which Write and Delete check, and it cannot fail.
+// Prepare and Commit each read the declarations made before them.
+type Owner = core.Owner
 
 // Stream writes the files that its sinks commit to one writer, such as
 // standard output. Each file is a header line, // === <path> ===, then the

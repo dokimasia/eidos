@@ -121,6 +121,13 @@ func CanonicalHandler(r RPC, p Policy, types TypeSpeller, translate Translate) (
 // shape, so a continued carrier written with it keeps its place.
 var ContinuedCarrier = core.ContinuedCarrier
 
+// MisspelledBrand warns about a comment line whose mark, or a marker whose
+// first name, is near the brand of the run and is not the brand. The line
+// stays comment text and the marker stays metadata. A mark is near under
+// the bound of a suggestion of a directive name: at most two edits, and at
+// most a third of the length of the longer spelling.
+var MisspelledBrand = core.MisspelledBrand
+
 // Need is one import path that no loaded package of the frontend's
 // language declares, and the paths of the files that import it,
 // sorted.
@@ -174,6 +181,17 @@ const (
 // The target spells the join and the extension of Word at render, so one
 // declaration serves store_stub.go and store.stub.ts alike.
 type Output = core.Output
+
+// RemovedLine is one line that the committed file of a line-set family
+// has and the fresh file lacks.
+type RemovedLine = core.RemovedLine
+
+// LineSetReader is implemented by a generator with a line-set family.
+// Removed returns the finding that run --check reports for a removed
+// line, and false for a line whose removal is no finding. The run sets
+// the position of the finding to the line and its origin to the
+// generator, where the finding leaves them zero.
+type LineSetReader = core.LineSetReader
 
 // Unit is one accumulated output entity. It contains everything that one
 // plugin contributed to one family and cardinality key in one phase

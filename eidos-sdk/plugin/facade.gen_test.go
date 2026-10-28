@@ -121,6 +121,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("MisspelledBrand", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, plugin.MisspelledBrand, core.MisspelledBrand, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("Need", func(t *testing.T) {
 		t.Parallel()
 
@@ -218,6 +228,26 @@ func TestFacade(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, reflect.TypeFor[plugin.Output](), reflect.TypeFor[core.Output](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("RemovedLine", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.RemovedLine](), reflect.TypeFor[core.RemovedLine](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("LineSetReader", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.LineSetReader](), reflect.TypeFor[core.LineSetReader](), "the facade aliases the kernel's type")
 		})
 	})
 
