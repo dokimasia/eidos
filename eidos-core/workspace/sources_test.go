@@ -242,6 +242,14 @@ func TestSources(t *testing.T) {
 				want:    nil,
 			},
 			{
+				name:    "admits a package whose files outside a store are in a named directory",
+				sources: workspace.Sources{Packages: []string{"./svc/..."}},
+				pkgs: func() []*node.Package {
+					return []*node.Package{pkgIn(coretest.Lang, svcPkg, "svc/a.go", contextFile)}
+				},
+				want: []string{svcPkg},
+			},
+			{
 				name:    "admits no package without a file for a pattern",
 				sources: workspace.Sources{Packages: []string{"./..."}},
 				pkgs:    func() []*node.Package { return []*node.Package{pkgIn(coretest.Lang, svcPkg)} },

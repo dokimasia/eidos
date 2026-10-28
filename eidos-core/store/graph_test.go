@@ -483,9 +483,20 @@ func TestGraph(t *testing.T) {
 				give:       stored,
 			},
 			{
-				name:       "reports false for a package that the partition shares with a dependency round",
+				name:       "reports false for a declaration of the partition in a package that it shares with a dependency round",
 				giveMarked: []int{2},
 				give:       stored,
+			},
+			{
+				name:       "reports true for a declaration of a dependency region of a package that the partition shares",
+				giveMarked: []int{2},
+				give:       coretest.Interface(coretest.StorePath, "Index").ID,
+				want:       true,
+			},
+			{
+				name:       "reports false for a package that the partition shares with a dependency round",
+				giveMarked: []int{2},
+				give:       coretest.PackageID(coretest.StorePath),
 			},
 			{
 				name:       "reports false for a package that no region lists",
@@ -499,7 +510,7 @@ func TestGraph(t *testing.T) {
 
 				g, _ := newSplit().dependent(tt.giveMarked...)
 				assert.Equal(t, g.Dependency(tt.give), tt.want,
-					"a package is a dependency package where a dependency round loaded every region of it")
+					"a declaration is a dependency where a dependency round loaded its region")
 			})
 		}
 
@@ -509,6 +520,14 @@ func TestGraph(t *testing.T) {
 			g, src := newSplit().dependent(1)
 			g.Dependency(cache)
 			assert.Equal(t, src.decoded(), []int{0, 0, 0}, "the summaries mark the regions")
+		})
+
+		t.Run("decodes the regions of a package that the partition shares with a dependency round", func(t *testing.T) {
+			t.Parallel()
+
+			g, src := newSplit().dependent(2)
+			g.Dependency(coretest.Interface(coretest.StorePath, "Index").ID)
+			assert.Equal(t, src.decoded(), []int{1, 0, 1}, "the regions of the package tell its declarations apart")
 		})
 
 		t.Run("reports false for a graph New returned", func(t *testing.T) {

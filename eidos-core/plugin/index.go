@@ -165,11 +165,10 @@ func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	return ix.graph.Lookup(id)
 }
 
-// Dependency reports whether a dependency round loaded the package of an
-// identity, as [store.Graph.Dependency] reports it. The mark is a fact of
-// the graph, so the scope does not decide it. The dispatch runs no rule
-// of the generate phase on the subject of such a package. It allocates
-// nothing.
+// Dependency reports whether a dependency round loaded a declaration, as
+// [store.Graph.Dependency] reports it. The mark is a fact of the graph,
+// so the scope does not decide it. The dispatch runs no rule of the
+// generate phase on such a subject. It allocates nothing.
 func (ix *Index) Dependency(id symbol.Identity) bool { return ix.graph.Dependency(id) }
 
 // DirectivesOf returns a subject's validated instances, in position

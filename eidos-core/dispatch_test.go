@@ -1244,6 +1244,19 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "the struct of the dependency package is not visited")
 		})
 
+		t.Run("skips a subject of a dependency region of a package that the partition shares", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Dependent(
+				[]*node.Package{coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Gamma"))},
+				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha")),
+			)
+			_, facts := boolKey(t)
+			p, visited := visitingStructs(contextPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the struct of the dependency region is not visited")
+		})
+
 		t.Run("skips a subject of a dependency package under a fact-gated rule", func(t *testing.T) {
 			t.Parallel()
 

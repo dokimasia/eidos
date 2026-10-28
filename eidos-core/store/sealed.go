@@ -94,10 +94,10 @@ type regionPart struct {
 type packageSlot struct {
 	regions []int
 	// dependency reports that a dependency round loaded every region of
-	// the package. [newSealedIndex] sets it from the summaries, so a read
-	// of it decodes nothing.
-	dependency bool
-	once       sync.Once
+	// the package, and partly that it loaded at least one. [newSealedIndex]
+	// sets both from the summaries, so a read of them decodes nothing.
+	dependency, partly bool
+	once               sync.Once
 	// pkg is the merged package node, nil where no decoded region
 	// declares the package.
 	pkg *node.Package
@@ -105,6 +105,10 @@ type packageSlot struct {
 	// package node included, in identity order. Declarations under one
 	// identity keep their region order.
 	byID []node.Declaration
+	// dependencies maps each declaration of a package that a dependency
+	// round loaded only partly to whether a dependency round loaded the
+	// region that declares it, and is nil for every other package.
+	dependencies map[symbol.Identity]bool
 	// directives and stamps map each subject of the package to its
 	// raw attachments in the seal's order. directed and stamped list
 	// the same subjects in identity order.
@@ -178,6 +182,7 @@ func newSealedIndex(src Source) *sealedIndex {
 			}
 			packageCounts[at]++
 			s.pkgSlots[at].dependency = s.pkgSlots[at].dependency && info.Dependency
+			s.pkgSlots[at].partly = s.pkgSlots[at].partly || info.Dependency
 		}
 		for _, k := range info.Kinds {
 			kindCounts[k]++
@@ -251,11 +256,22 @@ func (s *sealedIndex) packageOf(id symbol.Identity) (*node.Package, bool) {
 	return slot.pkg, true
 }
 
-// dependency reports whether a dependency round loaded every region of a
-// package, and false for a package that no summary lists.
-func (s *sealedIndex) dependency(pkg symbol.Identity) bool {
+// dependency reports whether a dependency round loaded the region that
+// declares an identity, and for a package identity, every region of the
+// package. It reports false for a package that no summary lists. It
+// decodes the regions of a package that a dependency round loaded only
+// partly, and no other region.
+func (s *sealedIndex) dependency(id symbol.Identity) bool {
+	pkg := owningPackage(id)
 	at, met := s.byPkg[pkg]
-	return met && s.pkgSlots[at].dependency
+	if !met {
+		return false
+	}
+	slot := &s.pkgSlots[at]
+	if slot.dependency || !slot.partly || id == pkg {
+		return slot.dependency
+	}
+	return s.pkg(pkg).dependencies[id]
 }
 
 // kind returns the declarations of one kind in the graph's order:
@@ -438,12 +454,21 @@ func (s *sealedIndex) build(id symbol.Identity, slot *packageSlot) {
 	)
 	slot.directives = map[symbol.Identity][]directive.Raw{}
 	slot.stamps = map[symbol.Identity][]meta.RawStamp{}
+	if slot.partly && !slot.dependency {
+		slot.dependencies = map[symbol.Identity]bool{}
+	}
 	for _, i := range slot.regions {
 		region := s.region(i)
 		for _, part := range region.parts {
-			if part.pkg.ID == id {
-				nodes = append(nodes, part.pkg)
-				decls = append(decls, part.decls...)
+			if part.pkg.ID != id {
+				continue
+			}
+			nodes = append(nodes, part.pkg)
+			decls = append(decls, part.decls...)
+			if slot.dependencies != nil {
+				for _, decl := range part.decls {
+					slot.dependencies[decl.Identity()] = s.infos[i].Dependency
+				}
 			}
 		}
 		if region.region == nil {

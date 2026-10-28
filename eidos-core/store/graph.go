@@ -344,18 +344,25 @@ func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	return g.packageOf(id)
 }
 
-// Dependency reports whether a dependency round loaded the package of an
-// identity, untracked. A dependency round loads the packages of a store
-// and the vendored packages that the selection of a frontend does not
-// claim. A package of a graph [Sealed] returned is a dependency package
-// when [RegionInfo.Dependency] marks every region of it. A package of a
-// graph [New] returned is one when [Graph.AddDependencyPackage] added it.
-// Dependency reports false for a package that the regions do not list, for
-// a package that [Graph.AddPackage] added, and before [Graph.Freeze]. It
-// does not decode a region or allocate.
+// Dependency reports whether a dependency round loaded a declaration,
+// untracked. A dependency round loads the packages of a store and the
+// vendored packages that the selection of a frontend does not claim.
+//
+// In a graph [Sealed] returned, a declaration is a dependency when
+// [RegionInfo.Dependency] marks the region that declares it, and a
+// package is a dependency when the mark is on every region of it. A
+// package that the partition shares with a dependency round is no
+// dependency, and only the declarations of its marked regions are. In a
+// graph [New] returned, a package and its declarations are dependencies
+// when [Graph.AddDependencyPackage] added the package.
+//
+// Dependency reports false for a package that the regions do not list,
+// for a package that [Graph.AddPackage] added, and before [Graph.Freeze].
+// It does not allocate. It decodes the regions of a package that the
+// partition shares with a dependency round, and no other region.
 func (g *Graph) Dependency(id symbol.Identity) bool {
 	if g.lazy != nil {
-		return g.lazy.dependency(owningPackage(id))
+		return g.lazy.dependency(id)
 	}
 	return g.dependencies[owningPackage(id)]
 }

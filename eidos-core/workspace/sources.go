@@ -268,9 +268,11 @@ func (s Sources) placed(files []*node.File, module string, named bool, dirs []di
 	return s.Module == "" || (named && module == s.Module)
 }
 
-// inDirectories reports whether a package has a file, and every file
-// it has is in a directory one of the patterns names. A file a store
-// provides is in no workspace directory.
+// inDirectories reports whether a package has a file of the workspace,
+// and every file of the workspace it has is in a directory one of the
+// patterns names. A file a store provides is in no workspace directory,
+// and the patterns do not decide it: a generator runs on no declaration
+// of such a file of a package that a dependency round loaded only partly.
 func inDirectories(files []*node.File, dirs []directory) bool {
 	seen := false
 	for _, f := range files {
@@ -278,7 +280,7 @@ func inDirectories(files []*node.File, dirs []directory) bool {
 			continue
 		}
 		if _, _, stored := plugin.CutStorePath(f.Path); stored {
-			return false
+			continue
 		}
 		dir := path.Dir(f.Path)
 		if !slices.ContainsFunc(dirs, func(d directory) bool { return d.names(dir) }) {
