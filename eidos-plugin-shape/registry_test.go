@@ -96,6 +96,7 @@ var readings = []reading{
 	readerOf(shape.DeleteRemoves, shape.DeleteRemovesOf),
 	readerOf(shape.Deleter, shape.DeleterOf),
 	readerOf(shape.Deprecated, shape.DeprecatedOf),
+	readerOf(shape.Durable, shape.DurableOf),
 	readerOf(shape.Errors, shape.ErrorsOf),
 	readerOf(shape.Eventually, shape.EventuallyOf),
 	readerOf(shape.Hooks, shape.HooksOf),

@@ -1123,6 +1123,41 @@ func DeprecatedOf(m sdk.Matcher) (DeprecatedParams, bool) {
 // deprecatedMixinKey is the handle of the key shape.deprecated.mixin.
 var deprecatedMixinKey meta.Key[bool] = meta.Named[bool]("shape.deprecated.mixin")
 
+// Durable is the mixin durable. A write that returned success and that a sync
+// covered is readable after a crash of the process, and recovery returns each
+// record whole or not at all.
+const Durable Mixin = "durable"
+
+// DurableCorrupt is the key of the param corrupt of the mixin durable. The
+// param is the error that a read of a corrupted record reports.
+const DurableCorrupt directive.ParamKey = "corrupt"
+
+// DurableParams are the params of the mixin durable.
+type DurableParams struct {
+	// Corrupt is the error that a read of a corrupted record reports.
+	Corrupt symbol.Identity
+}
+
+// DurableOf returns the params of the mixin durable on the subject of m, and
+// false where the subject does not have the mixin. It records each read in the
+// invocation of m.
+func DurableOf(m sdk.Matcher) (DurableParams, bool) {
+	var p DurableParams
+	if _, held := sdk.Fact(m, durableMixinKey); !held {
+		return p, false
+	}
+	p.Corrupt, _ = sdk.Fact(m, durableCorruptKey)
+	return p, true
+}
+
+// durableMixinKey is the handle of the key shape.durable.mixin.
+var durableMixinKey meta.Key[bool] = meta.Named[bool]("shape.durable.mixin")
+
+// durableCorruptKey is the handle of the key shape.durable.corrupt.
+var durableCorruptKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.durable.corrupt",
+)
+
 // Errors is the mixin errors. The callable's error returns are part of its
 // contract, and a caller is expected to handle each of them. The mixin maps no
 // condition to a sentinel, which a mixin of each condition, such as not-found,
@@ -4779,6 +4814,24 @@ func Specs() []Spec {
 			Documentary: true,
 		},
 		{
+			Name:  "durable",
+			Form:  FormMixin,
+			Doc:   "A write that returned success and that a sync covered is readable after a crash of the process, and recovery returns each record whole or not at all.",
+			Group: "shape.durable",
+			Key:   "shape.durable.mixin",
+			Params: []Param{
+				{
+					ParamSpec: directive.ParamSpec{
+						Key:        DurableCorrupt,
+						Type:       directive.TypeReference,
+						Resolution: directive.ResolvePackageVar,
+						Doc:        "the error that a read of a corrupted record reports",
+					},
+					Fact: "shape.durable.corrupt",
+				},
+			},
+		},
+		{
 			Name:        "errors",
 			Form:        FormMixin,
 			Doc:         "The callable's error returns are part of its contract, and a caller is expected to handle each of them. The mixin maps no condition to a sentinel, which a mixin of each condition, such as not-found, does.",
@@ -6357,4 +6410,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:cde8c866db2e0c968e589854cebd7d9e1e94d45c1bb8eaa3754a89f0674e0bb1
+// shapegen:provenance sha256:7cf02a36288d473b928093fdafe81169d3272ff7cda1dfd15fe5537991db229a

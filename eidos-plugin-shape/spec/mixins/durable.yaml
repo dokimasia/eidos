@@ -1,0 +1,23 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=../../spec.schema.json
+name: durable
+form: mixin
+claim: >
+  A write that returned success and that a sync covered is readable after
+  a crash of the process, and recovery returns each record whole or not at
+  all.
+observation: >
+  A check runs the subject over storage that it can crash, crashes it after
+  each sync, opens the subject again on what survived, and reads back each
+  acknowledged write. The corrupt param refers to the error that a read of a
+  corrupted record reports, so the subject checks the integrity of a record
+  when it reads it.
+params:
+  - {key: corrupt, type: reference, resolve: package-var, doc: the error that a read of a corrupted record reports}
+falsifiability: >
+  A subject that acknowledges a write before its sync loses the write at a
+  crash, and the check turns red.
+counterexamples:
+  edge: a crash between the write of a record and its sync
