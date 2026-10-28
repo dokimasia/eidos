@@ -132,3 +132,5 @@ way.
 | [0111](0111-a-run-reports-no-finding-in-a-dependency.md) | A run reports no finding in a dependency | Accepted |
 | [0112](0112-a-unit-warns-about-a-mark-near-its-brand.md) | A unit warns about a mark near its brand | Accepted |
 | [0113](0113-a-data-family-writes-one-file-under-a-name-of-its-own.md) | A data family writes one file under a name of its own | Accepted |
+| [0114](0114-a-dependency-is-a-declaration-that-a-dependency-round-loaded.md) | A dependency is a declaration that a dependency round loaded | Accepted |
+| [0115](0115-a-protoc-plugin-runs-an-eidos-composition.md) | A protoc plugin runs an eidos composition | Accepted |

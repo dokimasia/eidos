@@ -69,6 +69,12 @@ generator from a plugin directory of a YAML manifest and template trees
 same YAML library. The CLI module depends on it to load the plugins that
 a config file lists, and the kernel does not import it.
 
+A protoc plugin binary calls the host in `eidos-protoc`
+([14-distribution-and-cli.md](14-distribution-and-cli.md)), which adds
+the descriptor frontend of the protobuf satellite to the composition of
+the binary. The module depends on the kernel and on that satellite.
+`eidos-cli` and the satellite do not depend on it.
+
 The kernel is the only module whose tags gate anyone else.
 Satellites release on their own schedule against a declared kernel
 version range ([15-compatibility.md](15-compatibility.md)).
@@ -162,6 +168,7 @@ Dependencies point one way and only one way:
 consumers (dokimi, org binaries) ──► satellites (eidos-lang-go, …) ──► sdk ──► kernel
 consumers (dokimi, org binaries) ──► eidos-cli (command kernels) ───────────► kernel
                                      eidos-cli ──► eidos-declarative (the host) ──► kernel
+consumers (protoc-gen-<name>) ─────► eidos-protoc ──► eidos-lang-protobuf ──► sdk ──► kernel
                                      satellites ──► eidos-lang (helpers) ──► kernel
                                      eidos-plugin-shape ─────────────► sdk ──► kernel
                                      tree-sitter satellites ──► eidos-lang ──► kernel
@@ -207,6 +214,8 @@ import line rather than in review.
   they are the module `eidos-cli`, beside the kernel.
 - The declarative host. Its loader reads a YAML manifest, so it is the
   module `eidos-declarative`, beside the kernel.
+- The host of a protoc plugin. It loads protobuf descriptors, so it is
+  the module `eidos-protoc`, beside the kernel.
 - Any language satellite content, including a helper table added
   "just this once". The degradation scale and the metadata
   namespaces exist so the kernel never needs a language exception.

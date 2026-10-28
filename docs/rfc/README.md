@@ -104,3 +104,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0085](0085-the-instances-and-subjects-that-a-handler-reads.md) | The instances of a directive and the subjects of a key that a handler reads | Accepted |
 | [0086](0086-the-package-of-the-routed-file-of-a-handle.md) | The package of the routed file of a handle | Accepted |
 | [0087](0087-data-files-and-line-sets.md) | Data files and line sets | Accepted |
+| [0088](0088-a-protoc-plugin-host.md) | A protoc plugin host | Accepted |

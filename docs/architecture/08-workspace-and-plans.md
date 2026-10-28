@@ -397,22 +397,31 @@ declares, and a pattern that names no directory of a workspace tree:
 an empty one, a `..` element, a backslash, an absolute path, and
 `...` anywhere but at the end.
 
-A package matches `packages` only when every one of its files is in
-a named directory, so a scope admits a package whole or not at all.
+A package matches `packages` only when every one of its workspace
+files is in a named directory, so a scope admits a package whole or
+not at all. A file that a store provides is in no named directory, and
+the patterns do not decide it.
 
-A dependency package is a package that a dependency round loaded,
-such as a package of the standard library that a store provides, or a
-vendored package. A scope admits a dependency package by `lang` alone,
-and `packages` and `module` do not apply to it. A plan reads the
-dependency packages of its language, so a member walk in a plan that
-`./internal/...` narrows returns the methods of an embedded `io.Closer`.
-A rule of the generate phase does not run on a declaration of a
-dependency package, so a generator does not write into a vendor tree.
-An annotator runs on such a declaration, and a rule of the emit phase
-runs on an emit value whose origin is such a declaration. A run reports
-no finding at a carrier of a dependency package and no finding of the
-validation of its directives. The directives that pass validation
-attach, and a directive that fails does not give a fact.
+A dependency is a declaration that a dependency round loaded, such as
+a declaration of the standard library that a store provides, or of a
+vendored package. A dependency package is a package whose every file
+a dependency round loaded. A package that the workspace shares with a
+dependency round is no dependency package. The declarations of its
+files that the round loaded are dependencies, and the declarations of
+its workspace files are not. A proto package that a file to generate
+and an imported file both declare is such a package.
+
+A scope admits a dependency package by `lang` alone, and `packages`
+and `module` do not apply to it. A plan reads the dependency packages
+of its language, so a member walk in a plan that `./internal/...`
+narrows returns the methods of an embedded `io.Closer`. A rule of the
+generate phase does not run on a dependency, so a generator does not
+write into a vendor tree. An annotator runs on a dependency, and a rule
+of the emit phase runs on an emit value whose origin is a dependency.
+A run reports no finding at a carrier of a dependency unit and no
+finding of the validation of the directives of a dependency. The
+directives that pass validation attach, and a directive that fails
+does not give a fact.
 
 Each run binds a plan's sources to the frozen graph before the plan
 generates, and the composition's fingerprint folds them. When a change

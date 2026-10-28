@@ -73,6 +73,17 @@ A well-known type never resolves against the graph, spelled with or
 without its leading dot. Its mapping therefore does not depend on
 whether the workspace loads its declaration.
 
+The satellite has a second frontend, `descriptor`, for the host of a
+protoc plugin ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
+It lowers the `FileDescriptorProto`s of a protoc request into the graph
+that the source frontend gives for the same schema: the declarations,
+their positions, the comments of `source_code_info` with their
+carriers, and the facts. A spec of the package compiles the schemas of
+proto2, proto3, Edition 2023 and custom options with protocompile and
+compares the two graphs. A file to generate without `source_code_info`
+reports an Error under `MissingSourceInfo`, PROTO-0007, because its
+directives would disappear without a finding.
+
 What protobuf states and the projection has no form for is stamped
 as declared residue: a field's wire number, a required label and a
 json_name, a message's reserved and extension ranges, a file's

@@ -133,11 +133,47 @@ What a consumer's `go.mod` takes on, and under what discipline:
 | `go.dokimi.dev/eidos/core` | semver, canary-tested, additive within a major ([15-compatibility.md](15-compatibility.md)) |
 | `go.dokimi.dev/eidos/cli` | semver; the command kernels, whose options, JSON schemas and exit codes follow the same policy ([20-cli.md](20-cli.md)) |
 | `go.stealthscale.io/cli` | semver; the command line of every eidos-built binary, which `eidos/cli` requires |
+| `go.dokimi.dev/eidos/protoc` | semver; the host of a protoc plugin binary, whose parameter mapping and response follow the same policy |
 | `go.dokimi.dev/eidos/declarative` | semver; the manifest format and its JSON Schema follow the same policy |
 | `go.dokimi.dev/eidos/lang/<lang>` | its own cadence; declares a kernel range and proves it in CI |
 | `go.dokimi.dev/eidos/plugin-shape` | its own cadence; the catalog grows by spec |
 | third-party typed plugins | code you vet; the conformance suite is the acceptance test |
 | declarative plugins | inert files; the manifest hashes into the fingerprint |
+
+## The protoc plugin binary
+
+A composition of generators also runs as a protoc plugin, so `protoc`,
+`buf generate` and a remote plugin on the BSR run it over the
+descriptors of a schema. The module `eidos-protoc`
+(`go.dokimi.dev/eidos/protoc`) is the host. The binary is
+`cmd/protoc-gen-<name>` in the repository of the generators, and calls
+`protoc.Main` with the same composition function that it passes to
+`cli.New`:
+
+```go
+func main() { protoc.Main(acme.Compose) }
+```
+
+- **The load.** The host adds the descriptor frontend of
+  `lang/protobuf/descriptor`. The files to generate form an in-memory
+  tree, and every other file of the request is a file of the store
+  `protoc`, which a dependency round loads. A generator runs on no
+  declaration of an imported file, also where the imported file shares
+  the proto package of a file to generate
+  ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
+- **The parameter.** `<plugin>.<option>=<value>` sets an option of a
+  plugin, and `policy.<key>=<choice>` selects the choice of a policy. A
+  value is JSON where it decodes as JSON, and a string otherwise.
+- **The run.** Each call is a cold run into an in-memory sink, without
+  a ledger. The response carries every file, and buf writes them. The
+  Error findings go into the `error` field of the response, and the
+  Warning and Info findings go to standard error.
+- **The strategy.** A plan that writes one file for each plan, or a
+  generator that reads another directory, needs `strategy: all` in
+  `buf.gen.yaml`, because buf calls a local plugin once per directory
+  by default.
+
+([21-decisions.md](21-decisions.md), D233.)
 
 ## Command kernels
 
