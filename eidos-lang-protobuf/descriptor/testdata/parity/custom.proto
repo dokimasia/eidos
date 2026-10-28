@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package parity.custom;
+
+import "google/protobuf/descriptor.proto";
+
+// The options of a table.
+extend google.protobuf.MessageOptions {
+  string table = 50001;
+  bytes blob = 50002;
+}
+
+// Tagged states a custom option.
+message Tagged {
+  option (parity.custom.table) = "tagged";
+  option (parity.custom.blob) = "ab";
+
+  string id = 1;
+}

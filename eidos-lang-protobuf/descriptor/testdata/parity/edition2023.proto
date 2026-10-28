@@ -1,0 +1,25 @@
+edition = "2023";
+
+package parity.editions;
+
+option features.enum_type = CLOSED;
+
+// Item declares the feature forms of an edition.
+//+fixture:table name=items
+message Item {
+  string id = 1 [features.field_presence = IMPLICIT];
+  string name = 2;
+  Part part = 3 [features.message_encoding = DELIMITED];
+  int32 count = 4 [features.field_presence = LEGACY_REQUIRED];
+}
+
+// Part is a message that a delimited field refers to.
+message Part {
+  string label = 1;
+}
+
+// State is closed through the file.
+enum State {
+  STATE_UNSET = 0;
+  STATE_ON = 1;
+}

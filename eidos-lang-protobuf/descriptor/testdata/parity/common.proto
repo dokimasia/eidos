@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package parity.common;
+
+// Shared is the message that the other files import.
+message Shared {
+  string name = 1;
+}

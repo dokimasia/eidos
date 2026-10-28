@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package parity.three;
+
+import "parity/common.proto";
+
+option go_package = "example.test/parity/three";
+
+// Event declares every proto3 field form.
+//+fixture:table name=events
+message Event {
+  string id = 1; // implicit presence
+  optional int64 at = 2;
+  repeated string tags = 3;
+  map<string, int64> counts = 4;
+  parity.common.Shared shared = 5;
+  Nested nested = 6;
+  Colour colour = 7;
+
+  // Payload is one of two forms.
+  oneof payload {
+    string text = 8;
+    bytes data = 9;
+  }
+
+  // Nested is a nested message.
+  message Nested {
+    bool on = 1;
+  }
+}
+
+// Colour is a top-level enum.
+enum Colour {
+  COLOUR_UNSET = 0;
+  COLOUR_RED = 1;
+}
+
+// Events streams events.
+service Events {
+  // Watch streams each event.
+  rpc Watch(Event) returns (stream Event) {
+    option deprecated = true;
+  }
+  // Send takes a stream of events.
+  rpc Send(stream Event) returns (Event);
+}

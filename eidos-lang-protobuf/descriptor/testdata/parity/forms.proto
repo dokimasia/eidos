@@ -1,0 +1,58 @@
+// The file of the rarer proto2 forms.
+syntax = "proto2";
+
+package parity.forms;
+
+import public "parity/common.proto";
+import weak "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+// Base declares the forms of groups, defaults, maps and ranges.
+message Base {
+  // Must is a required group.
+  //+fixture:table name=must
+  required group Must = 1 {
+    optional int32 value = 1;
+  }
+  oneof pick {
+    // Choice is a group of a oneof.
+    group Choice = 2 {
+      optional string text = 1;
+    }
+    string other = 3;
+  }
+  optional bytes blob = 4 [default = "ab"];
+  map<string, parity.common.Shared> by_name = 5;
+  optional google.protobuf.Empty nothing = 6;
+  repeated int32 nums = 7 [packed = true, deprecated = true,
+    debug_redact = true]; // the numbers
+
+  reserved 300 to max;
+  extensions 100 to 199 [verification = UNVERIFIED];
+
+  // The extensions that a base declares.
+  extend Base {
+    optional int32 inner = 102;
+  }
+
+  // Kind reserves a range up to the largest value.
+  enum Kind {
+    KIND_UNSET = 0;
+    reserved 5 to max;
+    reserved "KIND_OLD";
+  }
+}
+
+// Ext is an extend block with a group.
+extend Base { // the outer extensions
+  optional string label = 101; // the label
+  optional group Extra = 100 {
+    optional string note = 1;
+  }
+}
+
+// Chat streams both sides.
+service Chat {
+  // Talk streams rows both ways.
+  rpc Talk(stream Base) returns (stream Base);
+}

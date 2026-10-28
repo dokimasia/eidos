@@ -99,8 +99,8 @@ func New() plugin.Frontend {
 		Match("**/*" + protobuf.Extension).
 		Units(partition).
 		Parse(parse).
-		Resolve(resolve).
-		Imports(importPath).
+		Resolve(Resolve).
+		Imports(ImportPath).
 		Keys(protobuf.Keys).
 		Build()
 }

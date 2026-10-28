@@ -156,7 +156,7 @@ type lowered struct {
 	pkg string
 	// imports are the entries of the import stamp, one for each import in
 	// source order. paths are the paths of the imports that import types.
-	// [importPath] matches a declaring file against them in the
+	// [ImportPath] matches a declaring file against them in the
 	// resolution step.
 	imports []string
 	paths   []string

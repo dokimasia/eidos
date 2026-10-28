@@ -1,0 +1,40 @@
+// The file of the proto2 forms.
+syntax = "proto2";
+
+// The package of the proto2 forms.
+package parity.two;
+
+option java_package = "test.parity.two";
+
+// Row declares every proto2 field form.
+//+fixture:table name=rows
+message Row {
+  required string id = 1; // the key
+  optional int32 count = 2 [default = 7];
+  repeated string tags = 3;
+  optional string label = 4 [default = "none", json_name = "title"];
+  optional group Extra = 5 {
+    optional string note = 1;
+  }
+
+  reserved 10 to 12, 20;
+  reserved "old";
+  extensions 100 to 199;
+
+  // Kind is a nested enum.
+  enum Kind {
+    KIND_UNSET = 0;
+    KIND_A = 1; // the first kind
+  }
+}
+
+// The extensions of a row.
+extend Row {
+  optional string extra_note = 100;
+}
+
+// Rows serves rows.
+service Rows {
+  // Get returns one row.
+  rpc Get(Row) returns (Row);
+}
