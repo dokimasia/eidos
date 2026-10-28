@@ -4,8 +4,8 @@
     {
       "path": ".commitlint.yaml",
       "producer": "common",
-      "local": "02fe401d9edd1c9814d549bf6b6201d8866009bc89fb59b36688cca4df4f01c8",
-      "sha256": "c09addec45ce2d6de3976f31a2eba607434de76a1ed1ced6659fb0212141695c"
+      "local": "3ff04663af13a792d80a367ad728550103c5e9f1e4531efecb45062dd3314a5e",
+      "sha256": "3bb7b72f4448535af507722886641d76fa563e80f351e2d22e475c759214e617"
     },
     {
       "path": ".editorconfig",

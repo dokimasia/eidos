@@ -25,6 +25,7 @@ use (
 	./eidos-lang-typescript
 	./eidos-plugin-shape
 	./eidos-plugin-shape/tools
+	./eidos-protoc
 	./eidos-reference
 	./eidos-sdk
 )

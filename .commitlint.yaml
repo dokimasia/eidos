@@ -43,6 +43,7 @@ settings:
       - conformance
       - core
       - declarative
+      - protoc
       - lang
       - go
       - graphql
