@@ -134,3 +134,4 @@ way.
 | [0113](0113-a-data-family-writes-one-file-under-a-name-of-its-own.md) | A data family writes one file under a name of its own | Accepted |
 | [0114](0114-a-dependency-is-a-declaration-that-a-dependency-round-loaded.md) | A dependency is a declaration that a dependency round loaded | Accepted |
 | [0115](0115-a-protoc-plugin-runs-an-eidos-composition.md) | A protoc plugin runs an eidos composition | Accepted |
+| [0116](0116-a-protoc-plugin-sets-the-layout-of-a-plan-and-generates-every-file-in-one-call.md) | A protoc plugin sets the layout of a plan and generates every file in one call | Accepted |

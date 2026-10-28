@@ -162,18 +162,35 @@ func main() { protoc.Main(acme.Compose) }
   the proto package of a file to generate
   ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 - **The parameter.** `<plugin>.<option>=<value>` sets an option of a
-  plugin, and `policy.<key>=<choice>` selects the choice of a policy. A
-  value is JSON where it decodes as JSON, and a string otherwise.
+  plugin, and `policy.<key>=<choice>` selects the choice of a policy.
+  `plan.<plan>.<field>=<value>` sets `importBase`, `dir`, `policy` or
+  `disabled` of a plan, with the names of a config file. A Go plan needs
+  `importBase`, because a request carries no Go module. A value is JSON
+  where it decodes as JSON, and a string otherwise. A comma inside a JSON
+  string, list or object stays in its value.
 - **The run.** Each call is a cold run into an in-memory sink, without
   a ledger. The response carries every file, and buf writes them. The
   Error findings go into the `error` field of the response, and the
   Warning and Info findings go to standard error.
-- **The strategy.** A plan that writes one file for each plan, or a
-  generator that reads another directory, needs `strategy: all` in
-  `buf.gen.yaml`, because buf calls a local plugin once per directory
-  by default.
+- **The strategy.** A plugin of eidos needs `strategy: all` in
+  `buf.gen.yaml`. buf calls a local plugin once per directory by
+  default, and a declaration that refers to a message of another
+  directory is then refused, because the call does not generate that
+  message. The response then opens with `protoc.ErrImportedReference`,
+  which names the strategy.
 
-([21-decisions.md](21-decisions.md), D233.)
+```yaml
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-acme
+    out: gen
+    strategy: all
+    opt:
+      - plan.go.importBase=example.com/app/gen
+```
+
+([21-decisions.md](21-decisions.md), D233 and D234.)
 
 ## Command kernels
 
