@@ -53,12 +53,18 @@ const outsideSource = "other/col.zz"
 // application imports the library, which a store provides or a file of
 // the tree declares.
 const (
-	appPkg              = "svc/app"
-	libPkg              = "ext/lib"
-	appSource           = "svc/app/app.zz"
-	libSource           = "ext/lib/lib.zz"
-	libBody             = "package " + libPkg + "\ntype Lib string\n"
-	rosterID  plugin.ID = "roster"
+	appPkg    = "svc/app"
+	libPkg    = "ext/lib"
+	appSource = "svc/app/app.zz"
+	libSource = "ext/lib/lib.zz"
+	libBody   = "package " + libPkg + "\ntype Lib string\n"
+	// ownSource is a file of the tree in the package of the library. Its use
+	// of Lib loads usedSource from the store, so the tree and the store
+	// share the package.
+	ownSource            = "ext/lib/own.zz"
+	ownBody              = "package " + libPkg + "\nuse " + libPkg + " Lib\ntype Own int\n"
+	usedSource           = "ext/lib/Lib.zz"
+	rosterID   plugin.ID = "roster"
 )
 
 // relocatorID is the name of the annotator that stamps the module of the

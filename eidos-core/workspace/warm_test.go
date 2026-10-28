@@ -377,6 +377,50 @@ func TestWarm(t *testing.T) {
 			assert.Empty(t, slices.Collect(report.Sink.All()), "the warm run reports no finding of the dependency")
 		})
 
+		shared := []struct {
+			name      string
+			giveOwn   string
+			giveLib   string
+			wantFound int
+		}{
+			{
+				name:    "reports nothing for a validation of a dependency in a package that the tree shares",
+				giveOwn: ownBody,
+				giveLib: libBody + bogusMark,
+			},
+			{
+				name:      "reports the validation of a declaration of the tree in a package that a store shares",
+				giveOwn:   ownBody + bogusMark,
+				giveLib:   libBody,
+				wantFound: 1,
+			},
+		}
+		for _, tt := range shared {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				marker := eidos.NewPlugin(markerID).
+					Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+					Handle(eidos.Directive(markSchema, eidos.OnStruct(mirrored))).Generator()
+				w := dependentOf(t, workspace.Sources{Lang: frontendtest.ScriptedLang}, marker)
+				tree := dependentTree()
+				tree[ownSource] = &fstest.MapFile{Data: []byte(tt.giveOwn)}
+				stores := func(body string, at time.Time) map[string]fs.FS {
+					return map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{
+						usedSource: {Data: []byte(body), ModTime: at},
+					}}
+				}
+				cold, _ := w.Run(t.Context(), workspace.Input{Tree: tree, Stores: stores(tt.giveLib, time.Time{})})
+				assert.Equal(t, cold.Stats.Parsed, 3, "the run parses the application and both halves of the library")
+				assert.Length(t, findings(cold.Sink, directive.UnknownKey), tt.wantFound,
+					"the cold run reports the validation of the tree alone")
+				warm, _ := w.Run(t.Context(), workspace.Input{Tree: tree, Stores: stores(tt.giveLib+colLine, warmEdit)})
+				assert.False(t, warm.Stats.Cold, "the second run reads the sealed state")
+				assert.Length(t, findings(warm.Sink, directive.UnknownKey), tt.wantFound,
+					"the warm run reports the validation of the tree alone")
+			})
+		}
+
 		t.Run("reports the finding of an annotator invocation that the run keeps", func(t *testing.T) {
 			t.Parallel()
 
