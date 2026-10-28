@@ -4,11 +4,11 @@
 package descriptor
 
 import (
+	"cmp"
 	"slices"
 	"strconv"
 	"strings"
 
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
@@ -164,11 +164,84 @@ func scalarText(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
 		}
 		return strconv.Itoa(int(v.Enum()))
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		text := prototext.MarshalOptions{}.Format(v.Message().Interface())
-		return "{" + strings.TrimSpace(text) + "}"
+		return messageText(v.Message())
 	default:
 		return v.String()
 	}
+}
+
+// messageText spells a message value as a text-format literal on one
+// line: {name: value, name: value} in the order of the field numbers, a
+// list as [a, b], a map as the list of its entries in key order, and an
+// extension by its full name in brackets. prototext varies the spaces of
+// its output with the build of the binary, so the frontend spells the
+// literal itself.
+func messageText(m protoreflect.Message) string {
+	fields := setFields(m)
+	parts := make([]string, 0, len(fields))
+	for _, fd := range fields {
+		name := string(fd.Name())
+		if fd.IsExtension() {
+			name = "[" + string(fd.FullName()) + "]"
+		}
+		v := m.Get(fd)
+		var text string
+		switch {
+		case fd.IsMap():
+			text = mapText(fd, v.Map())
+		case fd.IsList():
+			list := v.List()
+			elems := make([]string, list.Len())
+			for i := range elems {
+				elems[i] = scalarText(fd, list.Get(i))
+			}
+			text = "[" + strings.Join(elems, listSep) + "]"
+		default:
+			text = scalarText(fd, v)
+		}
+		parts = append(parts, name+": "+text)
+	}
+	return "{" + strings.Join(parts, listSep) + "}"
+}
+
+// mapText spells the entries of a map field as a list of {key: k, value:
+// v} literals, in key order.
+func mapText(fd protoreflect.FieldDescriptor, m protoreflect.Map) string {
+	keys := make([]protoreflect.MapKey, 0, m.Len())
+	m.Range(func(k protoreflect.MapKey, _ protoreflect.Value) bool {
+		keys = append(keys, k)
+		return true
+	})
+	slices.SortFunc(keys, compareKeys)
+	entries := make([]string, len(keys))
+	for i, k := range keys {
+		entries[i] = "{key: " + scalarText(fd.MapKey(), k.Value()) + listSep +
+			"value: " + scalarText(fd.MapValue(), m.Get(k)) + "}"
+	}
+	return "[" + strings.Join(entries, listSep) + "]"
+}
+
+// compareKeys orders two keys of one map: a bool, an integer or a string,
+// as protobuf allows for a map key.
+func compareKeys(a, b protoreflect.MapKey) int {
+	switch x := a.Interface().(type) {
+	case bool:
+		return cmp.Compare(boolRank(x), boolRank(b.Bool()))
+	case int32, int64:
+		return cmp.Compare(a.Int(), b.Int())
+	case uint32, uint64:
+		return cmp.Compare(a.Uint(), b.Uint())
+	default:
+		return cmp.Compare(a.String(), b.String())
+	}
+}
+
+// boolRank orders false before true.
+func boolRank(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // with returns f after the features among opts, in order, as
