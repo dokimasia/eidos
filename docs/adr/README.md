@@ -135,3 +135,4 @@ way.
 | [0114](0114-a-dependency-is-a-declaration-that-a-dependency-round-loaded.md) | A dependency is a declaration that a dependency round loaded | Accepted |
 | [0115](0115-a-protoc-plugin-runs-an-eidos-composition.md) | A protoc plugin runs an eidos composition | Accepted |
 | [0116](0116-a-protoc-plugin-sets-the-layout-of-a-plan-and-generates-every-file-in-one-call.md) | A protoc plugin sets the layout of a plan and generates every file in one call | Accepted |
+| [0117](0117-a-protobuf-schema-written-back-compiles-to-the-descriptors-of-its-source.md) | A protobuf schema written back compiles to the descriptors of its source | Accepted |

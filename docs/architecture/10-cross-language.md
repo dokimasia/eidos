@@ -173,6 +173,14 @@ flat name. A generator that mirrors a nested declaration emits it in
 the file under that name, and the naming annotator stamps the respell
 of that name on the nested declaration.
 
+A mirror of a protobuf schema keeps the message `GoogleRE2` and the
+enum value `TLSv1_0`, because the protobuf backend is a
+`plugin.NameKeeper`. For such a backend, the settle keeps the name of an
+emitted declaration that carries the name of its origin of the target's
+language, and a name of another language still takes the target's
+convention. The Go backend is no `NameKeeper`, because Go exports a
+name by its case.
+
 A generator translates the type of a value through `Emitter.Type`, and
 a type that a declaration extends, implements or embeds, or that bounds
 a type parameter, through `Emitter.Supertype`. A target spells the two

@@ -133,7 +133,18 @@ an option, a marker for a keyword or a statement that is not an option,
 and the header of its file. `protobuf.Stated` and `protobuf.Header`
 restate the stamps of a protobuf source in these channels, so a
 generator over protobuf sources writes a schema as its source states
-it.
+it. A schema written back this way compiles to the descriptors of its
+source:
+
+- `protobuf.follows` names the member of its message that a nested
+  message, enum, oneof or extension follows in the source, so the
+  fields of the descriptor keep their order.
+- `protobuf.body` marks an rpc written with `{}`, which gives the rpc
+  its options also without one.
+- The backend writes the imports of the header in the order of the
+  header, which is the order of the dependencies of the descriptor.
+- A source stem with a hyphen keeps its spelling in a filename, so
+  `test-extension.proto` and `test_extension.proto` write two files.
 
 The frontend attributes comments the way protoc's source info
 attributes them, so a schema documented for protoc documents the
