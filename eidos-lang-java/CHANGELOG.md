@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang/java
 
+## 0.2.10
+
+### Patch Changes
+
+- Updated dependencies [510c973, dcbf4b0, 45db435, c733802, 9996ac3, e938a44]
+  - go.dokimi.dev/eidos/core@0.12.0
+  - go.dokimi.dev/eidos/sdk@0.8.0
+  - go.dokimi.dev/eidos/lang@0.4.2
+
 ## 0.2.9
 
 ### Patch Changes

@@ -1,5 +1,25 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.12
+
+### Patch Changes
+
+- da023f0: Add a schema to the protobuf mirror fixture that orders its members, its imports and its rpc body as its source does.
+- Updated dependencies [510c973, 5f00ece, 05fd923, dcbf4b0, 45db435, c733802, 9996ac3, b4c073a, 482b0bb, 347cd27, e938a44, 241fa56]
+  - go.dokimi.dev/eidos/core@0.12.0
+  - go.dokimi.dev/eidos/lang/protobuf@0.3.0
+  - go.dokimi.dev/eidos/plugin/shape@0.2.0
+  - go.dokimi.dev/eidos/sdk@0.8.0
+  - go.dokimi.dev/eidos/cli@0.3.4
+  - go.dokimi.dev/eidos/declarative@0.1.11
+  - go.dokimi.dev/eidos/lang@0.4.2
+  - go.dokimi.dev/eidos/lang/go@0.6.3
+  - go.dokimi.dev/eidos/lang/graphql@0.1.10
+  - go.dokimi.dev/eidos/lang/java@0.2.10
+  - go.dokimi.dev/eidos/lang/python@0.1.10
+  - go.dokimi.dev/eidos/lang/rust@0.2.10
+  - go.dokimi.dev/eidos/lang/typescript@0.4.6
+
 ## 0.3.11
 
 ### Patch Changes

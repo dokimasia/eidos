@@ -1,5 +1,17 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.2.0
+
+### Minor Changes
+
+- 05fd923: Add the mixin `durable` for a callable whose acknowledged writes survive a crash.
+
+### Patch Changes
+
+- Updated dependencies [510c973, dcbf4b0, 45db435, c733802, 9996ac3, e938a44]
+  - go.dokimi.dev/eidos/core@0.12.0
+  - go.dokimi.dev/eidos/sdk@0.8.0
+
 ## 0.1.1
 
 ### Patch Changes

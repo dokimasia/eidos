@@ -1,5 +1,17 @@
 # go.dokimi.dev/eidos/core
 
+## 0.12.0
+
+### Minor Changes
+
+- 510c973: Add `plugin.Output.Name` for a data family that writes one file per plan under a name of its own, without a frame.
+- 510c973: Add `plugin.Output.LineSet`, `plugin.LineSetReader` and `Builder.Removed` to report each line that `run --check` finds removed from a line-set file.
+- 510c973: Add `output.Owner` and `output.ErrRecordedDigest` so a disk sink recognises a data file of its brand by its recorded digest.
+- dcbf4b0: Admit a package into `Sources.Packages` by its workspace files, so a file that a store provides no longer refuses the package.
+- 9996ac3: Add plugin.NameKeeper and Builder.KeepsOwnNames, so the settle keeps the name of an emitted declaration that carries the name of its origin of the target's language.
+- dcbf4b0: Mark a dependency per declaration, so a generator runs on no declaration that a dependency round loaded into a package that the workspace shares.
+- e938a44: Add `plugin.MisspelledBrand` and warn about a comment mark or a marker whose name is near the brand.
+
 ## 0.11.0
 
 ### Minor Changes
