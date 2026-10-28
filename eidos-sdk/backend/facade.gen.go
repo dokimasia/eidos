@@ -35,6 +35,7 @@ func New(name plugin.ID, target plugin.Target, syntax plugin.CommentSyntax) *Bui
 // SPI, with the fact coverage that the guard of the render reads, the
 // kinds that the language refuses, which the backend suite checks, the
 // spelling of a supertype of another language, the namespace of the
-// names of a file, whether the language overloads a function, the
-// convention of a member, the binder of gRPC and the import rule.
+// names of a file, whether the language overloads a function, whether the
+// target keeps a name of its own language, the convention of a member,
+// the binder of gRPC and the import rule.
 type Backend = core.Backend

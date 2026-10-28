@@ -1167,6 +1167,14 @@ type Respell = core.Respell
 // whose target keeps every name returns the name unchanged.
 type Respeller = core.Respeller
 
+// NameKeeper is the role of a backend whose target keeps a declared name
+// of its own language: every name that a source of the language declares is
+// a name of the target, as in protobuf. The settle respells no name that an
+// emitted declaration carries from an origin of the target's language. A
+// target whose convention also governs names of its own language, as Go
+// writes an exported name in upper case, does not keep them.
+type NameKeeper = core.NameKeeper
+
 // Member is what the convention of a target reads of a declared member
 // beside its name: the kind of its host, its own kind, its visibility, its
 // level and its mutability. A method has the zero mutability.

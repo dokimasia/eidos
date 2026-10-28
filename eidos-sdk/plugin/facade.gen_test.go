@@ -1331,6 +1331,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("NameKeeper", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.NameKeeper](), reflect.TypeFor[core.NameKeeper](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("Member", func(t *testing.T) {
 		t.Parallel()
 
