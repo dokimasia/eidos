@@ -119,6 +119,19 @@ func pathKey(path []int32) string {
 	return b.String()
 }
 
+// under reports whether a location exists below a path, at a longer path
+// that starts with it. It reads every location, so the lowering asks it
+// only for an option of a message type without a location of its own.
+func (l *locations) under(path []int32) bool {
+	prefix := pathKey(path)
+	for key := range l.byPath {
+		if len(key) > len(prefix) && strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // at returns the location of a path, and nil for a path without one.
 func (l *locations) at(path []int32) *descriptorpb.SourceCodeInfo_Location {
 	return l.byPath[pathKey(path)]

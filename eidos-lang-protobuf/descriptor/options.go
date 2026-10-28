@@ -38,6 +38,9 @@ type option struct {
 	name  string
 	value string
 	at    []int32
+	// msg is the value of an option of a message type that is not a list,
+	// which [lowered.perField] spells one field at a time, and nil otherwise.
+	msg protoreflect.Message
 }
 
 // optionsOf returns the options that an options message sets, one for each
@@ -73,8 +76,56 @@ func optionsOf(m proto.Message) []option {
 				)
 			}
 		default:
-			out = append(out, option{name: name, value: scalarText(fd, v), at: []int32{int32(fd.Number())}})
+			out = append(
+				out,
+				option{name: name, value: scalarText(fd, v), at: []int32{int32(fd.Number())}, msg: messageOf(fd, v)},
+			)
 		}
+	}
+	return out
+}
+
+// messageOf returns the message of a value of a field of a message type,
+// and nil for any other value.
+func messageOf(fd protoreflect.FieldDescriptor, v protoreflect.Value) protoreflect.Message {
+	if fd.IsList() || fd.IsMap() || (fd.Kind() != protoreflect.MessageKind && fd.Kind() != protoreflect.GroupKind) {
+		return nil
+	}
+	return v.Message()
+}
+
+// perField spells an option of a message type that the source sets one field
+// at a time, as (google.api.resource_reference).type = "*", as one option
+// for each field, as the source writes it. protoc records the statement of
+// such an option at the path of its field and none at the path of the
+// option, under path. Every other option stays whole.
+func (l *lowered) perField(o option, path []int32) []option {
+	at := pathOf(path, o.at...)
+	if o.msg == nil || l.loc.at(at) != nil || !l.loc.under(at) {
+		return []option{o}
+	}
+	var out []option
+	for _, fd := range setFields(o.msg) {
+		name := string(fd.Name())
+		if fd.IsExtension() {
+			name = "(" + string(fd.FullName()) + ")"
+		}
+		v := o.msg.Get(fd)
+		at := pathOf(o.at, int32(fd.Number()))
+		if fd.IsList() {
+			// An option statement takes one value, so the source sets each
+			// element of a list in a statement of its own.
+			list := v.List()
+			for i := range list.Len() {
+				out = append(
+					out,
+					option{name: o.name + "." + name, value: scalarText(fd, list.Get(i)), at: pathOf(at, int32(i))},
+				)
+			}
+			continue
+		}
+		child := option{name: o.name + "." + name, value: fieldText(fd, v), at: at, msg: messageOf(fd, v)}
+		out = append(out, l.perField(child, path)...)
 	}
 	return out
 }
@@ -100,13 +151,18 @@ func featuresOf(m protoreflect.Message, number int32) []option {
 // its position, and every other option after them in the order of
 // [optionsOf].
 func (l *lowered) optionsAt(m proto.Message, path []int32) []option {
-	opts := optionsOf(m)
+	whole := optionsOf(m)
+	opts := make([]option, 0, len(whole))
+	for _, o := range whole {
+		opts = append(opts, l.perField(o, path)...)
+	}
 	pos := make(map[*option]position.Pos, len(opts))
 	located := make(map[*option]bool, len(opts))
 	for i := range opts {
+		// An element of a list falls back to the location of its list.
 		loc := l.loc.at(pathOf(path, opts[i].at...))
 		if loc == nil && len(opts[i].at) > 1 {
-			loc = l.loc.at(pathOf(path, opts[i].at[0]))
+			loc = l.loc.at(pathOf(path, opts[i].at[:len(opts[i].at)-1]...))
 		}
 		if loc != nil {
 			pos[&opts[i]], located[&opts[i]] = l.loc.start(loc), true
@@ -184,24 +240,28 @@ func messageText(m protoreflect.Message) string {
 		if fd.IsExtension() {
 			name = "[" + string(fd.FullName()) + "]"
 		}
-		v := m.Get(fd)
-		var text string
-		switch {
-		case fd.IsMap():
-			text = mapText(fd, v.Map())
-		case fd.IsList():
-			list := v.List()
-			elems := make([]string, list.Len())
-			for i := range elems {
-				elems[i] = scalarText(fd, list.Get(i))
-			}
-			text = "[" + strings.Join(elems, listSep) + "]"
-		default:
-			text = scalarText(fd, v)
-		}
-		parts = append(parts, name+": "+text)
+		parts = append(parts, name+": "+fieldText(fd, m.Get(fd)))
 	}
 	return "{" + strings.Join(parts, listSep) + "}"
+}
+
+// fieldText spells the value of one field of a message: a map as the list
+// of its entries, a list as [a, b], and any other value as [scalarText]
+// spells it.
+func fieldText(fd protoreflect.FieldDescriptor, v protoreflect.Value) string {
+	switch {
+	case fd.IsMap():
+		return mapText(fd, v.Map())
+	case fd.IsList():
+		list := v.List()
+		elems := make([]string, list.Len())
+		for i := range elems {
+			elems[i] = scalarText(fd, list.Get(i))
+		}
+		return "[" + strings.Join(elems, listSep) + "]"
+	default:
+		return scalarText(fd, v)
+	}
 }
 
 // mapText spells the entries of a map field as a list of {key: k, value:

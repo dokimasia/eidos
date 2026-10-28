@@ -16,6 +16,7 @@ message Event {
   parity.common.Shared shared = 5;
   Nested nested = 6;
   Colour colour = 7;
+  map<int64, Nested> by_id = 10;
 
   // Payload is one of two forms.
   oneof payload {

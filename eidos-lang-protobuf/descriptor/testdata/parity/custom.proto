@@ -4,16 +4,40 @@ package parity.custom;
 
 import "google/protobuf/descriptor.proto";
 
+// Ref is the value of a message option.
+message Ref {
+  string type = 1;
+  string child = 2;
+  Size size = 3;
+  repeated string tags = 4;
+}
+
+// Size nests in a ref.
+message Size {
+  int32 min = 1;
+}
+
 // The options of a table.
 extend google.protobuf.MessageOptions {
   string table = 50001;
   bytes blob = 50002;
+  Ref ref = 50003;
+}
+
+// The options of a field.
+extend google.protobuf.FieldOptions {
+  Ref field_ref = 50004;
 }
 
 // Tagged states a custom option.
 message Tagged {
   option (parity.custom.table) = "tagged";
   option (parity.custom.blob) = "ab";
+  option (parity.custom.ref).type = "row";
+  option (parity.custom.ref).size.min = 2;
+  option (parity.custom.ref).tags = "a";
+  option (parity.custom.ref).tags = "b";
 
-  string id = 1;
+  string id = 1 [(parity.custom.field_ref).child = "x", (parity.custom.field_ref).type = "y"];
+  string name = 2 [(parity.custom.field_ref) = {type: "z"}];
 }

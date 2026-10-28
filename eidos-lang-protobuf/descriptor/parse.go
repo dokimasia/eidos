@@ -9,10 +9,8 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
-	"google.golang.org/protobuf/types/dynamicpb"
 
 	"go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/lang/protobuf/frontend"
@@ -56,7 +54,7 @@ const (
 // Error modes: parse returns the error of a context that is done, the
 // error of a member that does not read, and an error for bytes that are no
 // FileDescriptorProto.
-func parse(ctx context.Context, u *plugin.SourceUnit) error {
+func parse(ctx context.Context, u *plugin.SourceUnit, reg *registry) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -65,7 +63,7 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 	if err != nil {
 		return err
 	}
-	fd, err := decode(u, b)
+	fd, err := decode(u, b, reg)
 	if err != nil {
 		return fmt.Errorf("descriptor: decode %s: %w", ref.Path, err)
 	}
@@ -93,12 +91,12 @@ func parse(ctx context.Context, u *plugin.SourceUnit) error {
 // decode decodes a descriptor. Where an options message of the descriptor
 // has fields that the decoding did not know, which are its custom options,
 // decode decodes the descriptor again with the extensions that the files
-// of [Registry] declare.
+// of [Registry] declare, which reg resolves.
 //
 // Error modes: the error of the decoding of the descriptor, of the read
 // of the registry, of the decoding of the registry, and of the building of
 // its files.
-func decode(u *plugin.SourceUnit, b []byte) (*descriptorpb.FileDescriptorProto, error) {
+func decode(u *plugin.SourceUnit, b []byte, reg *registry) (*descriptorpb.FileDescriptorProto, error) {
 	fd := &descriptorpb.FileDescriptorProto{}
 	if err := proto.Unmarshal(b, fd); err != nil {
 		return nil, fmt.Errorf("the descriptor: %w", err)
@@ -106,20 +104,16 @@ func decode(u *plugin.SourceUnit, b []byte) (*descriptorpb.FileDescriptorProto, 
 	if !unknownOptions(fd.ProtoReflect()) {
 		return fd, nil
 	}
-	reg, err := registryFiles(u)
-	if err != nil || reg == nil {
+	content, err := registryFiles(u)
+	if err != nil || content == nil {
 		return fd, err
 	}
-	set := &descriptorpb.FileDescriptorSet{}
-	if err = proto.Unmarshal(reg, set); err != nil {
-		return nil, fmt.Errorf("the registry: %w", err)
-	}
-	files, err := protodesc.NewFiles(set)
+	types, err := reg.typesOf(content)
 	if err != nil {
-		return nil, fmt.Errorf("the files of the registry: %w", err)
+		return nil, err
 	}
 	resolved := &descriptorpb.FileDescriptorProto{}
-	if err = (proto.UnmarshalOptions{Resolver: dynamicpb.NewTypes(files)}).Unmarshal(b, resolved); err != nil {
+	if err = (proto.UnmarshalOptions{Resolver: types}).Unmarshal(b, resolved); err != nil {
 		return nil, fmt.Errorf("the descriptor with the extensions of the registry: %w", err)
 	}
 	return resolved, nil

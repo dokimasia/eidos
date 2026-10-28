@@ -337,11 +337,11 @@ func typeOf(t *node.TypeRef) string {
 		return "-"
 	}
 	if t.Form != symbol.FormNamed {
-		args := make([]string, len(t.Args))
-		for i, a := range t.Args {
-			args[i] = typeOf(a)
+		elems := make([]string, len(t.Elems))
+		for i, e := range t.Elems {
+			elems[i] = typeOf(e)
 		}
-		return fmt.Sprintf("form%d(%s)", t.Form, strings.Join(args, ","))
+		return fmt.Sprintf("form%d%q(%s)", t.Form, t.Spelling, strings.Join(elems, ","))
 	}
 	name := t.Spelling
 	if t.Package != "" {

@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	"go.dokimi.dev/eidos/lang/protobuf"
@@ -82,6 +83,40 @@ func TestLower(t *testing.T) {
 				"stamp Mode protobuf.local=local",
 			}, "a nested message, a local message and a local enum are local")
 		})
+
+		wholeMaps := []struct {
+			name    string
+			giveMap string
+		}{
+			{
+				name:    "spells the value of a map whose type spans the whole map, as buf records it",
+				giveMap: "map<int64, Nested>",
+			},
+			{name: "spells the value of a map written without a space after its comma", giveMap: "map<int64,Nested>"},
+		}
+		for _, tt := range wholeMaps {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				fd := proto.CloneOf(compiled(t)["parity/proto3.proto"])
+				var at int32
+				for i, f := range fd.GetMessageType()[0].GetField() {
+					if f.GetName() == "by_id" {
+						at = int32(i)
+					}
+				}
+				for _, loc := range fd.GetSourceCodeInfo().GetLocation() {
+					if slices.Equal(loc.GetPath(), []int32{4, 0, 2, at, 6}) {
+						field := loc.GetSpan()
+						loc.Span = []int32{field[0], 2, 2 + int32(len(tt.giveMap))}
+					}
+				}
+				gb, _ := viaDescriptor(t, fd, nil)
+				expect.That(t, strings.Join(dump(gb), "\n")).
+					Contains(`field by_id line=19 type=form4"map<int64, Nested>"(int64,Nested)`,
+						"the value is spelled as written")
+			})
+		}
 
 		t.Run("stamps an option import among the imports of the file", func(t *testing.T) {
 			t.Parallel()

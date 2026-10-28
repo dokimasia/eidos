@@ -394,11 +394,40 @@ func (l *lowered) spelled(fq string, path []int32) string {
 	if len(span) != 3 {
 		return fq
 	}
-	n := int(span[2] - span[1])
-	if n <= 0 || n >= len(fq) || fq[len(fq)-n-1] != '.' {
-		return fq
+	if s, written := suffixOf(fq, int(span[2]-span[1])); written {
+		return s
 	}
-	return fq[len(fq)-n:]
+	return fq
+}
+
+// mapValue returns the value type of a map field as the source writes it.
+// The location of the type name of the field spans the value alone, or the
+// whole map<key, value> from the start of the field, as buf records it.
+// Then the value is what the span leaves after map<, the key, the comma
+// with or without its space, and >. mapValue returns fq where no reading
+// ends fq at a dot.
+func (l *lowered) mapValue(fq, key string, path []int32) string {
+	typeName := pathOf(path, fieldTypeName)
+	span := l.loc.at(typeName).GetSpan()
+	if len(span) != 3 || span[1] != l.loc.at(path).GetSpan()[1] {
+		return l.spelled(fq, typeName)
+	}
+	whole := int(span[2] - span[1])
+	for _, sep := range []string{listSep, ","} {
+		if s, written := suffixOf(fq, whole-len(mapSpelling+"<"+key+sep+">")); written {
+			return s
+		}
+	}
+	return fq
+}
+
+// suffixOf returns the last n bytes of fq where they start after a dot of
+// fq, and false otherwise.
+func suffixOf(fq string, n int) (string, bool) {
+	if n <= 0 || n >= len(fq) || fq[len(fq)-n-1] != '.' {
+		return "", false
+	}
+	return fq[len(fq)-n:], true
 }
 
 // namedRef lowers one named reference, and a well-known type with the
@@ -417,21 +446,24 @@ func (l *lowered) mapField(
 	f *descriptorpb.FieldDescriptorProto, path []int32, entry *descriptorpb.DescriptorProto, options []option,
 ) *node.Field {
 	at := l.posOf(pathOf(path, fieldTypeName), path)
-	var key, value *node.TypeRef
+	var (
+		key, value *node.TypeRef
+		valueName  string
+	)
 	for _, ef := range entry.GetField() {
 		ref := &node.TypeRef{
 			Spelling: strings.ToLower(strings.TrimPrefix(ef.GetType().String(), scalarPrefix)),
 			Pos:      at,
 		}
-		if name := ef.GetTypeName(); name != "" {
-			ref = namedRef(l.spelled(name, pathOf(path, fieldTypeName)), at)
-		}
 		switch ef.GetNumber() {
 		case 1:
 			key = ref
 		case 2:
-			value = ref
+			value, valueName = ref, ef.GetTypeName()
 		}
+	}
+	if valueName != "" {
+		value = namedRef(l.mapValue(valueName, key.Spelling, path), at)
 	}
 	typ := plugin.Composite(mapSpelling+"<"+key.Spelling+listSep+value.Spelling+">", at, symbol.FormMap, key, value)
 	out := l.fieldDecl(f, path, typ, options, false)

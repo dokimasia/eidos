@@ -52,11 +52,12 @@ var MissingSourceInfo = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 //
 // New allocates what the kit allocates for the frontend.
 func New() plugin.Frontend {
+	reg := &registry{}
 	return sdkfrontend.New(protobuf.Name, frontend.Lang, protobuf.Syntax()).
 		Version(protobuf.Version).
 		Match("**/*" + protobuf.Extension).
 		Units(partition).
-		Parse(parse).
+		Parse(func(ctx context.Context, u *plugin.SourceUnit) error { return parse(ctx, u, reg) }).
 		Resolve(frontend.Resolve).
 		Imports(frontend.ImportPath).
 		Dependencies(dependencies).
