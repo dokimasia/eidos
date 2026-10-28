@@ -1,5 +1,16 @@
 # go.dokimi.dev/eidos/core
 
+## 0.11.0
+
+### Minor Changes
+
+- 71f1a16: Add `plugin.NewDependencyUnit` and `SourceUnit.Dependency` for a unit of a dependency round.
+- 71f1a16: Fix a run to report no finding at a carrier of a dependency package or in the validation of its directives.
+
+### Patch Changes
+
+- 83dc1f9: Update `go.dokimi.dev/assert` to v0.10.0 and every other dependency to its latest release.
+
 ## 0.10.0
 
 ### Minor Changes

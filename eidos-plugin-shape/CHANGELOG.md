@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.1.1
+
+### Patch Changes
+
+- 83dc1f9: Update `go.dokimi.dev/assert` to v0.10.0 and every other dependency to its latest release.
+- Updated dependencies [71f1a16, 0348694, 83dc1f9]
+  - go.dokimi.dev/eidos/core@0.11.0
+  - go.dokimi.dev/eidos/sdk@0.7.2
+
 ## 0.1.0
 
 ### Minor Changes

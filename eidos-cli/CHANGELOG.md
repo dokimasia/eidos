@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/cli
 
+## 0.3.3
+
+### Patch Changes
+
+- 83dc1f9: Update `go.dokimi.dev/assert` to v0.10.0 and every other dependency to its latest release.
+- Updated dependencies [71f1a16, 83dc1f9]
+  - go.dokimi.dev/eidos/core@0.11.0
+  - go.dokimi.dev/eidos/declarative@0.1.10
+
 ## 0.3.2
 
 ### Patch Changes
