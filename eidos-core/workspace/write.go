@@ -50,6 +50,9 @@ type stagedFile struct {
 	// packages are the packages whose declared names the render read for
 	// the file, in the language of the plan's target and in path order.
 	packages []symbol.Identity
+	// lines is the family of a file of a line-set family, and the zero
+	// family for every other file.
+	lines lineFamily
 }
 
 // write routes one plan's settled store to files against the run's
@@ -122,8 +125,9 @@ func renderedNames(names []plugin.NameEntry, rendered []plugin.File) []plugin.Na
 
 // render drives one plan's backend over the files its layout routed
 // and returns what the backend produced, stamped through the plan's
-// contract, at each file's routed path and in path order. It also returns
-// the routed files the backend rendered, at the same places.
+// contract, at each file's routed path and in path order. A data file
+// keeps the bytes that the backend produced, without the stamp. It also
+// returns the routed files the backend rendered, at the same places.
 func render(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) ([]stagedFile, []plugin.File, error) {
@@ -136,10 +140,6 @@ func render(
 	routedFiles := make([]plugin.File, 0, len(rendered))
 	routed := 0
 	for _, f := range rendered {
-		body, err := pl.contract.Stamp(f)
-		if err != nil {
-			return nil, nil, fmt.Errorf("stamp %s: %w", f.Path, err)
-		}
 		// The render returns the routed files it rendered, in their
 		// path order, so the routed file of each is found by walking on.
 		for routed < len(files) && files[routed].Path != f.Path {
@@ -149,9 +149,18 @@ func render(
 			return nil, nil, fmt.Errorf("render: %s returns %s, which the layout did not route",
 				pl.backend.Name(), f.Path)
 		}
+		body := f.Body
+		if !files[routed].Data {
+			stamped, err := pl.contract.Stamp(f)
+			if err != nil {
+				return nil, nil, fmt.Errorf("stamp %s: %w", f.Path, err)
+			}
+			body = stamped
+		}
 		staged := stagedFile{
 			path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path},
 			pkg: files[routed].Pkg, scope: files[routed].Scope, findings: f.Findings,
+			lines: lineFamilyOf(pl, &files[routed]),
 		}
 		if len(f.Packages) > 0 {
 			staged.packages = make([]symbol.Identity, 0, len(f.Packages))

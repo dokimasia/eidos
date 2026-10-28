@@ -231,6 +231,41 @@ func TestConfig(t *testing.T) {
 				want:    []string{fault(`family "" of stubgen states no word`)},
 			},
 			{
+				name: "returns a fault for a data family that is not per-plan",
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerSource, Word: "lock", Name: "stub.lock", Template: "lock.tmpl"},
+				}},
+				want: []string{fault(`family "" of stubgen has the name "stub.lock", and a data family is per-plan`)},
+			},
+			{
+				name: "returns a fault for a data family without a template",
+				give: layout.Config{Dir: "gen"},
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerPlan, Word: "lock", Name: "stub.lock"},
+				}},
+				want: []string{fault(`family "" of stubgen has the name "stub.lock" and no template to write it`)},
+			},
+			{
+				name: "returns a fault for a data family whose name is no path element",
+				give: layout.Config{Dir: "gen"},
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerPlan, Word: "lock", Name: "sub/stub.lock", Template: "lock.tmpl"},
+				}},
+				want: []string{
+					fault(`family "" of stubgen has the name "sub/stub.lock", which is not one path element`),
+				},
+			},
+			{
+				name: "returns a fault for a line-set family without a name",
+				give: layout.Config{Dir: "gen"},
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerPlan, Word: "lock", LineSet: true},
+				}},
+				want: []string{
+					fault(`family "" of stubgen is a line set, and a line set is a data family with a name`),
+				},
+			},
+			{
 				name: "returns a fault for a family template that is no path inside a tree",
 				outputs: map[plugin.ID][]plugin.Output{stubgen: {
 					{Per: plugin.PerSource, Word: "stub", Template: "../stub.tmpl"},

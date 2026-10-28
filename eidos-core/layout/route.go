@@ -234,10 +234,13 @@ type destination struct {
 	// template is the file template of the family, and empty for a
 	// family that does not claim its files.
 	template string
-	key      string
-	pkg      symbol.Identity
-	dir      string
-	file     string
+	// name is the file name of a data family, and empty for a family of
+	// source files.
+	name string
+	key  string
+	pkg  symbol.Identity
+	dir  string
+	file string
 }
 
 // index returns the fields that tell two destinations apart: a
@@ -438,10 +441,10 @@ func (r *router) destine(
 	}
 	conf := r.in.Config.resolve(Family{Plugin: u.Plugin, Tag: fam.Tag})
 	dest := destination{
-		plugin: u.Plugin, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template,
+		plugin: u.Plugin, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template, name: fam.Name,
 		key: key, pkg: pkg, file: conf.file,
 	}
-	route := plugin.Route{Family: family, Dir: ov.pathFrom, Name: cmp.Or(conf.fileFrom, plugin.RouteTarget)}
+	route := plugin.Route{Family: family, Dir: ov.pathFrom, Name: cmp.Or(conf.fileFrom, namedBy(fam))}
 	base, found := r.originDir(origin)
 	if !found {
 		base, found = r.sourceDir(fam.Per, key, pkg)
@@ -481,10 +484,10 @@ func (r *router) target(
 ) (destination, plugin.Route, bool) {
 	conf := r.in.Config.resolve(Family{Plugin: p, Tag: fam.Tag})
 	dest := destination{
-		plugin: p, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template,
+		plugin: p, tag: fam.Tag, per: fam.Per, word: fam.Word, template: fam.Template, name: fam.Name,
 		key: key, pkg: pkg, file: conf.file,
 	}
-	route := plugin.Route{Family: plugin.RouteHandler, Name: cmp.Or(conf.fileFrom, plugin.RouteTarget)}
+	route := plugin.Route{Family: plugin.RouteHandler, Name: cmp.Or(conf.fileFrom, namedBy(fam))}
 	if fam.Per == plugin.PerPlan {
 		dest.dir, route.Dir = conf.dir, conf.dirFrom
 		return dest, route, true
@@ -498,6 +501,16 @@ func (r *router) target(
 		dest.dir, route.Dir = path.Join(conf.dir, src), conf.dirFrom
 	}
 	return dest, route, true
+}
+
+// namedBy returns the input that names the file of a family where the
+// configuration names none: the handler for a data family, whose
+// declaration states the name, and the target otherwise.
+func namedBy(fam plugin.Output) plugin.RouteInput {
+	if fam.Name != "" {
+		return plugin.RouteHandler
+	}
+	return plugin.RouteTarget
 }
 
 // sourceless reports a declaration whose family's file has no source
@@ -598,11 +611,12 @@ func (r *router) name() error {
 }
 
 // fileNameOf returns the filename of a part of the batch of dest: the name
-// that an override or the configuration fixes, and the name that the
-// speller spells for the part otherwise. It returns an error for a name
-// that is not one path element, a defect of the speller.
+// that an override or the configuration fixes, then the name of a data
+// family, and the name that the speller spells for the part otherwise. It
+// returns an error for a name that is not one path element, a defect of
+// the speller.
 func (r *router) fileNameOf(dest *destination, part plugin.Unit) (string, error) {
-	name := dest.file
+	name := cmp.Or(dest.file, dest.name)
 	if name == "" {
 		name = r.in.Speller.FileName(part)
 	}
@@ -622,18 +636,24 @@ func (r *router) fileNameOf(dest *destination, part plugin.Unit) (string, error)
 // names of a file is the namespace that a target with [plugin.NameScoper]
 // returns for its package, and its package otherwise. A target's error
 // leaves the file with the zero package and the zero namespace, and keeps
-// the reason, which a reference into the file reports.
+// the reason, which a reference into the file reports. A file of a data
+// family is marked as data and keeps the zero package and the zero
+// namespace, because it declares no package.
 func (r *router) packages() {
 	scoper, scopes := r.in.Packager.(plugin.NameScoper)
 	for fi := range r.files {
 		f := &r.files[fi]
 		f.file.Header = plugin.HeaderOf(f.file.Units)
 		first := f.file.Units[0]
+		fam, _ := familyOf(r.in.Outputs[first.Plugin], first.Tag)
+		if fam.Name != "" {
+			f.file.Data = true
+			continue
+		}
 		if r.in.Packager == nil {
 			f.file.Pkg, f.file.Scope = first.Pkg, first.Pkg
 			continue
 		}
-		fam, _ := familyOf(r.in.Outputs[first.Plugin], first.Tag)
 		inside := slices.ContainsFunc(f.file.Units, func(u plugin.Unit) bool { return len(u.Inside) > 0 })
 		at := r.placementOf(f.file.Path, first.Pkg, f.file.Header.Annotations, fam.External && !inside)
 		pkg, err := r.in.Packager.PackageAt(at)

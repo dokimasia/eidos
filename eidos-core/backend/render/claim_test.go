@@ -177,6 +177,29 @@ func TestClaim(t *testing.T) {
 			assert.Equal(t, body, "", "the pass writes no file that the template did not write")
 		})
 
+		t.Run("renders a data file as the output of its template alone", func(t *testing.T) {
+			t.Parallel()
+
+			lang := language()
+			lang.File = "skeleton\n" + action(render.BuiltinDecls)
+			lang.Finalise = func(src []byte) ([]byte, error) { return append(src, "formatted\n"...), nil }
+			p, err := render.New(passName, lang)
+			assert.NoError(t, err, "the language composes")
+			sink := diag.NewSink()
+			e := seeded(t, claimedUnit(handleName, recordData, emit.Body{}))
+			routed := backendtest.Files(e, p)
+			routed[0].Data = true
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: routed, Trees: claimTree(recordsRange + "{{.Data}}\n" + rangeEnd),
+				Sink: sink, Plugin: passName,
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the data file renders")
+			assert.Equal(t, string(files[0].Body), recordData+"\n",
+				"the file contains the output of the template without the skeleton and the format step")
+		})
+
 		t.Run("reports MixedClaim for a file of a claimed unit and another unit", func(t *testing.T) {
 			t.Parallel()
 

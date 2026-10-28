@@ -437,7 +437,7 @@ func (w *Workspace) run(
 
 	errs = append(errs, commitAll(ctx, runs, w.order, sw, blocked, in.Dry, report))
 	if in.Check {
-		outOfDate(runs, sw, rec, sink)
+		outOfDate(runs, sw, rec, in.Tree, sink)
 	}
 	report.Suppressions, report.Suppressed = pol.counted(sink, runs)
 	if ctx.Err() == nil && !slices.Contains(selected, false) {

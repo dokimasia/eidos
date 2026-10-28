@@ -484,6 +484,7 @@ func (w *Workspace) stage(
 func (p *planRun) stageInto(
 	out, later output.Sink, previous []manifest.Entry, routed map[string]struct{}, n narrowing,
 ) error {
+	owned(previous, out, later)
 	for _, f := range p.files {
 		to := out
 		if !n.writes(f.path, f.sources) {
@@ -512,6 +513,22 @@ func (p *planRun) stageInto(
 		p.stale[e.Path] = e
 	}
 	return nil
+}
+
+// owned declares the recorded digest of each previous entry to each sink
+// that implements [output.Owner], once for a sink that sinks lists twice.
+// A sink then recognises a data file of the brand, which has no frame, by
+// its digest.
+func owned(previous []manifest.Entry, sinks ...output.Sink) {
+	for i, s := range sinks {
+		o, owns := s.(output.Owner)
+		if !owns || slices.Contains(sinks[:i], s) {
+			continue
+		}
+		for _, e := range previous {
+			o.Own(e.Path, e.Hash)
+		}
+	}
 }
 
 // withhold prepares the sink of the changes that the narrowing withholds,

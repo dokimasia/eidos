@@ -30,7 +30,8 @@ const filePerm = 0o644
 // edited since it was stamped are refused, naming the path, and
 // remain as they are, unless [Disk.Overwrite] allowed their verdict. A
 // staged removal deletes only the brand's intact output, and leaves any
-// other file in place.
+// other file in place. A file without a frame is the brand's output only
+// at the recorded digest that [Disk.Own] declared for its path.
 //
 // # Concurrency
 //
@@ -49,7 +50,10 @@ type Disk struct {
 	brand Brand
 }
 
-var _ Sink = (*Disk)(nil)
+var (
+	_ Sink  = (*Disk)(nil)
+	_ Owner = (*Disk)(nil)
+)
 
 // NewDisk opens a sink over an existing directory that writes as
 // one brand. It refuses a brand outside [Brand.Valid], because the
@@ -81,6 +85,15 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 //
 // Error modes are the ones [Sink.Overwrite] lists.
 func (d *Disk) Overwrite(found ...Found) error { return d.allow(found) }
+
+// Own declares the recorded digest of a file without a frame, as
+// [Owner.Own] states. It reads nothing.
+//
+// # Allocation contract
+//
+// Own allocates the map of the declared paths on its first call, and what
+// the map allocates as it grows.
+func (d *Disk) Own(path, hash string) { d.own(path, hash) }
 
 // Write stages one file. Nothing is written to the tree until Commit.
 // It keeps body without copying it, so the caller leaves body unchanged
@@ -255,6 +268,8 @@ func (d *Disk) verdict(at string) (Found, error) {
 		return f, err
 	case existing == nil:
 		return f, fmt.Errorf("output: refusing to write over the directory %q", at)
+	case d.overwrite&(1<<f) == 0 && f == FoundForeign && d.recorded(at, existing):
+		return f, fmt.Errorf("output: refusing to overwrite %q: %w", at, ErrRecordedDigest)
 	case d.overwrite&(1<<f) == 0:
 		_, refused := verify(existing, d.brand)
 		return f, fmt.Errorf("output: refusing to overwrite %q: %w", at, refused)
@@ -281,21 +296,36 @@ func (d *Disk) found(at string, body []byte, write bool) (Found, []byte, error) 
 	case write && bytes.Equal(existing, body):
 		return FoundSame, existing, nil
 	default:
-		return ownership(existing, d.brand), existing, nil
+		return d.ownership(at, existing), existing, nil
 	}
 }
 
-// ownership classifies a file that exists against one brand: the
-// brand's intact output, the brand's frame over a body edited since
-// its stamp, or anything else, which is foreign.
-func ownership(existing []byte, brand Brand) Found {
+// ownership classifies a file that exists at a path against the brand of
+// the sink: the brand's intact output, the brand's frame over a body
+// edited since its stamp, or anything else, which is foreign. A file
+// without a frame is intact at the digest that [Disk.Own] declared for
+// its path, and foreign at any other.
+func (d *Disk) ownership(at string, existing []byte) Found {
 	f, held := parse(existing)
-	switch {
-	case !held || f.record.Brand != brand:
+	switch hash, owned := d.owned[at]; {
+	case !held && owned && attests(existing, hash):
+		return FoundIntact
+	case !held || f.record.Brand != d.brand:
 		return FoundForeign
 	case !f.intact():
 		return FoundDrifted
 	default:
 		return FoundIntact
 	}
+}
+
+// recorded reports whether a file at a path is classified through the
+// digest that [Disk.Own] declared: the path has a declared digest, and the
+// file has no frame.
+func (d *Disk) recorded(at string, existing []byte) bool {
+	if _, owned := d.owned[at]; !owned {
+		return false
+	}
+	_, held := parse(existing)
+	return !held
 }

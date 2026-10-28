@@ -148,6 +148,18 @@ func TestPlan(t *testing.T) {
 	t.Run("Run", func(t *testing.T) {
 		t.Parallel()
 
+		t.Run("updates a data file that the previous generation wrote", func(t *testing.T) {
+			t.Parallel()
+
+			root := lockRoot(t, rowLine)
+			edit(t, root, rowLine, colLine)
+			_, err := built(t, lockBuilder(root, lockPlan, planDir, true)).
+				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			assert.NoError(t, err, "the run is clean")
+			got := files.Read(t, filepath.Join(root, filepath.FromSlash(lockPath)))
+			assert.Permutation(t, strings.Fields(got), []string{"Row", "Col"}, "the file lists both structs")
+		})
+
 		t.Run("passes the target, the spoke and the policy of the plan to each generator", func(t *testing.T) {
 			t.Parallel()
 

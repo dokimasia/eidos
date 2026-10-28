@@ -49,6 +49,10 @@ type File struct {
 	// package path, such as protobuf, reads the clause of such a file from
 	// the Name of its package.
 	Referents []symbol.Identity
+	// Data reports a file of a data family, which [Output.Name] declares.
+	// A backend writes the output of the template of the family as the
+	// whole file, and the run writes it without a frame.
+	Data bool
 }
 
 // HeaderOf returns the header that the emit.File declarations of units

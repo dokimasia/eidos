@@ -527,7 +527,9 @@ func (f *frame) header() *emit.File {
 // order of the file is the order the flush fixed, and the order of
 // [frame.order] for a language that states [Language.Evaluated] or is
 // [Language.Implemented]. A file that a family claims renders through the family's
-// file template instead. An emit.File of a unit is part of the header of
+// file template instead. A data file, which [plugin.File.Data] marks, is
+// the output of that template alone, without the skeleton and the
+// formatter. An emit.File of a unit is part of the header of
 // the file and no declaration, and every template of the file reads the
 // header through the header builtin. The header passes the guard of the
 // coverage before the declarations render. The file's package is the import
@@ -564,6 +566,9 @@ func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 	if claimed {
 		if !f.claimed(g, c) {
 			return nil, false
+		}
+		if g.Data {
+			return bytes.Clone(f.out.Bytes()), true
 		}
 	} else {
 		order, ordered := f.order(g)

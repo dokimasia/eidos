@@ -19,6 +19,12 @@ import (
 // serves one staging and is not reused.
 var ErrFinished = errors.New("output: the sink already committed or discarded")
 
+// ErrRecordedDigest reports a file without a frame whose bytes differ
+// from the digest that [Owner.Own] declared for its path. A commit
+// refuses to write over such a file unless the sink writes over foreign
+// files.
+var ErrRecordedDigest = errors.New("output: the file differs from the digest that the manifest records")
+
 // Action is what one commit did to one path.
 type Action uint8
 
@@ -176,6 +182,19 @@ type Sink interface {
 	Discard() error
 }
 
+// Owner is implemented by a sink whose destination has files of its own.
+// Own declares that the brand wrote the file at path with the digest
+// hash, "sha256:" and 64 lowercase hex digits, as the manifest of the
+// previous generation records it. Prepare and Commit then classify a file
+// at path without a frame through the digest: the same digest is the
+// brand's intact output, and any other file without a frame is foreign.
+// The frame decides the classification of a file with one. Own does not
+// check the path, which Write and Delete check, and it cannot fail.
+// Prepare and Commit each read the declarations made before them.
+type Owner interface {
+	Own(path, hash string)
+}
+
 // staging is the bookkeeping every sink shares: the staged bytes and
 // removals, the verdicts its commit writes over, and the one-staging
 // rule. Each sink decides how it reads and writes its destination.
@@ -186,6 +205,9 @@ type staging struct {
 	// tree contains the staged file paths, which a new path must fit
 	// beside.
 	tree pathset.Set
+	// owned maps each path that [Owner.Own] declared to its recorded
+	// digest, and is nil where no path was declared.
+	owned map[string]string
 	// overwrite has the bit 1<<f of each verdict f whose files Commit
 	// writes over, and is zero where Overwrite allowed none.
 	overwrite uint8
@@ -254,6 +276,15 @@ func (s *staging) allow(found []Found) error {
 	}
 	s.overwrite |= bits
 	return nil
+}
+
+// own records the digest that the manifest records for a path. A second
+// declaration of a path replaces the first.
+func (s *staging) own(p, hash string) {
+	if s.owned == nil {
+		s.owned = map[string]string{}
+	}
+	s.owned[p] = hash
 }
 
 // open refuses a path no staging takes, and every path once the

@@ -37,6 +37,13 @@ const (
 	storeFile  = "store.go"
 )
 
+// The data file of the ownership cases, and a line that an edit adds to
+// it.
+const (
+	dataFile   = "acme.lock"
+	editedLine = "an edit\n"
+)
+
 // The allocations of the disk sink over one file, which TestDiskAllocs
 // checks in the ordinary run and BenchmarkDisk in a benchmark run.
 const (
@@ -262,6 +269,69 @@ func TestDisk(t *testing.T) {
 			_, err := d.Commit()
 			assert.NoError(t, err, "the commit succeeds")
 			assert.ErrorIs(t, d.Overwrite(output.FoundDrifted), output.ErrFinished, "a sink serves one staging")
+		})
+	})
+
+	t.Run("Own", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns FoundIntact for a file without a frame at its recorded digest", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{})
+			w := committed(t, root, dataFile, firstBody)
+			s := disk(t, root)
+			s.Own(dataFile, w.Hash)
+			assert.NoError(t, s.Write(dataFile, []byte(secondBody)), "the file stages")
+			got, err := s.Prepare()
+			assert.NoError(t, err, "the staging prepares")
+			assert.Length(t, got, 1, "one staged path is one change")
+			expect.Equal(t, got[0].Found, output.FoundIntact, "the file is the brand's intact output")
+			expect.Equal(t, got[0].Action, output.ActionUpdated, "the commit updates the file")
+		})
+
+		t.Run("returns FoundForeign for a file without a frame at another digest", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{})
+			w := committed(t, root, dataFile, firstBody)
+			files.Write(t, root, files.Tree{dataFile: files.Text(firstBody + editedLine)})
+			s := disk(t, root)
+			s.Own(dataFile, w.Hash)
+			assert.NoError(t, s.Write(dataFile, []byte(secondBody)), "the file stages")
+			got, err := s.Prepare()
+			assert.NoError(t, err, "the staging prepares")
+			assert.Length(t, got, 1, "one staged path is one change")
+			assert.Equal(t, got[0].Found, output.FoundForeign, "the file is no output of the brand")
+		})
+
+		t.Run("returns an error from the commit for a file without a frame at another digest", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{})
+			w := committed(t, root, dataFile, firstBody)
+			files.Write(t, root, files.Tree{dataFile: files.Text(firstBody + editedLine)})
+			s := disk(t, root)
+			s.Own(dataFile, w.Hash)
+			assert.NoError(t, s.Write(dataFile, []byte(secondBody)), "the file stages")
+			_, err := s.Commit()
+			assert.ErrorIs(t, err, output.ErrRecordedDigest, "the commit refuses the edited file")
+			files.HasContent(t, filepath.Join(root, dataFile), firstBody+editedLine, "the file remains as it was")
+		})
+
+		t.Run("removes a file without a frame at its recorded digest", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{})
+			w := committed(t, root, dataFile, firstBody)
+			s := disk(t, root)
+			s.Own(dataFile, w.Hash)
+			assert.NoError(t, s.Delete(dataFile), "the removal stages")
+			got, err := s.Commit()
+			assert.NoError(t, err, "the commit succeeds")
+			assert.Length(t, got, 1, "the removal is one record")
+			expect.Equal(t, got[0].Action, output.ActionDeleted, "the commit removes the file")
+			files.Absent(t, filepath.Join(root, dataFile), "the file is gone")
 		})
 	})
 

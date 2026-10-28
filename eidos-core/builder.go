@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"text/template"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -100,6 +101,7 @@ type Builder struct {
 	defaults []TargetOption
 	layers   []targetLayer
 	rules    []Rule
+	removed  func(plugin.RemovedLine) (diag.Diag, bool)
 }
 
 // targetLayer is one [Builder.For] declaration. It has the target and its
@@ -262,6 +264,22 @@ func (b *Builder) For(t plugin.Target, opts ...TargetOption) *Builder {
 	return b
 }
 
+// Removed declares the function that turns a line that run --check finds
+// removed from the file of a line-set family of the plugin into a
+// finding. The built plugin implements [plugin.LineSetReader] through it.
+// A typed build panics on a nil function and on a second declaration.
+// Removed allocates nothing.
+func (b *Builder) Removed(fn func(r plugin.RemovedLine) (diag.Diag, bool)) *Builder {
+	if fn == nil {
+		panic("eidos: " + string(b.name) + " declares a nil function of removed lines")
+	}
+	if b.removed != nil {
+		panic("eidos: " + string(b.name) + " declares the function of removed lines twice")
+	}
+	b.removed = fn
+	return b
+}
+
 // Handle registers rules, in declaration order. A first call allocates
 // the list of rules, and a later call allocates only to grow it.
 func (b *Builder) Handle(rules ...Rule) *Builder {
@@ -386,6 +404,7 @@ func (b *Builder) lower() (base *built, annotates, generates bool) {
 		schemas:  schemas,
 		rules:    rules,
 		subs:     subscriptionsFor(rules),
+		removed:  b.removed,
 	}
 	for _, fr := range rules {
 		switch fr.phase {

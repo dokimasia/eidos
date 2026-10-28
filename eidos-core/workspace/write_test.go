@@ -6,6 +6,7 @@ package workspace_test
 import (
 	"errors"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/expect"
+	"go.dokimi.dev/assert/files"
 	"go.dokimi.dev/assert/history"
 
 	eidos "go.dokimi.dev/eidos/core"
@@ -177,6 +179,14 @@ func TestWrite(t *testing.T) {
 
 	t.Run("Run", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("writes a data file without the frame of the brand", func(t *testing.T) {
+			t.Parallel()
+
+			root := lockRoot(t, rowLine)
+			files.HasContent(t, filepath.Join(root, filepath.FromSlash(lockPath)), "Row\n",
+				"the file contains the output of its template alone")
+		})
 
 		t.Run("reports the files a commit refused part-way wrote", func(t *testing.T) {
 			t.Parallel()

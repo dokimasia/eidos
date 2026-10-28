@@ -234,6 +234,21 @@ func TestPlacer(t *testing.T) {
 			assert.Equal(t, got.Package, coretest.PackageID(storePkg), "the file has the package of the unit")
 		})
 
+		t.Run("returns the zero package for the file of a data family", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture()
+			f.outputs[stubgen][3].Name, f.outputs[stubgen][3].Template = dataName, claimTemplate
+			f.config = layout.Config{Dir: genDir}
+			f.packager = directories{}
+			in, _ := f.input(t)
+			u := plugin.Unit{Plugin: stubgen, Tag: tagPlan, Per: plugin.PerPlan, Word: wordIndex}
+			got, err := layout.NewPlacer(in).Place(storeID, u)
+			assert.NoError(t, err, "the preview routes")
+			expect.Equal(t, got.Dir, genDir, "the file is in the directory of the plan")
+			expect.Equal(t, got.Package, symbol.Identity{}, "a data file declares no package")
+		})
+
 		refused := []struct {
 			name        string
 			give        func() *fixture

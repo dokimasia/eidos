@@ -62,6 +62,9 @@ const (
 	rowData       = "row"
 )
 
+// dataName is the file name of the data family of the data cases.
+const dataName = "stubgen.lock"
+
 // The fixture workspace: two packages in two directories, a package
 // whose files span two directories, and one package of a dependency
 // store. The graph does not contain ghostPkg.
@@ -1140,6 +1143,30 @@ func TestRoute(t *testing.T) {
 			files, _ := f.route(t)
 			assert.Length(t, files, 1, "one file routes")
 			assert.Equal(t, files[0].Units[0].Template, claimTemplate, "the unit has the template of its family")
+		})
+
+		t.Run("returns the file of a data family under the name of the family", func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(unitOf(stubgen, families()[stubgen][3], "", symbol.Identity{},
+				generated(storeID, "StoreIndex")))
+			f.outputs[stubgen][3].Name, f.outputs[stubgen][3].Template = dataName, claimTemplate
+			f.config = layout.Config{Dir: genDir}
+			f.packager = directories{}
+			files, sink := f.route(t)
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "one file routes")
+			expect.Equal(t, files[0].Path, genDir+"/"+dataName, "the file has the name of the family")
+			expect.True(t, files[0].Data, "the file is a data file")
+			expect.Equal(t, files[0].Pkg, symbol.Identity{}, "a data file declares no package")
+		})
+
+		t.Run("returns the file of a source family as no data file", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := newFixture(storeStub()).route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.False(t, files[0].Data, "the file is a source file")
 		})
 
 		t.Run("returns a unit's data for a file that contains the whole unit", func(t *testing.T) {

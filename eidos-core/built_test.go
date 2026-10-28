@@ -198,6 +198,29 @@ func TestBuilt(t *testing.T) {
 		})
 	})
 
+	t.Run("Removed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the finding of the declared function", func(t *testing.T) {
+			t.Parallel()
+
+			r, held := eidos.NewPlugin(styledPlugin).Removed(lostLine).Handle(emitNothing()).Generator().(plugin.LineSetReader)
+			assert.True(t, held, "the built generator reads removed lines")
+			d, report := r.Removed(plugin.RemovedLine{Text: lostText})
+			assert.True(t, report, "the function reports the line")
+			assert.Equal(t, d.Msg, lostText, "the finding is the one of the function")
+		})
+
+		t.Run("reports false without a declared function", func(t *testing.T) {
+			t.Parallel()
+
+			r, held := eidos.NewPlugin(styledPlugin).Handle(emitNothing()).Generator().(plugin.LineSetReader)
+			assert.True(t, held, "the built generator reads removed lines")
+			_, report := r.Removed(plugin.RemovedLine{Text: lostText})
+			assert.False(t, report, "no function reports nothing")
+		})
+	})
+
 	t.Run("TemplateTargets", func(t *testing.T) {
 		t.Parallel()
 

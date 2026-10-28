@@ -11,6 +11,7 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
@@ -159,6 +160,28 @@ func TestBuilder(t *testing.T) {
 			}, "a dual plugin without a rule that emits panics")
 			assert.Equal(t, got, any("eidos: planner declares no rule that emits, so build it with Annotator"),
 				"the panic names the plugin and the typed build that fits it")
+		})
+	})
+
+	t.Run("Removed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("panics on a nil function", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() { eidos.NewPlugin("planner").Removed(nil) }, "a nil function panics")
+			assert.Equal(t, got, any("eidos: planner declares a nil function of removed lines"),
+				"the panic names the plugin")
+		})
+
+		t.Run("panics on a second declaration", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Panics(t, func() {
+				eidos.NewPlugin("planner").Removed(lostLine).Removed(lostLine)
+			}, "a second function panics")
+			assert.Equal(t, got, any("eidos: planner declares the function of removed lines twice"),
+				"the panic names the plugin")
 		})
 	})
 
@@ -820,6 +843,15 @@ func emitNothing() eidos.Rule {
 	return eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 		return nil
 	})
+}
+
+// lostText is the text of the removed line of the line-set cases.
+const lostText = "a check that the run lost"
+
+// lostLine returns a finding with the text of a removed line as its
+// message, for every line.
+func lostLine(r plugin.RemovedLine) (diag.Diag, bool) {
+	return diag.Diag{Msg: r.Text}, true
 }
 
 // schemasOf returns the schemas that a built plugin provides.

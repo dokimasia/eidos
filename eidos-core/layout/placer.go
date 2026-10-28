@@ -66,7 +66,7 @@ func NewPlacer(in Input) plugin.Placer {
 // u without its declarations. A unit with an origin in [plugin.Unit.Inside]
 // places its file without the mark of a family that tests from outside. A
 // placer without a packager gives the file the package of the unit, as
-// Route does.
+// Route does. The file of a data family has the zero package.
 //
 // Error modes: [errPlacerInput] for an input without an index or a
 // speller, an error for a family that the plugin does not declare, an
@@ -98,6 +98,9 @@ func (p *placer) Place(subject symbol.Identity, u plugin.Unit) (plugin.Placed, e
 	name, err := r.fileNameOf(&dest, part)
 	if err != nil {
 		return placed, err
+	}
+	if dest.name != "" {
+		return placed, nil
 	}
 	if p.in.Packager == nil {
 		placed.Package = dest.pkg

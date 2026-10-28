@@ -245,6 +245,17 @@ func (c Config) checkGenerator(plan string, p plugin.ID, declared []plugin.Outpu
 			fault("family %q of %s has the template %q, which is no slash-separated path inside a tree",
 				o.Tag, p, o.Template)
 		}
+		switch {
+		case o.Name == "" && o.LineSet:
+			fault("family %q of %s is a line set, and a line set is a data family with a name", o.Tag, p)
+		case o.Name == "":
+		case o.Per != plugin.PerPlan:
+			fault("family %q of %s has the name %q, and a data family is per-plan", o.Tag, p, o.Name)
+		case o.Template == "":
+			fault("family %q of %s has the name %q and no template to write it", o.Tag, p, o.Name)
+		case !filename(o.Name):
+			fault("family %q of %s has the name %q, which is not one path element", o.Tag, p, o.Name)
+		}
 		f := Family{Plugin: p, Tag: o.Tag}
 		r := c.resolve(f)
 		own := c.Families[f]

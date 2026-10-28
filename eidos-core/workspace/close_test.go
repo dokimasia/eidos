@@ -233,6 +233,20 @@ func TestClose(t *testing.T) {
 				"the record lists the plan that remains")
 		})
 
+		t.Run("removes the data file of a plan the composition no longer declares", func(t *testing.T) {
+			t.Parallel()
+
+			root := lockRoot(t, rowLine)
+			_, err := built(t, lockBuilder(root, "relocks", "other", true)).
+				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			assert.NoError(t, err, "the run is clean")
+			files.Absent(
+				t,
+				filepath.Join(root, filepath.FromSlash(lockPath)),
+				"the removed plan's data file is removed",
+			)
+		})
+
 		t.Run("keeps a removed plan's output edited since its stamp", func(t *testing.T) {
 			t.Parallel()
 

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -67,6 +68,10 @@ type Output struct {
 	// directory. The other targets write the files of the family as they
 	// write the files of any family.
 	External bool
+	// LineSet reports that the file of a data family is a set of lines,
+	// which run --check compares line by line. A line-set family is a data
+	// family.
+	LineSet bool
 	// Word is the word of the family, such as "stub".
 	Word string
 	// Template is the slash-separated path of the file template that
@@ -76,6 +81,35 @@ type Output struct {
 	// kind templates of the target write none of them. The empty Template
 	// leaves the files to the kind templates.
 	Template string
+	// Name is the file name of a data family, such as
+	// "dokimi.golang.lock", and empty for a family of source files. A data
+	// family has the cardinality PerPlan and a template. The layout writes
+	// its one file under the directory of the family with the name as
+	// given. The template writes the whole file, and the run writes the
+	// bytes without a header, a frame or a format step.
+	Name string
+}
+
+// RemovedLine is one line that the committed file of a line-set family
+// has and the fresh file lacks.
+type RemovedLine struct {
+	// Family is the tag of the family.
+	Family string
+	// Path is the workspace-relative, slash-separated path of the file.
+	Path string
+	// Line is the number of the line in the committed file, from 1.
+	Line int
+	// Text is the line without its line ending.
+	Text string
+}
+
+// LineSetReader is implemented by a generator with a line-set family.
+// Removed returns the finding that run --check reports for a removed
+// line, and false for a line whose removal is no finding. The run sets
+// the position of the finding to the line and its origin to the
+// generator, where the finding leaves them zero.
+type LineSetReader interface {
+	Removed(r RemovedLine) (diag.Diag, bool)
 }
 
 // Unit is one accumulated output entity. It contains everything that one

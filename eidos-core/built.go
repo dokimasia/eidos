@@ -9,6 +9,7 @@ import (
 	"slices"
 	"text/template"
 
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -33,6 +34,9 @@ type built struct {
 	schemas  []directive.Schema
 	rules    []flatRule
 	subs     []plugin.Subscription
+	// removed is the function that [Builder.Removed] declares, and nil
+	// where the plugin declares none.
+	removed func(plugin.RemovedLine) (diag.Diag, bool)
 }
 
 // Name returns the name of the plugin.
@@ -109,6 +113,16 @@ func (b *built) TemplateFuncs(t plugin.Target) template.FuncMap {
 // shared names that the overrides of the target t replace, and nil where
 // the target has none.
 func (b *built) Overrides(t plugin.Target) []string { return b.pres.overrides[t] }
+
+// Removed implements [plugin.LineSetReader] through the function that
+// [Builder.Removed] declares. It reports false for every line where the
+// plugin declares none.
+func (b *built) Removed(r plugin.RemovedLine) (diag.Diag, bool) {
+	if b.removed == nil {
+		return diag.Diag{}, false
+	}
+	return b.removed(r)
+}
 
 // Directives returns the schemas that the Directive wrappers declare, for
 // registration when the workspace composes.

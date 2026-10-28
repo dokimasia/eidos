@@ -5,6 +5,7 @@ package workspace
 
 import (
 	"fmt"
+	"io/fs"
 	"slices"
 	"strings"
 
@@ -195,6 +196,7 @@ func (w *Workspace) sweep(rec *record, runs []*planRun, sink *diag.Sink, blocked
 	if err != nil {
 		return sw, fmt.Errorf("workspace: sweep: %w", err)
 	}
+	owned(sw.entries, out)
 	for _, e := range sw.entries {
 		if derr := out.Delete(e.Path); derr != nil {
 			return sw, fmt.Errorf("workspace: sweep: stage the removal of %s: %w", e.Path, discarding(out, derr))
@@ -215,9 +217,13 @@ func (w *Workspace) sweep(rec *record, runs []*planRun, sink *diag.Sink, blocked
 // generates as an Error under [OutOfDate] at the path: each change of a
 // plan that creates, updates or deletes a file, and each file of a plan
 // that the composition no longer declares that the sweep deletes. A
-// change that the narrowing withholds is not reported.
-func outOfDate(runs []*planRun, sw *swept, rec *record, sink *diag.Sink) {
+// change that the narrowing withholds is not reported. For each line-set
+// file, it first reports the findings that the generator of the family
+// returns for the lines that the committed file in tree has and the fresh
+// file lacks.
+func outOfDate(runs []*planRun, sw *swept, rec *record, tree fs.FS, sink *diag.Sink) {
 	for _, p := range runs {
+		removals(p, tree, sink)
 		for _, c := range p.changes {
 			if c.Action != output.ActionUnchanged {
 				sink.Errorf(OutOfDate, position.Pos{File: c.Path}, diag.PhaseClose,
