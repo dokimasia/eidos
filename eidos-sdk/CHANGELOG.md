@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.7.2
+
+### Patch Changes
+
+- 0348694: Add `plugin.NewDependencyUnit` to the facade.
+- 83dc1f9: Update `go.dokimi.dev/assert` to v0.10.0 and every other dependency to its latest release.
+- Updated dependencies [71f1a16, 83dc1f9]
+  - go.dokimi.dev/eidos/core@0.11.0
+
 ## 0.7.1
 
 ### Patch Changes
