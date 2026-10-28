@@ -14,3 +14,12 @@ import "go.dokimi.dev/eidos/core/diag"
 var ContinuedCarrier = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 44, Meaning: "a carrier in the tool-directive shape continues onto the next line",
 })
+
+// MisspelledBrand warns about a comment line whose mark, or a marker whose
+// first name, is near the brand of the run and is not the brand. The line
+// stays comment text and the marker stays metadata. A mark is near under
+// the bound of a suggestion of a directive name: at most two edits, and at
+// most a third of the length of the longer spelling.
+var MisspelledBrand = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 83, Meaning: "a mark or a marker is near the brand of the run and is not a directive",
+})

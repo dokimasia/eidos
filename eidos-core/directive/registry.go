@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/internal/edit"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -282,29 +283,23 @@ func (r *Registry) lookup(n Name) (Schema, Name, bool) {
 // them.
 func (r *Registry) constraintsOf(canonical Name) resolved { return r.constraints[canonical] }
 
-// The bounds of a suggestion: a registered name within suggestEdits edits
-// of a spelling, and within a third of the length of the longer of the
-// two, is near.
-const (
-	suggestEdits   = 2
-	suggestPortion = 3
-)
-
 // nearest returns the registered name nearest to a spelling that names no
 // schema: a canonical name for a spelling with a plugin prefix, and a bare
-// name otherwise. It reports false where no name is near. Two names at one
-// distance return the first in name order, so the suggestion does not
-// depend on the order of registration.
+// name otherwise. A name is near under the bound of [edit.Near]. nearest
+// reports false where no name is near. Two names at one distance return
+// the first in name order, so the suggestion does not depend on the order
+// of registration.
 func (r *Registry) nearest(n Name) (Name, bool) {
 	var best Name
-	bestDistance := suggestEdits + 1
+	found := false
+	bestDistance := 0
 	consider := func(candidate Name) {
-		d := editDistance(string(n), string(candidate))
-		if d*suggestPortion > max(len(n), len(candidate)) {
+		d, near := edit.Near(string(n), string(candidate))
+		if !near {
 			return
 		}
-		if d < bestDistance || d == bestDistance && candidate < best {
-			best, bestDistance = candidate, d
+		if !found || d < bestDistance || d == bestDistance && candidate < best {
+			best, bestDistance, found = candidate, d, true
 		}
 	}
 	if n.Plugin() != "" {
@@ -316,34 +311,7 @@ func (r *Registry) nearest(n Name) (Name, bool) {
 			consider(bare)
 		}
 	}
-	return best, bestDistance <= suggestEdits
-}
-
-// editDistance returns the optimal string alignment distance between two
-// spellings: the count of byte insertions, deletions, substitutions and
-// swaps of two adjacent bytes that turn a into b, where no byte is edited
-// twice. It allocates three rows of the length of b, and only a refusal
-// calls it.
-func editDistance(a, b string) int {
-	before, prev, cur := make([]int, len(b)+1), make([]int, len(b)+1), make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		cur[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
-			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
-				cur[j] = min(cur[j], before[j-2]+1)
-			}
-		}
-		before, prev, cur = prev, cur, before
-	}
-	return prev[len(b)]
+	return best, found
 }
 
 // claimedIgnore refuses an ignore that would silence a registered

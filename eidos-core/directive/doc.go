@@ -98,7 +98,7 @@
 // # Dependency position
 //
 // core/directive imports core/symbol, core/position, core/diag,
-// core/meta and the Go stdlib. It never imports core/store: the
+// core/meta, core/internal/edit and the Go stdlib. It never imports core/store: the
 // store attaches and indexes raw instances, so the dependency
 // points from the store to here.
 package directive

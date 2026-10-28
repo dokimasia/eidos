@@ -108,6 +108,13 @@ const (
 // continuedAt is the line at which the comments of the refusal cases open.
 var continuedAt = position.Pos{File: "svc/store/row.go", Line: 4}
 
+// The spellings of the misspelled-brand cases: the brand of the fixture
+// with two letters swapped, and a line in the mark shape of another tool.
+const (
+	misspelledBrand = "fixtrue"
+	otherToolLine   = "//go:generate stringer -type=Kind"
+)
+
 // The lines with more than one directive. The first is a payload of two
 // directives after their marks. The second is a continuation line with a
 // later directive after a marker and three spaces, and the third is a line
@@ -570,6 +577,70 @@ func TestSourceUnit(t *testing.T) {
 			u, sink := reporting(t, unitTree())
 			u.Comment("//"+bareMark+continuedPayload+"\n// "+continuationLine, continuedAt)
 			coretest.AssertCodes(t, sink, plugin.ContinuedCarrier)
+		})
+
+		misspelled := []struct {
+			name string
+			line string
+			want string
+		}{
+			{
+				name: "reports MisspelledBrand for a line whose mark is near the brand",
+				line: "//" + misspelledBrand + ":" + tablePayload,
+				want: "the mark fixtrue: is not the brand fixture: of this run, so the line is comment text",
+			},
+			{
+				name: "reports MisspelledBrand for a set mark near the brand",
+				line: "// +" + misspelledBrand + ":" + tablePayload,
+				want: "the mark +fixtrue: is not the brand +fixture: of this run, so the line is comment text",
+			},
+		}
+		for _, tt := range misspelled {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				u, sink := reporting(t, unitTree())
+				parts := u.Comment(tt.line, carrierAt)
+				assert.Empty(t, parts.Carriers, "the line is no carrier")
+				got := reported(sink)
+				assert.Length(t, got, 1, "one finding is reported")
+				expect.Equal(t, got[0].Code, plugin.MisspelledBrand, "the finding is the misspelled brand")
+				expect.Equal(t, got[0].Severity, diag.SeverityWarning, "the finding is a warning")
+				expect.Equal(t, got[0].Pos, carrierAt, "the finding is at the line")
+				expect.Equal(t, got[0].Msg, tt.want, "the message names the brand")
+			})
+		}
+
+		t.Run("reports nothing for the mark of another tool", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.Comment(otherToolLine, carrierAt)
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports nothing for a name near the brand that prose follows", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.Comment("// "+misspelledBrand+": "+tablePayload, carrierAt)
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports nothing for prose before a mark near the brand", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			u.Comment("// see "+misspelledBrand+":"+tablePayload, carrierAt)
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports nothing for a mark near the brand in a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			u.Comment("//"+misspelledBrand+":"+tablePayload, carrierAt)
+			coretest.AssertCodes(t, sink)
 		})
 
 		t.Run("reports nothing for a continued carrier of a dependency unit", func(t *testing.T) {
@@ -1085,6 +1156,42 @@ func TestSourceUnit(t *testing.T) {
 			u, sink := reporting(t, unitTree())
 			marker := plugin.Sugar{Path: []string{"log"}, Refusal: sugarRefusal, Pos: carrierAt}
 			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode), "the marker is metadata")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports MisspelledBrand for a marker whose first name is near the brand", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			marker := plugin.Sugar{Path: []string{misspelledBrand, string(stubName)}, Pos: carrierAt}
+			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode),
+				"a marker of another name is no directive")
+			got := reported(sink)
+			assert.Length(t, got, 1, "one finding is reported")
+			expect.Equal(t, got[0].Code, plugin.MisspelledBrand, "the finding is the misspelled brand")
+			expect.Equal(t, got[0].Severity, diag.SeverityWarning, "the finding is a warning")
+			expect.Equal(t, got[0].Msg,
+				"the marker fixtrue is not the brand fixture of this run, so the marker is ordinary metadata",
+				"the message names the brand")
+		})
+
+		t.Run("reports nothing for a marker of one name near the brand", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, unitTree())
+			marker := plugin.Sugar{Path: []string{misspelledBrand}, Pos: carrierAt}
+			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode),
+				"a marker of another name is no directive")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports nothing for a marker near the brand of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := dependencyUnit(t)
+			marker := plugin.Sugar{Path: []string{misspelledBrand, string(stubName)}, Pos: carrierAt}
+			assert.False(t, u.AttachSugar(&node.Struct{Name: "Row"}, marker, unitCode),
+				"a marker of another name is no directive")
 			coretest.AssertCodes(t, sink)
 		})
 

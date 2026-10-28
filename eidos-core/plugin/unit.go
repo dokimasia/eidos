@@ -14,6 +14,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/edit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/position"
@@ -278,6 +279,13 @@ func (u *SourceUnit) Doc(raw string) []string {
 // continuation, as gofmt does. The Error quotes the carrier with the set
 // mark. Comment reads the lines after it as they are written. A unit of a
 // dependency reports no such Error.
+//
+// Comment reports a Warning under [MisspelledBrand] for a line that opens
+// with the shape of a mark whose name is near the brand and is not the
+// brand, such as acme: under the brand acne. The line stays comment text.
+// A mark is near under the bound of [MisspelledBrand], so the mark go: of
+// another tool is not near the brand acme. A unit of a dependency reports
+// no such Warning.
 func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	var parts CommentParts
 	lines := commentLines(raw, u.syntax)
@@ -286,6 +294,9 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 		lineAt := at
 		lineAt.Line += i
 		mark, payload, carried := cutCarrier(line.text, u.brand)
+		if !carried {
+			u.misspelledMark(line.text, lineAt)
+		}
 		switch {
 		case carried:
 			shaped := u.directiveShaped(line)
@@ -356,7 +367,9 @@ func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused
 // whether the marker is a directive. AttachSugar reports false for a
 // marker whose path does not start with the brand of the unit, because
 // such a marker is ordinary metadata. The arguments of such a marker do
-// not change the result.
+// not change the result. AttachSugar reports a Warning under
+// [MisspelledBrand] for such a marker of two or more names whose first
+// name is near the brand, except in a unit of a dependency.
 //
 // The path of a directive is the brand followed by a name, or by a plugin
 // and a name. The first form is the bare directive name, and the second
@@ -382,6 +395,11 @@ func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused
 // outside the brand.
 func (u *SourceUnit) AttachSugar(subject symbol.Symbol, s Sugar, refused diag.Code) bool {
 	if len(s.Path) == 0 || s.Path[0] != u.brand {
+		if len(s.Path) > 1 && u.nearBrand(s.Path[0]) {
+			u.Warnf(MisspelledBrand, s.Pos,
+				"the marker %s is not the brand %s of this run, so the marker is ordinary metadata",
+				s.Path[0], u.brand)
+		}
 		return false
 	}
 	var name directive.Name
@@ -552,6 +570,29 @@ func (u *SourceUnit) carrierf(c diag.Code, at position.Pos, format string, a ...
 	u.Errorf(c, at, format, a...)
 }
 
+// misspelledMark reports a Warning under [MisspelledBrand] at a comment
+// line that opens with a mark whose name is near the brand of the unit.
+// It reports nothing for any other line, and allocates nothing for a line
+// whose mark is not near the brand.
+func (u *SourceUnit) misspelledMark(text string, at position.Pos) {
+	sign, name, marked := markOf(text)
+	if !marked || !u.nearBrand(name) {
+		return
+	}
+	u.Warnf(MisspelledBrand, at, "the mark %s%s%s is not the brand %s%s%s of this run, so the line is comment text",
+		sign, name, carrierClose, sign, u.brand, carrierClose)
+}
+
+// nearBrand reports whether a name is near the brand of the unit and is
+// not the brand. A unit of a dependency reports false for every name.
+func (u *SourceUnit) nearBrand(name string) bool {
+	if u.dependency || name == u.brand {
+		return false
+	}
+	_, near := edit.Near(name, u.brand)
+	return near
+}
+
 // directiveShaped reports whether a comment line has the tool-directive
 // shape. A line has the shape when the syntax declares the convention, the
 // marker is directly before the text, and the text has the form tool:name.
@@ -699,6 +740,29 @@ func cutCarrier(line, brand string) (mark, payload string, ok bool) {
 		}
 	}
 	return cutMark(line, 0, brand)
+}
+
+// markOf splits a line that opens with the shape of a mark: an optional
+// sign, a name of ASCII letters, digits, hyphens and underscores, the
+// closing colon and a letter. It returns the sign and the name, and
+// reports false for any other line.
+func markOf(line string) (sign, name string, ok bool) {
+	if line != "" && (line[0] == carrierSet[0] || line[0] == carrierNegated[0]) {
+		sign, line = line[:1], line[1:]
+	}
+	end := strings.IndexByte(line, carrierClose[0])
+	if end <= 0 || end+1 >= len(line) {
+		return "", "", false
+	}
+	for _, c := range []byte(line[:end]) {
+		if ('a' > c || c > 'z') && ('A' > c || c > 'Z') && ('0' > c || c > '9') && c != '-' && c != '_' {
+			return "", "", false
+		}
+	}
+	if c := line[end+1]; ('a' > c || c > 'z') && ('A' > c || c > 'Z') {
+		return "", "", false
+	}
+	return sign, line[:end], true
 }
 
 // cutMark splits a line whose bytes after the first sign bytes are the

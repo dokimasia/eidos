@@ -131,5 +131,6 @@
 //
 // core/plugin imports core/diag, core/directive, core/emit,
 // core/jsonschema, core/manifest, core/meta, core/node, core/position,
-// core/rules, core/store, core/symbol and the Go stdlib.
+// core/rules, core/store, core/symbol, core/internal/edit and the Go
+// stdlib.
 package plugin
