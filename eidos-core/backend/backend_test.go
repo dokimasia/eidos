@@ -827,6 +827,24 @@ func TestBackend(t *testing.T) {
 		})
 	})
 
+	t.Run("KeepsOwnNames", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for a backend that declares it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, kitBackend(kitName, kitTarget).KeepsOwnNames().Build().KeepsOwnNames(),
+				"the target keeps a name of its own language")
+		})
+
+		t.Run("reports false for a backend that does not declare it", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, kitBackend(plainName, kitTarget).Build().KeepsOwnNames(),
+				"the respell hook spells every name")
+		})
+	})
+
 	t.Run("FileName", func(t *testing.T) {
 		t.Parallel()
 

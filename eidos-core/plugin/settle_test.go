@@ -110,6 +110,15 @@ func (b *respellingOnly) Respell(
 	return b.fn(host, kind, v, name)
 }
 
+// nameKeeper is a backend with the respell hook of its embedded backend
+// that keeps the names of its target's language.
+type nameKeeper struct {
+	*respellingOnly
+}
+
+// KeepsOwnNames reports that the target keeps the names of its language.
+func (nameKeeper) KeepsOwnNames() bool { return true }
+
 // lowering returns a backend whose lowering hook is fn.
 func lowering(fn plugin.Lower) *loweringOnly {
 	b := &loweringOnly{fn: fn}
@@ -675,6 +684,45 @@ func TestSettle(t *testing.T) {
 			u := settleUnit("svc", "svc/a.src", c)
 			u.Tag, u.Template = claimTag, claimTemplate
 			return u, c
+		}
+
+		own := []struct {
+			name     string
+			giveKeep bool
+			giveLang symbol.Lang
+			giveName string
+			want     string
+		}{
+			{
+				name:     "keeps the name of a declaration of an origin of the target's language for a NameKeeper",
+				giveKeep: true, giveLang: symbol.Lang(settleTarget), giveName: "beta", want: "beta",
+			},
+			{
+				name:     "respells the name of a declaration whose origin is of another language for a NameKeeper",
+				giveKeep: true, giveLang: "fixture", giveName: "beta", want: "Beta",
+			},
+			{
+				name:     "respells a name that differs from the name of its origin for a NameKeeper",
+				giveKeep: true, giveLang: symbol.Lang(settleTarget), giveName: "gamma", want: "Gamma",
+			},
+			{
+				name:     "respells the name of an origin of the target's language for a backend that keeps no names",
+				giveLang: symbol.Lang(settleTarget), giveName: "beta", want: "Beta",
+			},
+		}
+		for _, tt := range own {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				origin := symbol.Identity{Lang: tt.giveLang, Package: "svc", Name: "beta", Kind: symbol.KindStruct}
+				s := &emit.Struct{Origin: origin, Name: tt.giveName}
+				var b plugin.Backend = capitalizing()
+				if tt.giveKeep {
+					b = nameKeeper{capitalizing()}
+				}
+				settled(t, storeOf(t, settleUnit("svc", "svc/a.src", s)), b)
+				assert.Equal(t, s.Name, tt.want, "the settled name")
+			})
 		}
 
 		t.Run("respells a record of a claimed family", func(t *testing.T) {

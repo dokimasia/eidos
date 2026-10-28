@@ -42,6 +42,7 @@ type Builder struct {
 	importable plugin.ImportRule
 	scopes     func(pkg symbol.Identity) symbol.Identity
 	overloads  bool
+	keepsOwn   bool
 	types      func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
 	supertypes func(s rules.TypeShape, p plugin.Policy) (*emit.TypeRef, error)
 	handler    func(r plugin.RPC, p plugin.Policy, translate plugin.Translate) (*emit.Method, error)
@@ -231,6 +232,17 @@ func (b *Builder) Overloads() *Builder {
 	return b
 }
 
+// KeepsOwnNames declares that the target keeps a declared name of its own
+// language, because every name that a source of the language declares is a
+// name of the target. The built backend serves the declaration as
+// [plugin.NameKeeper], and the settle respells no name that an emitted
+// declaration carries from an origin of the target's language. Undeclared,
+// the respell hook spells every name.
+func (b *Builder) KeepsOwnNames() *Builder {
+	b.keepsOwn = true
+	return b
+}
+
 // Evaluated sets the names that a module of the target's language
 // evaluates when it runs a declaration, so the render writes each
 // declaration after the declarations of its file that it evaluates, as
@@ -394,8 +406,9 @@ func (b *Builder) Policies(specs ...plugin.PolicySpec) *Builder {
 // SPI, with the fact coverage that the guard of the render reads, the
 // kinds that the language refuses, which the backend suite checks, the
 // spelling of a supertype of another language, the namespace of the
-// names of a file, whether the language overloads a function, the
-// convention of a member, the binder of gRPC and the import rule.
+// names of a file, whether the language overloads a function, whether the
+// target keeps a name of its own language, the convention of a member,
+// the binder of gRPC and the import rule.
 type Backend interface {
 	plugin.Backend
 	render.Coverer
@@ -403,6 +416,7 @@ type Backend interface {
 	plugin.SupertypeSpeller
 	plugin.NameScoper
 	plugin.Overloader
+	plugin.NameKeeper
 	plugin.MemberRespeller
 	plugin.Binder
 	plugin.ImportChecker
@@ -466,7 +480,7 @@ func (b *Builder) Build() Backend {
 	}
 	return &builtBackend{
 		name: b.name, target: b.target, syntax: b.syntax, version: b.version, pass: pass,
-		packages: b.packages, importable: b.importable, scopes: b.scopes, overloads: b.overloads,
+		packages: b.packages, importable: b.importable, scopes: b.scopes, overloads: b.overloads, keepsOwn: b.keepsOwn,
 		lower: b.lower, respell: b.respell, member: b.member,
 		types: b.types, supertypes: b.supertypes, handler: b.handler, home: b.home, policies: b.policies,
 	}
@@ -488,6 +502,9 @@ type builtBackend struct {
 	importable plugin.ImportRule
 	scopes     func(pkg symbol.Identity) symbol.Identity
 	overloads  bool
+	// keepsOwn reports that the target keeps a declared name of its own
+	// language.
+	keepsOwn bool
 	// lower, respell and member are the declared hooks of the settle, nil
 	// where the backend declares none. Render refuses an unsettled store
 	// where the backend declares any of them.
@@ -619,6 +636,10 @@ func (b *builtBackend) NameScope(pkg symbol.Identity) symbol.Identity {
 // Overloads implements [plugin.Overloader]: whether the backend declared
 // that its language overloads a function.
 func (b *builtBackend) Overloads() bool { return b.overloads }
+
+// KeepsOwnNames implements [plugin.NameKeeper]: it reports that the target
+// keeps a declared name of its own language.
+func (b *builtBackend) KeepsOwnNames() bool { return b.keepsOwn }
 
 // Render implements [plugin.Renderer] through the composed pass. A
 // backend declaring a seam refuses an unsettled store: the plan

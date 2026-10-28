@@ -92,6 +92,18 @@ type Respeller interface {
 	Respell(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
 }
 
+// NameKeeper is the role of a backend whose target keeps a declared name
+// of its own language: every name that a source of the language declares is
+// a name of the target, as in protobuf. The settle respells no name that an
+// emitted declaration carries from an origin of the target's language. A
+// target whose convention also governs names of its own language, as Go
+// writes an exported name in upper case, does not keep them.
+type NameKeeper interface {
+	// KeepsOwnNames reports whether the target keeps a declared name of
+	// its own language.
+	KeepsOwnNames() bool
+}
+
 // Member is what the convention of a target reads of a declared member
 // beside its name: the kind of its host, its own kind, its visibility, its
 // level and its mutability. A method has the zero mutability.
@@ -391,7 +403,11 @@ type planned struct {
 func respellAll(
 	e *Emit, r Respeller, t Target, over overrides, others Names, by diag.Origin, sink *diag.Sink, reads *readLog,
 ) {
-	plans := planNames(e, r, over, reads)
+	var own symbol.Lang
+	if keeper, keeps := r.(NameKeeper); keeps && keeper.KeepsOwnNames() {
+		own = symbol.Lang(t)
+	}
+	plans := planNames(e, r, own, over, reads)
 	table, byOrigin := resolveTop(e, plans)
 	resolveMembers(e, plans, by, sink)
 	applyNames(e, plans, by, sink)
@@ -435,10 +451,13 @@ func (p *plan) of(i, j int) []planned {
 // origin in place of the spelling of the hook, and stores the result by
 // value. A field and a method spell through the [MemberRespeller] role
 // where the backend has it. The visit of a wire field keeps the emitted
-// name and reads no override. Nothing writes yet. The apply walk replays the
-// visits in their order. reads records the override that each unit read for
-// each origin that its declarations render.
-func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
+// name and reads no override. So does the visit of a declaration that
+// carries the name of its origin where the origin is a declaration of
+// lang: the language of a target that is a [NameKeeper], and empty for
+// every other target. Nothing writes yet. The apply walk replays the visits in their
+// order. reads records the override that each unit read for each origin
+// that its declarations render.
+func planNames(e *Emit, r Respeller, lang symbol.Lang, over overrides, reads *readLog) *plan {
 	total := 0
 	for i := range e.units {
 		total += len(e.units[i].Decls)
@@ -458,6 +477,11 @@ func planNames(e *Emit, r Respeller, over overrides, reads *readLog) *plan {
 		host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
 	) (string, error) {
 		p := planned{host: host, kind: kind, at: at, emitted: name}
+		if origin, _ := emit.OriginOf(carrier); lang != "" && origin.Lang == lang && origin.Name == name {
+			p.settled, p.final = name, name
+			plans.all = append(plans.all, p)
+			return name, nil
+		}
 		m := Member{Host: hostKind(host), Kind: kind, Visibility: v}
 		member := false
 		switch c := carrier.(type) {
