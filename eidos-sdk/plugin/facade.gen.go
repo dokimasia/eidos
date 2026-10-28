@@ -1452,6 +1452,15 @@ func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyn
 	return core.NewSourceUnit(files, fsys, depth, syntax, brand, sink, origin)
 }
 
+// NewDependencyUnit builds a unit that a dependency round placed, as
+// [NewSourceUnit] builds a unit of the workspace. The unit loads at
+// [DepthSignatures]. It attaches the directives of its carriers for the
+// annotators of a run, and it reports no finding at a carrier.
+// NewDependencyUnit panics on an empty brand, as NewSourceUnit does.
+func NewDependencyUnit(files []SourceRef, fsys fs.FS, syntax CommentSyntax, brand string, sink *diag.Sink, origin diag.Origin) *SourceUnit {
+	return core.NewDependencyUnit(files, fsys, syntax, brand, sink, origin)
+}
+
 // Carrier is one directive payload without its marker, with its position
 // and its mark. The kernel grammar parses the payload.
 type Carrier = core.Carrier

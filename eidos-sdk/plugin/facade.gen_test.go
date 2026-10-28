@@ -1601,6 +1601,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("NewDependencyUnit", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(plugin.NewDependencyUnit), reflect.TypeOf(core.NewDependencyUnit), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Carrier", func(t *testing.T) {
 		t.Parallel()
 
