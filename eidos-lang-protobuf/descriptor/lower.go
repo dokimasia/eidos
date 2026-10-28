@@ -367,7 +367,8 @@ func fieldType(inner *node.TypeRef, l label, presence protobuf.Presence, member 
 // type in the source.
 func (l *lowered) typeRef(f *descriptorpb.FieldDescriptorProto, path []int32) *node.TypeRef {
 	if name := f.GetTypeName(); name != "" {
-		return namedRef(name, l.posOf(pathOf(path, fieldTypeName), path))
+		at := pathOf(path, fieldTypeName)
+		return namedRef(l.spelled(name, at), l.posOf(at, path))
 	}
 	scalar := strings.ToLower(strings.TrimPrefix(f.GetType().String(), scalarPrefix))
 	return &node.TypeRef{Spelling: scalar, Pos: l.posOf(pathOf(path, fieldScalar), path)}
@@ -380,6 +381,24 @@ func (l *lowered) posOf(path, fallback []int32) position.Pos {
 		return l.loc.start(loc)
 	}
 	return l.loc.start(l.loc.at(fallback))
+}
+
+// spelled returns a type name as the source writes it at the location of
+// path. A name that the source qualifies partly resolves to a fully
+// qualified name that ends with it, so the written name is the suffix of fq
+// that the span of the location covers, from a dot on. spelled returns fq
+// for a location that is absent or spans more than one line, and for a
+// span whose length does not end fq at a dot.
+func (l *lowered) spelled(fq string, path []int32) string {
+	span := l.loc.at(path).GetSpan()
+	if len(span) != 3 {
+		return fq
+	}
+	n := int(span[2] - span[1])
+	if n <= 0 || n >= len(fq) || fq[len(fq)-n-1] != '.' {
+		return fq
+	}
+	return fq[len(fq)-n:]
 }
 
 // namedRef lowers one named reference, and a well-known type with the
@@ -405,7 +424,7 @@ func (l *lowered) mapField(
 			Pos:      at,
 		}
 		if name := ef.GetTypeName(); name != "" {
-			ref = namedRef(name, at)
+			ref = namedRef(l.spelled(name, pathOf(path, fieldTypeName)), at)
 		}
 		switch ef.GetNumber() {
 		case 1:
@@ -496,7 +515,9 @@ func (l *lowered) group(
 	options := l.optionsAt(f.GetOptions(), pathOf(path, fieldOptions))
 	scope := with(outer, options)
 	pos := l.loc.start(l.loc.at(path))
-	typ, required := fieldType(namedRef(f.GetTypeName(), pos), l.labelOf(f), scope.Presence, member)
+	// A group declares its message in place, so the field writes the name
+	// of the group.
+	typ, required := fieldType(namedRef(lastName(f.GetTypeName()), pos), l.labelOf(f), scope.Presence, member)
 	field := l.fieldDecl(f, path, typ, options, true)
 	gb := l.unit.Graph()
 	if required {
@@ -683,8 +704,9 @@ func (l *lowered) rpc(m *descriptorpb.MethodDescriptorProto, path []int32) *node
 	}
 	c := l.commentsOf(loc, out, false)
 	out.Doc, out.Annotations, out.Comment = c.doc, c.annotations, c.comment
-	in := l.rpcType(m.GetInputType(), m.GetClientStreaming(), l.posOf(pathOf(path, methodInput), path))
-	result := l.rpcType(m.GetOutputType(), m.GetServerStreaming(), l.posOf(pathOf(path, methodOutput), path))
+	inPath, outPath := pathOf(path, methodInput), pathOf(path, methodOutput)
+	in := l.rpcType(l.spelled(m.GetInputType(), inPath), m.GetClientStreaming(), l.posOf(inPath, path))
+	result := l.rpcType(l.spelled(m.GetOutputType(), outPath), m.GetServerStreaming(), l.posOf(outPath, path))
 	out.Params = []*node.Param{{Pos: in.Pos, Name: requestParam, Type: in}}
 	out.Returns = []*node.Return{{Pos: result.Pos, Type: result}}
 	out.Async = result.Form != symbol.FormStream
@@ -760,7 +782,8 @@ func (l *lowered) extensions(
 				field = l.field(f, fp, scope, false, nil)
 				emit(field)
 			}
-			field.Receives = namedRef(f.GetExtendee(), l.posOf(pathOf(fp, fieldExtendee), fp))
+			extendee := pathOf(fp, fieldExtendee)
+			field.Receives = namedRef(l.spelled(f.GetExtendee(), extendee), l.posOf(extendee, fp))
 			b := blockOf[i]
 			if b < 0 {
 				return

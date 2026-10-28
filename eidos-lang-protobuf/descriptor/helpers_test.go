@@ -330,7 +330,7 @@ func (d *dumper) field(indent, owner string, f *node.Field) {
 		f.Value, f.Doc, f.Comment, receives)
 }
 
-// typeOf spells a type by its form and its arguments, with the last name
+// typeOf spells a type by its form and its arguments, with the spelling
 // of a named type and the package of a well-known type.
 func typeOf(t *node.TypeRef) string {
 	if t == nil {
@@ -343,7 +343,7 @@ func typeOf(t *node.TypeRef) string {
 		}
 		return fmt.Sprintf("form%d(%s)", t.Form, strings.Join(args, ","))
 	}
-	name := t.Spelling[strings.LastIndex(t.Spelling, ".")+1:]
+	name := t.Spelling
 	if t.Package != "" {
 		return name + "@" + t.Package
 	}

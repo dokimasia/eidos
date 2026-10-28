@@ -90,14 +90,21 @@ func newLocations(file string, info *descriptorpb.SourceCodeInfo) *locations {
 }
 
 // isExtensionList reports whether a path ends at the list of extensions of
-// the file or of a message, which is the path of an extend block.
+// the file or of a message, which is the path of an extend block. The path
+// of a message is a message of the file followed by nested messages, so a
+// path of a field that ends in the number of its type name is no list.
 func isExtensionList(path []int32) bool {
 	n := len(path)
 	switch {
 	case n == 1:
 		return path[0] == fileExtension
-	case n >= 3 && n%2 == 1:
-		return path[n-1] == messageExtension && path[0] == fileMessage
+	case n >= 3 && n%2 == 1 && path[0] == fileMessage && path[n-1] == messageExtension:
+		for k := 2; k < n-1; k += 2 {
+			if path[k] != messageNested {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
