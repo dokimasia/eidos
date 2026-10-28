@@ -6,7 +6,7 @@ module go.dokimi.dev/eidos/cli
 go 1.27.3
 
 require (
-	go.dokimi.dev/assert v0.7.0
+	go.dokimi.dev/assert v0.10.0
 	go.dokimi.dev/eidos/core v0.10.0
 	go.dokimi.dev/eidos/declarative v0.1.9
 	go.stealthscale.io/cli v0.7.0

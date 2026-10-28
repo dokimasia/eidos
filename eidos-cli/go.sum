@@ -1,5 +1,5 @@
-go.dokimi.dev/assert v0.7.0 h1:v1UhGt9YgBgkM9GY7wHSJnadd9jLta/UlF/C5FSVjVo=
-go.dokimi.dev/assert v0.7.0/go.mod h1:NeZvtoRhjUZSooEp8kN1mMakVUowb+EDKFR/YOUey2w=
+go.dokimi.dev/assert v0.10.0 h1:rRnsUk0oW+/kk9Br5Hk4pM3bywGBHJe5RmJYCjB4ufQ=
+go.dokimi.dev/assert v0.10.0/go.mod h1:NeZvtoRhjUZSooEp8kN1mMakVUowb+EDKFR/YOUey2w=
 go.stealthscale.io/cli v0.7.0 h1:dbYq6cskLyEZOWBM54Gt2B5BIeW8qvtVejsFZlrZQM8=
 go.stealthscale.io/cli v0.7.0/go.mod h1:w7GqdYhhdgdg6RhRO5dgGH/2g4u58BRsncVxfqqties=
 go.stealthscale.io/cli/yaml v0.1.7 h1:TDQCI51TUGgBvO9e+/dz0GdLbG1STfU/q+bm6L0fXA4=

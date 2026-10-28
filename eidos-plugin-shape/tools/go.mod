@@ -6,7 +6,7 @@ module go.dokimi.dev/eidos/plugin/shape/tools
 go 1.27.3
 
 require (
-	go.dokimi.dev/assert v0.7.0
+	go.dokimi.dev/assert v0.10.0
 	go.dokimi.dev/eidos/core v0.10.0
 	go.dokimi.dev/eidos/lang v0.4.0
 	go.dokimi.dev/eidos/lang/go v0.6.1
@@ -19,9 +19,9 @@ require (
 	github.com/golangci/golines v0.16.0 // indirect
 	github.com/ldez/structtags v0.6.1 // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	mvdan.cc/gofumpt v0.12.0 // indirect
 )
 

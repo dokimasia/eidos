@@ -6,7 +6,7 @@ module go.dokimi.dev/eidos/reference
 go 1.27.3
 
 require (
-	go.dokimi.dev/assert v0.7.0
+	go.dokimi.dev/assert v0.10.0
 	go.dokimi.dev/eidos/cli v0.3.2
 	go.dokimi.dev/eidos/core v0.10.0
 	go.dokimi.dev/eidos/lang v0.4.0
@@ -28,9 +28,9 @@ require (
 	go.stealthscale.io/cli v0.7.0 // indirect
 	go.stealthscale.io/cli/yaml v0.1.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/tools v0.51.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 	mvdan.cc/gofumpt v0.12.0 // indirect
 )
 
