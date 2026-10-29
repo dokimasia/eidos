@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.6.4
+
+### Patch Changes
+
+- 8d191b8: Report false from ZeroValue for a reference whose aliases form a cycle, in place of a stack overflow.
+
 ## 0.6.3
 
 ### Patch Changes
