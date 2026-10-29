@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.3.0
+
+### Minor Changes
+
+- dbae70b: Add OfDeclaration, which returns every classification of another declaration than the subject of a match, such as a method of a matched interface.
+
 ## 0.2.0
 
 ### Minor Changes
