@@ -154,8 +154,11 @@ benchstat-go: ## Compare the results of bench-go in GO_BENCH_OLD with those in G
 	$(BENCHSTAT) $(GO_BENCH_OLD) $(GO_BENCH_NEW)
 mutate-go: ## Run dokimi-mutate-go on every module, and fail on a mutant that the tests miss
 	@$(GO) list -m -f '{{.Dir}}' | { status=0; while IFS= read -r dir; do echo "dokimi-mutate-go $$dir"; \
-		list="$$($(call go-packages,$(GO_MUTATE_SKIP)))" || { status=1; continue; }; \
-		skip=""; for pkg in $$list; do skip="$${skip:+$$skip,}$$pkg"; done; \
+		pkgs="$$($(GO) -C "$$dir" list $(GO_PATHS))" && list="$$($(call go-packages,$(GO_MUTATE_SKIP)))" \
+			|| { status=1; continue; }; \
+		skip=""; run=""; for pkg in $$pkgs; do for s in $$list; do \
+			[ "$$s" = "$$pkg" ] && { skip="$${skip:+$$skip,}$$pkg"; continue 2; }; done; run=1; done; \
+		if [ -z "$$run" ]; then echo "no package to mutate in $$dir"; continue; fi; \
 		$(DOKIMI_MUTATE_GO) -C "$$dir" --workers $(GO_MUTATE_WORKERS) --timeout $(GO_MUTATE_TIMEOUT) \
 			$${skip:+--skip "$$skip"} $(GO_MUTATE_ARGS) $(GO_PATHS) || status=1; done; exit $$status; }
 generate-go: ## Run the generators of every module, such as go generate
