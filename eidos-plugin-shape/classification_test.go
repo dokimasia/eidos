@@ -65,6 +65,9 @@ type classification struct {
 	put, get, find, commit, retry, stale *node.Method
 	run                                  *shapetest.Run
 	got                                  map[string]shape.Classification
+	// byHost is the classification of each method that OfDeclaration
+	// returns in a match of the struct that hosts the methods.
+	byHost map[string]shape.Classification
 }
 
 // classify classifies the methods of the fixture, and returns the run and
@@ -123,6 +126,14 @@ func classify(tb testing.TB) classification {
 		return nil
 	}))
 	expect.Length(tb, c.got, 6, "the consumer reads every method")
+	c.byHost = map[string]shape.Classification{}
+	r.Consume(tb, sdk.OnStruct(func(m *sdk.StructMatch, _ *sdk.Emitter) error {
+		for _, method := range m.Struct.Methods {
+			c.byHost[method.Name] = shape.OfDeclaration(m, method.ID)
+		}
+		return nil
+	}))
+	expect.Length(tb, c.byHost, 6, "the match of the host reads every method")
 	return c
 }
 
@@ -194,6 +205,29 @@ func TestClassification(t *testing.T) {
 				"the summary keys of Stale point at no classification, so Of returns none")
 		})
 	})
+
+	t.Run("OfDeclaration", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the classification of a method in a match of its host as Of returns it", func(t *testing.T) {
+			t.Parallel()
+
+			c := classify(t)
+			assert.Equal(t, c.byHost, c.got, "each method has the classification that Of returns for it")
+		})
+
+		t.Run("returns the zero classification for the zero identity", func(t *testing.T) {
+			t.Parallel()
+
+			c := classify(t)
+			var got shape.Classification
+			c.run.Consume(t, sdk.OnStruct(func(m *sdk.StructMatch, _ *sdk.Emitter) error {
+				got = shape.OfDeclaration(m, symbol.Identity{})
+				return nil
+			}))
+			assert.Equal(t, got, shape.Classification{}, "the zero identity names no declaration")
+		})
+	})
 }
 
 // Of allocates the classification that it returns, and nothing for its
@@ -216,6 +250,13 @@ func TestClassificationAllocs(t *testing.T) {
 			var got shape.Classification
 			expect.MaxAllocs(t, func() { got = shape.Of(m) }, tt.allocs,
 				"Of allocates the classification of "+tt.name+" alone")
+			expect.NotEqual(t, got.Shape, "", "the classification has the shape of "+tt.name)
+			return nil
+		}))
+		c.run.Consume(t, sdk.OnStruct(func(m *sdk.StructMatch, _ *sdk.Emitter) error {
+			var got shape.Classification
+			expect.MaxAllocs(t, func() { got = shape.OfDeclaration(m, tt.subject) }, tt.allocs,
+				"OfDeclaration allocates the classification of "+tt.name+" alone")
 			expect.NotEqual(t, got.Shape, "", "the classification has the shape of "+tt.name)
 			return nil
 		}))

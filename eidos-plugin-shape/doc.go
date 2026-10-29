@@ -56,8 +56,10 @@
 //   - [Any], [Is], [Has], [In] and [Plays] return the predicates that gate
 //     a rule on a classification.
 //   - A reader such as [WriterOf] returns the params of one
-//     classification, [Of] returns every classification of a callable,
-//     and [InstanceOf] returns a contract instance.
+//     classification, [Of] returns every classification of the subject of
+//     a match, [OfDeclaration] returns them for another declaration, such
+//     as a method of a matched interface, and [InstanceOf] returns a
+//     contract instance.
 //   - [Specs] and [SpecOf] return the descriptions of the specs.
 //
 // A predicate and a reader read through a named handle, so a consumer

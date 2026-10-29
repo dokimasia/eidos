@@ -70,29 +70,65 @@ type Params map[directive.ParamKey]any
 // for each mixin spec, and a callable with a contract role one read for
 // each contract spec.
 func Of(m sdk.Matcher) Classification {
+	return classified(reader{m: m, subject: true})
+}
+
+// OfDeclaration returns every classification of the declaration id, as
+// [Of] returns them for the subject of m. It reads each fact through
+// [sdk.FactOf], so the read set of the invocation of m records each read.
+// A generator that matches a declaration classifies the callables of the
+// declaration this way. The zero identity returns the zero Classification.
+//
+// # Allocation contract
+//
+// OfDeclaration allocates what [Of] allocates.
+func OfDeclaration(m sdk.Matcher, id symbol.Identity) Classification {
+	return classified(reader{m: m, id: id})
+}
+
+// reader reads the facts of one declaration through the invocation of m:
+// the subject of m where subject is set, and the declaration id otherwise.
+type reader struct {
+	m       sdk.Matcher
+	id      symbol.Identity
+	subject bool
+}
+
+// fact returns the value of k on the declaration of r, as [sdk.Fact] and
+// [sdk.FactOf] return it.
+func fact[T meta.FactValue](r reader, k meta.Key[T]) (T, bool) {
+	if r.subject {
+		return sdk.Fact(r.m, k)
+	}
+	return sdk.FactOf(r.m, r.id, k)
+}
+
+// classified returns every classification of the declaration of r, by the
+// walk that [Of] states.
+func classified(r reader) Classification {
 	var c Classification
 	specs := catalog()
-	name, shaped := sdk.Fact(m, shapeSummary)
-	_, mixed := sdk.Fact(m, mixedSummary)
-	_, member := sdk.Fact(m, memberSummary)
+	name, shaped := fact(r, shapeSummary)
+	_, mixed := fact(r, mixedSummary)
+	_, member := fact(r, memberSummary)
 	for i := range specs {
 		s := &specs[i]
 		switch {
 		case s.Form == FormShape && shaped && s.Name == name:
-			if _, held := sdk.Fact(m, meta.Named[bool](s.Key)); held {
+			if _, held := fact(r, meta.Named[bool](s.Key)); held {
 				c.Shape = Shape(s.Name)
-				c.params(m, s)
+				c.params(r, s)
 			}
 		case s.Form == FormMixin && mixed:
-			if _, held := sdk.Fact(m, meta.Named[bool](s.Key)); held {
+			if _, held := fact(r, meta.Named[bool](s.Key)); held {
 				c.Mixins = append(c.Mixins, Mixin(s.Name))
-				c.params(m, s)
+				c.params(r, s)
 			}
 		case s.Form == FormContract && member:
-			if role, held := sdk.Fact(m, meta.Named[string](s.Key)); held {
-				id, _ := sdk.Fact(m, meta.Named[string](s.ID))
+			if role, held := fact(r, meta.Named[string](s.Key)); held {
+				id, _ := fact(r, meta.Named[string](s.ID))
 				c.Contracts = append(c.Contracts, Membership{Contract: Contract(s.Name), Role: Role(role), ID: id})
-				c.params(m, s)
+				c.params(r, s)
 			}
 		}
 	}
@@ -100,9 +136,9 @@ func Of(m sdk.Matcher) Classification {
 }
 
 // params reads the values of the params and the bindings of a
-// classification on the subject of m into c.Params. A classification
+// classification on the declaration of r into c.Params. A classification
 // without a value has no entry in the map.
-func (c *Classification) params(m sdk.Matcher, s *Spec) {
+func (c *Classification) params(r reader, s *Spec) {
 	var values Params
 	set := func(key directive.ParamKey, v any) {
 		if values == nil {
@@ -111,7 +147,7 @@ func (c *Classification) params(m sdk.Matcher, s *Spec) {
 		values[key] = v
 	}
 	for _, b := range s.Bindings {
-		if v, held := sdk.Fact(m, meta.Named[symbol.Identity](b.Fact)); held {
+		if v, held := fact(r, meta.Named[symbol.Identity](b.Fact)); held {
 			set(b.Key, v)
 		}
 	}
@@ -120,15 +156,15 @@ func (c *Classification) params(m sdk.Matcher, s *Spec) {
 	for _, p := range s.Params {
 		switch p.Type {
 		case directive.TypeInt:
-			if v, held := sdk.Fact(m, meta.Named[int64](p.Fact)); held {
+			if v, held := fact(r, meta.Named[int64](p.Fact)); held {
 				set(p.Key, v)
 			}
 		case directive.TypeReference:
-			if v, held := sdk.Fact(m, meta.Named[symbol.Identity](p.Fact)); held {
+			if v, held := fact(r, meta.Named[symbol.Identity](p.Fact)); held {
 				set(p.Key, v)
 			}
 		default:
-			if v, held := sdk.Fact(m, meta.Named[string](p.Fact)); held {
+			if v, held := fact(r, meta.Named[string](p.Fact)); held {
 				set(p.Key, v)
 			}
 		}
