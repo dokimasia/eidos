@@ -445,11 +445,24 @@ func exactConstant(text string) (constant.Value, bool) {
 //   - a conversion of the underlying zero for any other defined type and
 //     for an enumeration
 //
-// It reports false for a spelling that the rules cannot place. The zero
-// of a builtin allocates nothing, and a composite or a conversion
-// allocates the reference to its type and its wrapped value.
+// It reports false for a spelling that the rules cannot place, and for a
+// reference that follows more than eight aliases, as an alias cycle in a
+// broken source does. The zero of a builtin allocates nothing, and a
+// composite or a conversion allocates the reference to its type and its
+// wrapped value.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
-	if ref == nil {
+	return r.zeroValue(ref, v, 0)
+}
+
+// aliasDepth bounds the chain of aliases and enumerations that ZeroValue
+// follows, as the fold of the kernel bounds an alias chain, so a cycle
+// ends the walk.
+const aliasDepth = 8
+
+// zeroValue returns the zero value of ref as [Rules.ZeroValue] states it,
+// after hops followed aliases and enumerations.
+func (r Rules) zeroValue(ref *node.TypeRef, v rules.View, hops int) (emit.Value, bool) {
+	if ref == nil || hops > aliasDepth {
 		return emit.Value{}, false
 	}
 	switch ref.Form {
@@ -483,7 +496,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	case *node.Interface, *node.Sum:
 		return emit.Literal(emit.LiteralNil, ""), true
 	case *node.Enum:
-		inner, placed := r.ZeroValue(d.Underlying, v)
+		inner, placed := r.zeroValue(d.Underlying, v, hops+1)
 		if !placed {
 			return emit.Value{}, false
 		}
@@ -495,7 +508,7 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 		case d.Defined && d.Target.Form == symbol.FormArray:
 			return emit.Composite(rules.EmitRef(ref)), true
 		}
-		inner, ok := r.ZeroValue(d.Target, v)
+		inner, ok := r.zeroValue(d.Target, v, hops+1)
 		if !ok || !d.Defined {
 			return inner, ok
 		}

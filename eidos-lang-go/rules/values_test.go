@@ -31,6 +31,11 @@ const (
 	digestSource = "package dep\n\n// Size is the length of a Digest.\nconst Size = 16\n\n" +
 		"// Digest is a digest of Size bytes.\ntype Digest [Size]byte\n\n" +
 		"// Index maps a name to a count.\ntype Index map[string]int\n"
+	// ringSource declares two aliases of each other, which no compiler
+	// accepts and a frontend still loads.
+	ringFile   = "fx/dep/r.go"
+	ringType   = "Ring1"
+	ringSource = "package dep\n\ntype Ring1 = Ring2\n\ntype Ring2 = Ring1\n"
 )
 
 // The spellings the value cases name: Go builtins, standard-library
@@ -957,6 +962,13 @@ func TestValues(t *testing.T) {
 				assert.False(t, ok, "no zero to compare a default against")
 			})
 		}
+
+		t.Run("reports false for a reference whose aliases form a cycle", func(t *testing.T) {
+			t.Parallel()
+
+			_, ok := gorules.New().ZeroValue(ref(depPath, ringType, symbol.KindAlias), ringed(t).view)
+			assert.False(t, ok, "a cycle of aliases has no type to take the zero of")
+		})
 	})
 
 	t.Run("LiteralFor", func(t *testing.T) {
@@ -1397,6 +1409,15 @@ func digested(tb assert.TB) *fixture {
 
 	f := rulestest.Loaded(tb, gofrontend.New(nil), fstest.MapFS{digestFile: {Data: []byte(digestSource)}})
 	return viewOver(tb, f, id(depPath, digestType, symbol.KindAlias), digestFile)
+}
+
+// ringed returns a loaded tree of the two aliases of ringSource, with a
+// view over it.
+func ringed(tb assert.TB) *fixture {
+	tb.Helper()
+
+	f := rulestest.Loaded(tb, gofrontend.New(nil), fstest.MapFS{ringFile: {Data: []byte(ringSource)}})
+	return viewOver(tb, f, id(depPath, ringType, symbol.KindAlias), ringFile)
 }
 
 // refusalOf returns the refusal of a reference's sample.
