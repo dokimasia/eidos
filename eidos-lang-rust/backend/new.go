@@ -25,7 +25,7 @@ const memberIndent = "    "
 // hermeticity refuses a printer that the machine provides.
 //
 // New allocates the kit's build, chiefly the parse of the file
-// template, the seven kind templates and the impl template: 1,871
+// template, the seven kind templates and the impl template: 1,889
 // allocations.
 func New() backend.Backend {
 	return backend.New(rust.Name, rust.Target, rust.Syntax()).

@@ -63,8 +63,9 @@ const (
 	// template and the seven kind templates. The seven lowering policies
 	// add eleven: their specs, the kit's list of them, and the check of the
 	// specs that Build makes. Each of the two vocabularies that the build
-	// binds allocates the twelve bound helpers of the speller.
-	newAllocs = 1_844
+	// binds allocates the twelve bound helpers of the speller. The function
+	// maps that text/template keeps for each template take the rest.
+	newAllocs = 1_860
 	// renderAllocs is one render of the scaled corpus, nearly all of its
 	// allocations in text/template's execution and its reflective calls.
 	// One run counted 8,851,050, and the budget is a round number about
