@@ -850,10 +850,17 @@ const Conservative Mixin = "conservative"
 // The param is the name of the conserved quantity.
 const ConservativeField directive.ParamKey = "field"
 
+// ConservativeObserve is the key of the param observe of the mixin
+// conservative. The param is the callable that returns the total of the
+// quantity.
+const ConservativeObserve directive.ParamKey = "observe"
+
 // ConservativeParams are the params of the mixin conservative.
 type ConservativeParams struct {
 	// Field is the name of the conserved quantity.
 	Field string
+	// Observe is the callable that returns the total of the quantity.
+	Observe symbol.Identity
 }
 
 // ConservativeOf returns the params of the mixin conservative on the subject
@@ -865,6 +872,7 @@ func ConservativeOf(m sdk.Matcher) (ConservativeParams, bool) {
 		return p, false
 	}
 	p.Field, _ = sdk.Fact(m, conservativeFieldKey)
+	p.Observe, _ = sdk.Fact(m, conservativeObserveKey)
 	return p, true
 }
 
@@ -873,6 +881,11 @@ var conservativeMixinKey meta.Key[bool] = meta.Named[bool]("shape.conservative.m
 
 // conservativeFieldKey is the handle of the key shape.conservative.field.
 var conservativeFieldKey meta.Key[string] = meta.Named[string]("shape.conservative.field")
+
+// conservativeObserveKey is the handle of the key shape.conservative.observe.
+var conservativeObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.conservative.observe",
+)
 
 // CrdtMerge is the mixin crdt-merge. The callable merges the state of two
 // replicas deterministically and without conflict, the way a conflict-free
@@ -4714,6 +4727,15 @@ func Specs() []Spec {
 					},
 					Fact: "shape.conservative.field",
 				},
+				{
+					ParamSpec: directive.ParamSpec{
+						Key:        ConservativeObserve,
+						Type:       directive.TypeReference,
+						Resolution: directive.ResolveCallableInScope,
+						Doc:        "the callable that returns the total of the quantity",
+					},
+					Fact: "shape.conservative.observe",
+				},
 			},
 		},
 		{
@@ -6463,4 +6485,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:b7daf17e28bac39d1d1171a55fb9810f8623a51569bc4161be2426396fb14dd8
+// shapegen:provenance sha256:7b61ad6de9f290661d776de1da04351fc440752668304a7ca20f7c45cc8b6fa3

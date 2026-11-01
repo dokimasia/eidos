@@ -8,10 +8,11 @@ claim: >
   The callable neither creates nor destroys the quantity that the field
   param names. It only moves the quantity between subjects.
 observation: >
-  A check sums the quantity over every subject before and after the call,
-  and compares the two sums.
+  A check calls the callable that the observe param refers to before and
+  after each call of the subject, and compares the two totals.
 params:
   - {key: field, type: string, doc: the name of the conserved quantity}
+  - {key: observe, type: reference, resolve: callable-in-scope, doc: the callable that returns the total of the quantity}
 falsifiability: >
   A subject that loses or invents a part of the quantity changes the sum,
   and the check turns red.
