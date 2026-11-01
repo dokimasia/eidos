@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The import block's syntax.
@@ -79,6 +81,27 @@ func TemplateImport(importPath, name string) (local, item string, ok bool) {
 		return "", "", false
 	default:
 		return name, "", true
+	}
+}
+
+// PackageScope yields the names that a file-level declaration of a Go
+// source file declares in the package block, which every file of the
+// package shares: the name of each declaration but a method, and the name
+// of each constant of an enumeration. A method declares its name in the
+// method set of its receiver. The render keeps the imports of a file off
+// these names, because Go refuses an import whose name a declaration of the
+// package block takes. PackageScope does not allocate.
+func PackageScope(d symbol.Symbol, yield func(name string)) {
+	switch x := d.(type) {
+	case *node.Method:
+		// The name of a method is no name of the package block.
+	case *node.Enum:
+		yield(x.Name)
+		for _, v := range x.Variants {
+			yield(v.Name)
+		}
+	case node.Declaration:
+		yield(x.Identity().Name)
 	}
 }
 

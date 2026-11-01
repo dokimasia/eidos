@@ -16,13 +16,15 @@ import (
 // [spell.Importable], so the layout refuses a declaration whose file cannot
 // refer to one of its references. Its split is [spell.Split], which writes
 // the declarations of an external family that test their package from
-// inside into an internal test file. Rendered files finalise through
+// inside into an internal test file. Its package scope is [PackageScope],
+// so the imports of a file keep off the names that the other files of its
+// package declare in the package block. Rendered files finalise through
 // [Format] at the width of the plan, so a file that does not parse is
 // withheld and reported instead of written, and the bytes that remain are
 // the bytes that gofmt, gofumpt and golines leave.
 //
 // New allocates the kit's build, chiefly the parse of the file template
-// and the seven kind templates: 1,614 allocations.
+// and the seven kind templates: 1,662 allocations.
 func New() backend.Backend {
 	return backend.New(golang.Name, golang.Target, golang.Syntax()).
 		Version(golang.Version).
@@ -43,6 +45,7 @@ func New() backend.Backend {
 		Value(Value).
 		Imports(Imports).
 		TemplateImport(TemplateImport).
+		PackageScope(PackageScope).
 		FinaliseUnder(Format).
 		Build()
 }

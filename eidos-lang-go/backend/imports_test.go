@@ -13,7 +13,9 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The import cases name a standard library package imported for its
@@ -31,6 +33,13 @@ const (
 // importsAllocs is a block: the sorted entries, and the block sized
 // once.
 const importsAllocs = 2
+
+// The package scope cases name an enumeration and its two constants.
+const (
+	statusName = "Status"
+	draftName  = "Draft"
+	liveName   = "Live"
+)
 
 // The import block is pinned byte for byte. The formatter reorders the
 // block and does not reformat it, so the renderer writes it in the
@@ -141,6 +150,49 @@ func TestImports(t *testing.T) {
 		})
 	})
 
+	t.Run("PackageScope", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give symbol.Symbol
+			want []string
+		}{
+			{
+				name: "yields the name of a struct",
+				give: &node.Struct{ID: declared(rowName, symbol.KindStruct), Name: rowName},
+				want: []string{rowName},
+			},
+			{
+				name: "yields the name of a constant",
+				give: &node.Constant{ID: declared(storeName, symbol.KindConstant), Name: storeName},
+				want: []string{storeName},
+			},
+			{
+				name: "yields the name of an enumeration and the name of each of its constants",
+				give: &node.Enum{
+					ID: declared(statusName, symbol.KindEnum), Name: statusName,
+					Variants: []*node.EnumVariant{{Name: draftName}, {Name: liveName}},
+				},
+				want: []string{statusName, draftName, liveName},
+			},
+			{
+				name: "yields nothing for a method",
+				give: &node.Method{ID: declared(touchName, symbol.KindMethod), Name: touchName},
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var got []string
+				backend.PackageScope(tt.give, func(name string) { got = append(got, name) })
+				assert.Equal(t, got, tt.want, "PackageScope yields the names of the package block",
+					assert.EquateEmpty())
+			})
+		}
+	})
+
 	t.Run("TemplateImport", func(t *testing.T) {
 		t.Parallel()
 
@@ -189,6 +241,12 @@ func BenchmarkImports(b *testing.B) {
 	benchCalls(b, importsCalls())
 }
 
+// declared returns the identity of a declaration of svcPkg with the name
+// and the kind.
+func declared(name string, k symbol.Kind) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: svcPkg, Name: name, Kind: k}
+}
+
 // line spells one import line of the block, tab-indented.
 func line(name, path string) string {
 	if name == "" {
@@ -210,7 +268,8 @@ func block(lines ...string) string {
 
 // importsCalls returns a call of Imports over both groups and a named
 // entry, over a set with the declared names of its packages, and over an
-// empty set.
+// empty set, a call of TemplateImport, and a call of PackageScope over an
+// enumeration of two constants.
 func importsCalls() []allocCall {
 	var full, named, empty render.ImportSet
 	full.Add(contextPkg)
@@ -218,7 +277,12 @@ func importsCalls() []allocCall {
 	full.AddNamed(sdkPkg, sdkAlias)
 	named.SetNames(declaredNames)
 	named.Bind(storePkg, storeName)
+	enum := &node.Enum{
+		ID: declared(statusName, symbol.KindEnum), Name: statusName,
+		Variants: []*node.EnumVariant{{Name: draftName}, {Name: liveName}},
+	}
 	var out string
+	keep := func(name string) { out = name }
 	return []allocCall{
 		{
 			name: "Imports", caseName: "a set of two groups", allocs: importsAllocs,
@@ -246,6 +310,13 @@ func importsCalls() []allocCall {
 			call: func() { out, _, _ = backend.TemplateImport(yamlPkg, "") },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, out, golang.Qualifier(yamlPkg), "TemplateImport binds the qualifier")
+			},
+		},
+		{
+			name: "PackageScope", caseName: "an enumeration",
+			call: func() { backend.PackageScope(enum, keep) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, out, liveName, "PackageScope yields the last constant of the enumeration last")
 			},
 		},
 	}

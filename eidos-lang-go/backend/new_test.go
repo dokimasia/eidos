@@ -19,6 +19,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/backendtest"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/render"
@@ -65,7 +66,7 @@ const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the seven kind templates, and the specs of the policies of
 	// the binding of gRPC and of the width of a line.
-	newAllocs = 1_614
+	newAllocs = 1_662
 	// renderAllocs is one render of the scaled corpus of 200,000
 	// declarations: gofumpt's parse, rules and print of every file, about
 	// half of its allocations, text/template's reflective calls, about four
@@ -227,6 +228,34 @@ func TestNew(t *testing.T) {
 				"\tLegacy  " + storeName2 + ".Row\n",
 			}, "the second package imports under a suffixed name")
 		})
+
+		t.Run("returns a backend that imports a package under a free name where a source file declares its name",
+			func(t *testing.T) {
+				t.Parallel()
+
+				kitDecls := []symbol.Symbol{&node.Constant{ID: declared(timePkg, symbol.KindConstant), Name: timePkg}}
+				files, findings := backendtest.Rendered(t, func(tb assert.TB) (kit.Backend, *backendtest.Fixture) {
+					e := plugin.NewEmit()
+					row := rowOf(&emit.Field{Name: "When", Type: imported(timePkg, timePkg, "Duration")})
+					assert.NoError(tb, e.Add(plugin.Unit{
+						Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey, Pkg: svcPackage,
+						Decls: []symbol.Symbol{row},
+					}), "the unit is added")
+					return backend.New(), &backendtest.Fixture{
+						Emit: e,
+						Declarations: func(p string, yield func(string, []symbol.Symbol)) {
+							if p == svcPkg {
+								yield(svcPkg+"/kit.go", kitDecls)
+							}
+						},
+					}
+				})
+				assert.Empty(t, findings, "the file renders clean")
+				assert.Length(t, files, 1, "the unit renders one file")
+				assert.That(t, string(files[0].Body)).
+					Contains("\t"+timePkg+"2 \""+timePkg+"\"\n", "the import binds the next free name").
+					Contains("\tWhen "+timePkg+"2.Duration\n", "and the field qualifies through that name")
+			})
 
 		t.Run("returns a backend that renders the pointer receiver of a generator", func(t *testing.T) {
 			t.Parallel()
