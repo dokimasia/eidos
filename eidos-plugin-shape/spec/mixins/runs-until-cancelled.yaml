@@ -1,0 +1,19 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=../../spec.schema.json
+name: runs-until-cancelled
+form: mixin
+documentary: true
+claim: >
+  The callable runs until its context ends, such as the loop of a server or
+  a worker. A generator of checks does not call it with a context that does
+  not end, and does not expect an error when its context ends.
+observation: >
+  Nothing. The mixin documents the callable and licenses no check.
+falsifiability: >
+  Nothing turns red, because the mixin licenses no check.
+counterexamples:
+  refused: >
+    a check that calls the callable with the context of the check, which
+    ends only after the check

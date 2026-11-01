@@ -356,12 +356,18 @@ const BoundedMin directive.ParamKey = "min"
 // is the ceiling of the resource.
 const BoundedLimit directive.ParamKey = "limit"
 
+// BoundedObserve is the key of the param observe of the mixin bounded. The
+// param is the callable that reads the use of the resource.
+const BoundedObserve directive.ParamKey = "observe"
+
 // BoundedParams are the params of the mixin bounded.
 type BoundedParams struct {
 	// Min is the floor of the resource.
 	Min string
 	// Limit is the ceiling of the resource.
 	Limit string
+	// Observe is the callable that reads the use of the resource.
+	Observe symbol.Identity
 }
 
 // BoundedOf returns the params of the mixin bounded on the subject of m, and
@@ -374,6 +380,7 @@ func BoundedOf(m sdk.Matcher) (BoundedParams, bool) {
 	}
 	p.Min, _ = sdk.Fact(m, boundedMinKey)
 	p.Limit, _ = sdk.Fact(m, boundedLimitKey)
+	p.Observe, _ = sdk.Fact(m, boundedObserveKey)
 	return p, true
 }
 
@@ -385,6 +392,11 @@ var boundedMinKey meta.Key[string] = meta.Named[string]("shape.bounded.min")
 
 // boundedLimitKey is the handle of the key shape.bounded.limit.
 var boundedLimitKey meta.Key[string] = meta.Named[string]("shape.bounded.limit")
+
+// boundedObserveKey is the handle of the key shape.bounded.observe.
+var boundedObserveKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.bounded.observe",
+)
 
 // Cache is the contract cache. The cache callable serves a value from its
 // cache, and sends each miss to the backing callable, whose value it stores.
@@ -2946,6 +2958,30 @@ var retrySucceedsMixinKey meta.Key[bool] = meta.Named[bool]("shape.retry-succeed
 // shape.retry-succeeds.attempts.
 var retrySucceedsAttemptsKey meta.Key[int64] = meta.Named[int64]("shape.retry-succeeds.attempts")
 
+// RunsUntilCancelled is the mixin runs-until-cancelled. The callable runs
+// until its context ends, such as the loop of a server or a worker. A
+// generator of checks does not call it with a context that does not end, and
+// does not expect an error when its context ends.
+const RunsUntilCancelled Mixin = "runs-until-cancelled"
+
+// RunsUntilCancelledParams are the params of the mixin runs-until-cancelled.
+type RunsUntilCancelledParams struct{}
+
+// RunsUntilCancelledOf returns the params of the mixin runs-until-cancelled on
+// the subject of m, and false where the subject does not have the mixin. It
+// records each read in the invocation of m.
+func RunsUntilCancelledOf(m sdk.Matcher) (RunsUntilCancelledParams, bool) {
+	var p RunsUntilCancelledParams
+	if _, held := sdk.Fact(m, runsUntilCancelledMixinKey); !held {
+		return p, false
+	}
+	return p, true
+}
+
+// runsUntilCancelledMixinKey is the handle of the key
+// shape.runs-until-cancelled.mixin.
+var runsUntilCancelledMixinKey meta.Key[bool] = meta.Named[bool]("shape.runs-until-cancelled.mixin")
+
 // Saga is the contract saga. A step is paired with the compensation that
 // reverses it. One instance is one pair, and an id separates the pairs of a
 // saga in one package, so no compensation serves two steps.
@@ -4467,6 +4503,15 @@ func Specs() []Spec {
 					},
 					Fact: "shape.bounded.limit",
 				},
+				{
+					ParamSpec: directive.ParamSpec{
+						Key:        BoundedObserve,
+						Type:       directive.TypeReference,
+						Resolution: directive.ResolveCallableInScope,
+						Doc:        "the callable that reads the use of the resource",
+					},
+					Fact: "shape.bounded.observe",
+				},
 			},
 		},
 		{
@@ -5700,6 +5745,14 @@ func Specs() []Spec {
 			},
 		},
 		{
+			Name:        "runs-until-cancelled",
+			Form:        FormMixin,
+			Doc:         "The callable runs until its context ends, such as the loop of a server or a worker. A generator of checks does not call it with a context that does not end, and does not expect an error when its context ends.",
+			Group:       "shape.runs-until-cancelled",
+			Key:         "shape.runs-until-cancelled.mixin",
+			Documentary: true,
+		},
+		{
 			Name:  "saga",
 			Form:  FormContract,
 			Doc:   "A step is paired with the compensation that reverses it. One instance is one pair, and an id separates the pairs of a saga in one package, so no compensation serves two steps.",
@@ -6410,4 +6463,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:7cf02a36288d473b928093fdafe81169d3272ff7cda1dfd15fe5537991db229a
+// shapegen:provenance sha256:b7daf17e28bac39d1d1171a55fb9810f8623a51569bc4161be2426396fb14dd8
