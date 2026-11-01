@@ -35,6 +35,13 @@ const (
 	baseSpelling  = "Base"
 )
 
+// The spellings of two types of one bare name in two packages, which an
+// interface can embed side by side and a struct cannot.
+const (
+	certsSpelling   = "a.Source"
+	bundlesSpelling = "b.Source"
+)
+
 // The names and type spellings the blank and holey fixtures declare
 // their signature slots with.
 const (
@@ -252,7 +259,7 @@ func TestAssign(t *testing.T) {
 			expect.Equal(t, body.Methods[0].ID, symbol.Identity{}, "or its method")
 		})
 
-		t.Run("names an embed by the embedded type's bare name", func(t *testing.T) {
+		t.Run("names an embed of a struct by the embedded type's bare name", func(t *testing.T) {
 			t.Parallel()
 
 			g := loadNested(t)
@@ -276,6 +283,55 @@ func TestAssign(t *testing.T) {
 				"a pointer to a qualified, instantiated type embeds under the bare name")
 			assert.Equal(t, outer.Embeds[1].ID.Name, baseSpelling+"2",
 				"and a structural reference names its one named child")
+		})
+
+		t.Run("reports DuplicateDeclaration for two embeds of a struct with one bare name", func(t *testing.T) {
+			t.Parallel()
+
+			pair := &node.Struct{Name: outerName, Embeds: []*node.Embed{
+				{Ref: &node.TypeRef{Spelling: certsSpelling}},
+				{Ref: &node.TypeRef{Spelling: bundlesSpelling}},
+			}}
+			_, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{pair},
+			}))
+			coretest.AssertCodes(t, sink, load.DuplicateDeclaration)
+		})
+
+		t.Run("names an embed of an interface by its whole reference", func(t *testing.T) {
+			t.Parallel()
+
+			source := &node.Interface{Name: outerName, Embeds: []*node.Embed{
+				{Ref: &node.TypeRef{Spelling: certsSpelling}},
+				{Ref: &node.TypeRef{Spelling: bundlesSpelling}},
+				{Ref: &node.TypeRef{Spelling: baseSpelling, Args: []*node.TypeRef{{Spelling: stringType}}}},
+			}}
+			g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+				Scripted: frontendtest.NewScripted(), decls: node.Symbols{source},
+			}))
+			coretest.AssertCodes(t, sink)
+			got, held := g.Lookup(assigned("", outerName, symbol.KindInterface))
+			assert.True(t, held, "the interface is indexed")
+			embeds := got.(*node.Interface).Embeds
+			assert.Length(t, embeds, 3, "every embed survives the assignment")
+			expect.Equal(t, embeds[0].ID, assigned(outerName, certsSpelling, symbol.KindEmbed),
+				"the embed of a qualified type keeps its qualifier")
+			expect.Equal(t, embeds[1].ID, assigned(outerName, bundlesSpelling, symbol.KindEmbed),
+				"so an embed of another type of the same bare name has an identity of its own")
+			expect.Equal(t, embeds[2].ID.Name, baseSpelling+"<"+stringType+">",
+				"the embed of an instantiation spells its type arguments")
+		})
+
+		t.Run("panics on an embed of an interface without a reference", func(t *testing.T) {
+			t.Parallel()
+
+			source := &node.Interface{Name: outerName, Embeds: []*node.Embed{{}}}
+			got := assert.Panics(t, func() {
+				_, _, _ = load.Load(t.Context(), mustConfig(oneFileTree(), with(&holey{
+					Scripted: frontendtest.NewScripted(), decls: node.Symbols{source},
+				})))
+			}, "an embed that names no type is a structural defect")
+			assert.Contains(t, got, "names nothing", "the panic names the defect")
 		})
 
 		t.Run("panics on a symbol outside the node model", func(t *testing.T) {

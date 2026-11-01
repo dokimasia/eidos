@@ -116,6 +116,10 @@ func bareOf(id symbol.Identity) symbol.Identity {
 //   - a member is lang:package.Owner#Name, the owner the dotted
 //     chain of enclosing type names; a top-level method's owner is
 //     the spelling of the type it attaches to
+//   - an embed is named by the embedded type: the embed of a struct by
+//     its bare name, under which the language promotes it as a field, and
+//     the embed of an interface by its whole reference, as
+//     [referenceName] spells it
 //   - a callable's discriminator is the type of its receiver where the
 //     receiver has one, and its parameters' spellings, comma-joined,
 //     where the frontend reports that its language overloads, so
@@ -369,10 +373,15 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
 
 	case *node.Embed:
-		// An embed is named by the embedded type's bare name, which
-		// is the field name the language promotes it under and the
-		// subject a directive on it attaches to.
-		id := a.derive(x, owner, embedName(x.Ref), symbol.KindEmbed, "")
+		// The embed of a struct is a field, named by the embedded type's
+		// bare name: the field name the language promotes it under. The
+		// embed of an interface is no field, and two embeds of one
+		// interface can share a bare name, so its whole reference names it.
+		name := embedName(x.Ref)
+		if host.Kind == symbol.KindInterface {
+			name = referenceName(x.Ref)
+		}
+		id := a.derive(x, owner, name, symbol.KindEmbed, "")
 		x.ID, _ = a.claim(x, id, x.Pos, drop)
 		x.Host = host
 
@@ -529,6 +538,24 @@ func embedName(ref *node.TypeRef) string {
 		name = name[:at]
 	}
 	return name
+}
+
+// referenceName spells the name of the embed of an interface: its whole
+// reference as [discType] spells it, with the qualifier and the type
+// arguments, so the embeds of two types of one bare name from two packages
+// spell apart. It returns the spelling of a reference without type
+// arguments and does not allocate for it. It returns the empty name for a
+// nil reference, which [assigner.derive] refuses.
+func referenceName(ref *node.TypeRef) string {
+	if ref == nil {
+		return ""
+	}
+	if len(ref.Args) == 0 {
+		return ref.Spelling
+	}
+	var b strings.Builder
+	discType(&b, ref)
+	return b.String()
 }
 
 // markedFunctions returns the names that a function of the files with the
