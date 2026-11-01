@@ -71,6 +71,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("BuiltinImport", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, render.BuiltinImport, core.BuiltinImport, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("BuiltinImports", func(t *testing.T) {
 		t.Parallel()
 

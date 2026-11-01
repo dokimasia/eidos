@@ -42,6 +42,11 @@ const (
 	// BuiltinUse records one import path into the file under
 	// render.
 	BuiltinUse = core.BuiltinUse
+	// BuiltinImport binds one import into the file under render under a
+	// name that is free in the file, and returns that name, so a template
+	// refers to the import by the name that it returns. Every template of
+	// the file can call it.
+	BuiltinImport = core.BuiltinImport
 	// BuiltinImports renders the file's collected import block; it
 	// is the skeleton's.
 	BuiltinImports = core.BuiltinImports
@@ -247,6 +252,11 @@ type Entry = core.Entry
 // the lowest free numeric suffix, and a name [ImportSet.Reserve]
 // took for a declaration of the file is never bound. The render
 // binds in canonical declaration order, so two runs bind alike.
+//
+// A set can have the package scope of its file: the names that the other
+// files of the package declare, in a language whose files of one package
+// share one scope. [ImportSet.SetPackageScope] sets it, and no import
+// binds such a name.
 //
 // A set can have the names that the package clauses of a run declare.
 // [ImportSet.SetNames] sets them, and [ImportSet.Declared] returns the
