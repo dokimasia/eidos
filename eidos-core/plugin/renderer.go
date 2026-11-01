@@ -35,6 +35,12 @@ type RenderedFile struct {
 	// render read for the file, distinct and sorted. A warm run renders
 	// the file again after an edit changes the name of one of them.
 	Packages []string
+	// PackageScope reports that the imports of the file keep off the names
+	// that the other files of its package declare, because the files of a
+	// package of the language share one scope. It is set for a file that
+	// binds an import. A warm run renders the file again after a name
+	// enters or leaves the scope of its package.
+	PackageScope bool
 	// Body is the finished text: formatted, in the language's own
 	// spelling. The output contract stamps and stages it.
 	Body []byte
@@ -86,6 +92,21 @@ type RenderContext struct {
 	// load. The workers of a render call it concurrently, so it must be
 	// safe for concurrent use. A nil Names has no name for any path.
 	Names func(path string) (string, bool)
+	// Declarations calls yield once for each source file of the package that
+	// the run loaded at a path, in the order of the files, with the path of
+	// the file and its file-level declarations. A language whose files of
+	// one package share one scope reads them for the names that the source
+	// files declare. It calls yield for no file of a package that the run
+	// did not load. Each slice is the sealed graph's own storage, and the
+	// render does not change it. The workers of a render call it
+	// concurrently, so it must be safe for concurrent use. A nil
+	// Declarations has no declaration for any path.
+	Declarations func(path string, yield func(file string, decls []symbol.Symbol))
+	// Others are the names of the files of the plan that the run keeps
+	// without rendering them again, nil for a render of the whole plan. A
+	// language whose files of one package share one scope reads the names
+	// of the kept files of the scope of each file.
+	Others Names
 	// Policy is the plan's resolved lowering policy, the one that each
 	// generator of the plan receives. A target whose output depends on a
 	// policy reads it in the render, such as the version of Python that the

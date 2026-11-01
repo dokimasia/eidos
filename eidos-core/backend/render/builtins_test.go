@@ -4,15 +4,20 @@
 package render_test
 
 import (
+	"cmp"
+	"path"
 	"strconv"
 	"testing"
 	"text/template"
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -79,6 +84,18 @@ func TestBuiltins(t *testing.T) {
 			_, err := render.New(passName, l)
 			assert.HasError(t, err, "the value builtin is a builtin of the pass")
 			assert.Contains(t, err.Error(), render.BuiltinValue, "naming the claim")
+		})
+
+		t.Run("returns an error for a vocabulary helper named import", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Funcs = helpers(template.FuncMap{
+				render.BuiltinImport: func(string, ...string) (string, error) { return "", nil },
+			})
+			_, err := render.New(passName, l)
+			assert.HasError(t, err, "the import builtin is a builtin of the pass")
+			assert.Contains(t, err.Error(), render.BuiltinImport, "naming the claim")
 		})
 	})
 
@@ -201,6 +218,137 @@ func TestBuiltins(t *testing.T) {
 				"the declaration is absent from the file")
 		})
 
+		t.Run("binds an import under the name of the language and returns the name", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, importing(importOf(storePkg)+"."+rowName),
+				seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"use "+storePkg+" as "+storeLocal+"\n"+"type "+alphaName+" "+storeLocal+"."+rowName+"\n",
+				"the template qualifies the name with the name that the import binds")
+		})
+
+		t.Run("returns the name that an earlier binding of the path takes", func(t *testing.T) {
+			t.Parallel()
+
+			l := importing(use(storePkg, storeDeclared) + importOf(storePkg) + "." + rowName)
+			l.TemplateImport = func(importPath, name string) (string, string, bool) {
+				return cmp.Or(name, path.Base(importPath)), "", true
+			}
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"use "+storePkg+" as "+storeDeclared+"\n"+"type "+alphaName+" "+storeDeclared+"."+rowName+"\n",
+				"the template refers to the package by the name of the earlier binding")
+		})
+
+		t.Run("suffixes the name that a binding of another path takes", func(t *testing.T) {
+			t.Parallel()
+
+			l := importing(action(qualifyHelper, strconv.Quote(legacyPkg), strconv.Quote(rowName)) + " " +
+				importOf(storePkg) + "." + rowName)
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.HasSuffix(t, string(files[0].Body), " "+storeLocal2+"."+rowName+"\n",
+				"the import binds the next free name")
+		})
+
+		t.Run("binds the name that the package clause of the path declares", func(t *testing.T) {
+			t.Parallel()
+
+			p, err := render.New(passName, importing(importOf(storePkg)+"."+rowName))
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey, alphaName))
+			sink := diag.NewSink()
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName, Names: declaring,
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.HasSuffix(t, string(files[0].Body), " "+storeDeclared+"."+rowName+"\n",
+				"the import binds the name of the package clause")
+		})
+
+		t.Run("binds the declaration that a stated name names", func(t *testing.T) {
+			t.Parallel()
+
+			l := importing(importOf(storePkg, rowName))
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"use "+storePkg+" as "+rowName+"\n"+"type "+alphaName+" "+rowName+"\n",
+				"the template writes the name that the import of the declaration binds")
+		})
+
+		t.Run("returns the empty name for the file's own package", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(emitter, storePkg+"/"+storeKey, alphaName)
+			u.Pkg = coretest.PackageID(storePkg)
+			files, sink := runPass(t, importing(importOf(storePkg)+rowName), seeded(t, u))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" "+rowName+"\n",
+				"a file refers to its own package without a name")
+		})
+
+		t.Run("reports RefusedTemplate for an import that binds no name", func(t *testing.T) {
+			t.Parallel()
+
+			l := importing(importOf(storePkg, "_"))
+			l.TemplateImport = func(_, name string) (string, string, bool) { return name, "", name != "_" }
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), strconv.Quote(storePkg),
+				"the finding names the import")
+		})
+
+		t.Run("reports RefusedTemplate for an import in a language without template imports", func(t *testing.T) {
+			t.Parallel()
+
+			l := importing(importOf(storePkg))
+			l.TemplateImport = nil
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), string(passName),
+				"the finding names the language")
+		})
+
+		t.Run("reports RefusedTemplate for an import that states two names", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := runPass(t, importing(importOf(storePkg, storeName, rowName)),
+				seeded(t, unitOf(emitter, storeKey, alphaName)))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "one name",
+				"the finding names the rule")
+		})
+
+		t.Run("binds an import in the template of a claimed file", func(t *testing.T) {
+			t.Parallel()
+
+			l := importing("")
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			sink := diag.NewSink()
+			e := seeded(t, claimedUnit(handleName, nil, emit.Body{}))
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName,
+				Trees: claimTree(importOf(storePkg) + "." + rowName),
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body), "use "+storePkg+" as "+storeLocal+"\n"+storeLocal+"."+rowName,
+				"the file template qualifies the name with the name that the import binds")
+		})
+
+		t.Run("binds an import in a body template", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderRef(t, importing(""),
+				refTree("\t"+importOf(storePkg)+"."+rowName+"()\n"+action(render.BuiltinSlots)), refBody())
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, body, "\t"+storeLocal+"."+rowName+"()\n",
+				"the body template qualifies the name with the name that the import binds")
+		})
+
 		t.Run("writes a value through the writer of the language in a kind template", func(t *testing.T) {
 			t.Parallel()
 
@@ -285,4 +433,34 @@ func use(args ...string) string {
 		words = append(words, strconv.Quote(a))
 	}
 	return action(words...)
+}
+
+// importOf spells an import builtin over the given arguments, each quoted.
+func importOf(args ...string) string {
+	words := append(make([]string, 0, 1+len(args)), render.BuiltinImport)
+	for _, a := range args {
+		words = append(words, strconv.Quote(a))
+	}
+	return action(words...)
+}
+
+// importing returns the [binding] language with [lastSegment] as its
+// template import, and a struct spelling that writes spelling after the
+// name of the struct.
+func importing(spelling string) render.Language {
+	l := binding()
+	l.TemplateImport = lastSegment
+	l.Kinds[symbol.KindStruct] = "type {{.Name}} " + spelling + "\n"
+	return l
+}
+
+// lastSegment is the template import of the fixture: an import without a
+// name binds the package under the last segment of its path, and a stated
+// name binds the declaration of that name, as a use statement of a module
+// binds them.
+func lastSegment(importPath, name string) (local, item string, ok bool) {
+	if name == "" {
+		return path.Base(importPath), "", true
+	}
+	return name, name, true
 }

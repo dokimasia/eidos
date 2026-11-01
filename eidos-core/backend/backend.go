@@ -293,11 +293,21 @@ func (b *Builder) Imports(r func(set *render.ImportSet) string) *Builder {
 }
 
 // TemplateImport declares the binding of an import that a template
-// states through the use builtin, as [render.Language.TemplateImport]
-// describes it. Without it, a template's import does not bind a name in
-// the name assignment of the file.
+// states through the use or the import builtin, as
+// [render.Language.TemplateImport] describes it. Without it, a template's
+// import does not bind a name in the name assignment of the file.
 func (b *Builder) TemplateImport(fn func(path, name string) (local, item string, ok bool)) *Builder {
 	b.lang.TemplateImport = fn
+	return b
+}
+
+// PackageScope declares the names that a file-level declaration of a
+// source file declares in the scope of its package, for a language whose
+// files of one package share one scope, as [render.Language.PackageScope]
+// describes it. Without it, the imports of a file keep off the names of
+// its own declarations alone.
+func (b *Builder) PackageScope(fn func(d symbol.Symbol, yield func(name string))) *Builder {
+	b.lang.PackageScope = fn
 	return b
 }
 

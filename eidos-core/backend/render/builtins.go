@@ -35,6 +35,11 @@ const (
 	// BuiltinUse records one import path into the file under
 	// render.
 	BuiltinUse = "use"
+	// BuiltinImport binds one import into the file under render under a
+	// name that is free in the file, and returns that name, so a template
+	// refers to the import by the name that it returns. Every template of
+	// the file can call it.
+	BuiltinImport = "import"
 	// BuiltinImports renders the file's collected import block; it
 	// is the skeleton's.
 	BuiltinImports = "imports"
@@ -77,7 +82,7 @@ var errUnbound = errors.New("render: the builtin is unbound")
 // which no vocabulary may claim.
 func reserved(name string) bool {
 	switch name {
-	case BuiltinBody, BuiltinMemberBody, BuiltinUse, BuiltinImports, BuiltinDecls,
+	case BuiltinBody, BuiltinMemberBody, BuiltinUse, BuiltinImport, BuiltinImports, BuiltinDecls,
 		BuiltinSlots, BuiltinSlot, BuiltinNested, BuiltinHeader, BuiltinValue:
 		return true
 	}
@@ -89,10 +94,12 @@ func reserved(name string) bool {
 func unbound() template.FuncMap {
 	refuse := func() (string, error) { return "", errUnbound }
 	body := func(any) (string, error) { return refuse() }
+	imports := func(string, ...string) (string, error) { return refuse() }
 	return template.FuncMap{
 		BuiltinBody:       body,
 		BuiltinMemberBody: body,
-		BuiltinUse:        func(string, ...string) (string, error) { return refuse() },
+		BuiltinUse:        imports,
+		BuiltinImport:     imports,
 		BuiltinImports:    refuse,
 		BuiltinDecls:      refuse,
 		BuiltinNested:     func(string, symbol.Symbol) (string, error) { return refuse() },
@@ -102,18 +109,19 @@ func unbound() template.FuncMap {
 }
 
 // referenceBuiltins is the builtin set a body-claiming template
-// resolves against: the slots and slot markers, the use recorder,
-// the header of the file and the writer of values. The render binds
-// it to a frame and the lint binds stubs, so both parse against one
-// set of names.
+// resolves against: the slots and slot markers, the use recorder, the
+// import binder, the header of the file and the writer of values. The
+// render binds it to a frame and the lint binds stubs, so both parse
+// against one set of names.
 func referenceBuiltins(
 	all func() (string, error),
 	one func(string) (string, error),
-	use func(string, ...string) (string, error),
+	use, bind func(string, ...string) (string, error),
 	header func() *emit.File,
 	value func(emit.Value) (string, error),
 ) template.FuncMap {
 	return template.FuncMap{
-		BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use, BuiltinHeader: header, BuiltinValue: value,
+		BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use, BuiltinImport: bind, BuiltinHeader: header,
+		BuiltinValue: value,
 	}
 }

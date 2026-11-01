@@ -36,6 +36,7 @@ const (
 	directoryTag   = 'v'
 	unitTag        = 'u'
 	filesTag       = 'w'
+	namesTag       = 'c'
 	byPackageTag   = 'p'
 	byOriginTag    = 'o'
 )
@@ -252,6 +253,25 @@ func TestEdge(t *testing.T) {
 		})
 	})
 
+	t.Run("PackageScopeEdge", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the hash of the tagged plan and package", func(t *testing.T) {
+			t.Parallel()
+
+			want := pinnedHash(spelledIdentity(spelledText([]byte{namesTag}, edgePlan), edgePackage))
+			assert.Equal(t, state.PackageScopeEdge(edgePlan, edgePackage), want,
+				"the spelling's SHA-256, first eight bytes")
+		})
+
+		t.Run("returns another hash for another plan", func(t *testing.T) {
+			t.Parallel()
+
+			other := state.PackageScopeEdge("mocks", edgePackage)
+			assert.NotEqual(t, other, state.PackageScopeEdge(edgePlan, edgePackage), "the plan is part of the spelling")
+		})
+	})
+
 	t.Run("UnitEdge", func(t *testing.T) {
 		t.Parallel()
 
@@ -293,6 +313,8 @@ func TestEdgeAllocs(t *testing.T) {
 		"ScopeEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.DirectoryEdge(edgeDir) }, 0, "DirectoryEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.FilesEdge(edgePackage) }, 0, "FilesEdge allocates nothing")
+	assert.MaxAllocs(t, func() { got = state.PackageScopeEdge(edgePlan, edgePackage) }, 0,
+		"PackageScopeEdge allocates nothing")
 	assert.MaxAllocs(t, func() { got = state.UnitEdge(edgePlan, edgeUnit) }, 0, "UnitEdge allocates nothing")
 	assert.NotEqual(t, got, 0, "the last hash is of an edge")
 }
@@ -315,6 +337,10 @@ func BenchmarkEdge(b *testing.B) {
 		{name: "ScopeEdge", hash: func() state.EdgeHash { return state.ScopeEdge(edgePlan, edgeDir, edgeReceiver) }},
 		{name: "DirectoryEdge", hash: func() state.EdgeHash { return state.DirectoryEdge(edgeDir) }},
 		{name: "FilesEdge", hash: func() state.EdgeHash { return state.FilesEdge(edgePackage) }},
+		{
+			name: "PackageScopeEdge",
+			hash: func() state.EdgeHash { return state.PackageScopeEdge(edgePlan, edgePackage) },
+		},
 		{name: "UnitEdge", hash: func() state.EdgeHash { return state.UnitEdge(edgePlan, edgeUnit) }},
 	}
 	for _, bb := range benches {

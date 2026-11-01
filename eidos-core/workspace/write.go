@@ -53,6 +53,10 @@ type stagedFile struct {
 	// lines is the family of a file of a line-set family, and the zero
 	// family for every other file.
 	lines lineFamily
+	// scoped reports that the imports of the file keep off the names that
+	// the other files of its package declare, so the file depends on the
+	// declarations of the package and on the names of the plan in it.
+	scoped bool
 }
 
 // write routes one plan's settled store to files against the run's
@@ -90,7 +94,7 @@ func (w *Workspace) write(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("route: %w", err)
 	}
-	staged, rendered, err := render(pl, ix, src, into, routes.Files, sink)
+	staged, rendered, err := render(pl, ix, src, into, routes.Files, sink, others)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -128,10 +132,13 @@ func renderedNames(names []plugin.NameEntry, rendered []plugin.File) []plugin.Na
 // contract, at each file's routed path and in path order. A data file
 // keeps the bytes that the backend produced, without the stamp. It also
 // returns the routed files the backend rendered, at the same places.
+// others are the names of the plan's files that a warm run keeps, and nil
+// for a store that contains the whole plan.
 func render(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
+	others plugin.Names,
 ) ([]stagedFile, []plugin.File, error) {
-	rendered, err := pl.backend.Render(renderContext(pl, src, into, files, sink))
+	rendered, err := pl.backend.Render(renderContext(pl, src, into, files, sink, others))
 	if err != nil {
 		return nil, nil, fmt.Errorf("render: %w", err)
 	}
@@ -160,7 +167,7 @@ func render(
 		staged := stagedFile{
 			path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path},
 			pkg: files[routed].Pkg, scope: files[routed].Scope, findings: f.Findings,
-			lines: lineFamilyOf(pl, &files[routed]),
+			lines: lineFamilyOf(pl, &files[routed]), scoped: f.PackageScope,
 		}
 		if len(f.Packages) > 0 {
 			staged.packages = make([]symbol.Identity, 0, len(f.Packages))
@@ -211,13 +218,14 @@ func describeFile(staged *stagedFile, f *plugin.File, ix *plugin.Index) {
 
 // renderContext assembles what the pass reads: the settled store, the
 // routed files, the plan's schedule, the template surfaces its
-// generators declare for the backend's target, the declared names of
-// the packages that the run loaded in the language of the target, and
-// the plan's resolved lowering policy. The names cover every package of
-// the run, because a file can import a package outside the sources of
-// its plan.
+// generators declare for the backend's target, the declared names and the
+// source declarations of the packages that the run loaded in the language
+// of the target, the names of the files that a warm run keeps, and the
+// plan's resolved lowering policy. The names and the declarations cover
+// every package of the run, because a file can import a package outside
+// the sources of its plan.
 func renderContext(
-	pl *compiledPlan, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
+	pl *compiledPlan, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink, others plugin.Names,
 ) *plugin.RenderContext {
 	target := pl.backend.Target()
 	ctx := &plugin.RenderContext{
@@ -227,6 +235,7 @@ func renderContext(
 		Trees:     map[plugin.ID]fs.FS{},
 		Funcs:     map[plugin.ID]template.FuncMap{},
 		Overrides: map[plugin.ID][]string{},
+		Others:    others,
 		Policy:    pl.policy,
 		Sink:      sink,
 		Plugin:    pl.backend.Name(),
@@ -239,6 +248,17 @@ func renderContext(
 				return "", false
 			}
 			return p.Name, true
+		}
+		ctx.Declarations = func(path string, yield func(file string, decls []symbol.Symbol)) {
+			p, loaded := src.packages(symbol.Identity{Lang: lang, Package: path, Kind: symbol.KindPackage})
+			if !loaded {
+				return
+			}
+			for _, f := range p.Files {
+				if f != nil {
+					yield(f.Path, f.Decls)
+				}
+			}
 		}
 	}
 	for _, s := range pl.entries {

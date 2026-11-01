@@ -103,6 +103,20 @@ const (
 	namePrefix  = "// name "
 )
 
+// The lines of the cases of the package scope: a constant that takes the
+// name that the import of the cache package binds, a struct whose lowered
+// name takes it, and the out directive that routes the files of the other
+// package into the directory of the store package.
+const (
+	cacheConstLine = "const " + cacheLocal + "\n"
+	cacheTypeLine  = "type Cache int\n"
+	otherOutLine   = "pkgnote out path=\"../store/\"\n"
+)
+
+// lowererID is the generator that emits the name of each struct but the
+// row in lower case.
+const lowererID plugin.ID = "lowerer"
+
 // warmWarning is the code of the warning that the warner reports on the
 // row.
 var warmWarning = diag.Code{Prefix: "tst", Number: 9}
@@ -307,6 +321,36 @@ func TestWarm(t *testing.T) {
 				assert.Length(t, sinks, 2, "each run opens one sink")
 				assert.Contains(t, string(sinks[1].Files()[mirroredFile]), "type ForRow "+renamedClause,
 					"the file of the store package writes the new name of the cache package")
+			})
+
+		t.Run("renders a file again after an edit declares the name of its import in a source file of its package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				var o opener
+				w := built(t, scopeBuilder(ledger.NewMem(), workspace.Plan{
+					Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)},
+				}, o.open))
+				_, err := warmAfter(t, w, warmTree(rowLine), warmTree(rowLine, cacheConstLine))
+				assert.NoError(t, err, "the run is clean")
+				sinks := o.opened()
+				assert.Length(t, sinks, 2, "each run opens one sink")
+				assert.Contains(t, string(sinks[1].Files()[mirroredFile]), "type ForRow "+cacheLocal2+"\n",
+					"the import of the file binds around the constant of the package")
+			})
+
+		t.Run("renders a kept file again after another file of the plan declares the name of its import in its package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				var o opener
+				w := built(t, scopeLowering(ledger.NewMem(), o.open))
+				_, err := warmAfter(t, w, scopeTree(), scopeTree(cacheTypeLine))
+				assert.NoError(t, err, "the run is clean")
+				sinks := o.opened()
+				assert.Length(t, sinks, 2, "each run opens one sink")
+				assert.Contains(t, string(sinks[1].Files()[mirroredFile]), "type ForRow "+cacheLocal2+"\n",
+					"the import of the kept file binds around the struct of the other file")
 			})
 
 		t.Run("withdraws the claim of an invocation that a directive gates and that runs again", func(t *testing.T) {
@@ -731,6 +775,57 @@ func clauseBuilder(l ledger.Ledger, f plugin.Frontend, open func() (output.Sink,
 		}).
 		Output(open).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// scopeBuilder returns the builder of a composition over the scripted
+// frontend that records into a ledger and renders into the output that open
+// returns. Its one plan p renders through the scope printer of the scripted
+// language, which binds the cache package.
+func scopeBuilder(l ledger.Ledger, p workspace.Plan, open func() (output.Sink, error)) *workspace.Builder {
+	target := plugin.Target(frontendtest.ScriptedLang)
+	p.Backend = scopePrinter(target, cachePackage.Package)
+	return workspace.New().
+		Brand(fixtureBrand).
+		Frontends(frontendtest.NewScripted()).
+		Annotators(stamper(noterID, quiet)).
+		Targets(target).
+		Plans(p).
+		Output(open).
+		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// scopeLowering returns the builder of a scope composition whose plan
+// mirrors the row of the store package and lowers each other struct into a
+// struct of the file of its package, under the name in lower case. A
+// struct of the other package lowers into the scope of the store package,
+// because the out directive of the other package routes its files into the
+// directory of the store package.
+func scopeLowering(l ledger.Ledger, open func() (output.Sink, error)) *workspace.Builder {
+	rows := generator(mirrorID, func(m *eidos.StructMatch, e *eidos.Emitter) error {
+		if m.Struct.Name != rowID.Name {
+			return nil
+		}
+		return mirrored(m, e)
+	})
+	lowerer := eidos.NewPlugin(lowererID).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "low"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			if m.Struct.Name != rowID.Name {
+				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: strings.ToLower(m.Struct.Name)})
+			}
+			return nil
+		})).Generator()
+	return scopeBuilder(l, workspace.Plan{Name: "plan", Generators: []plugin.Generator{rows, lowerer}}, open)
+}
+
+// scopeTree returns a tree of the store package with its row, and of the
+// other package, whose out directive routes its files into the directory of
+// the store package, with the lines.
+func scopeTree(lines ...string) fstest.MapFS {
+	return fstest.MapFS{
+		warmSource:  {Data: []byte("package svc/store\n" + rowLine)},
+		otherSource: {Data: []byte("package svc/other\n" + otherOutLine + strings.Join(lines, ""))},
+	}
 }
 
 // clauseTree returns a tree of the store package with its row, and of the

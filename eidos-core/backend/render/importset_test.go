@@ -200,6 +200,72 @@ func TestImportSet(t *testing.T) {
 		})
 	})
 
+	t.Run("SetPackageScope", func(t *testing.T) {
+		t.Parallel()
+
+		// scoped returns a set whose package scope takes storeLocal and
+		// rowName, as two declarations of another file of the package take
+		// them.
+		scoped := func() *render.ImportSet {
+			s := &render.ImportSet{}
+			s.SetPackageScope(siblingScope)
+			return s
+		}
+
+		t.Run("suffixes a package name that another file of the package declares", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, scoped().Bind(storePkg, storeLocal), storeLocal2,
+				"the import binds the next free name")
+		})
+
+		t.Run("suffixes a declaration name that another file of the package declares", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, scoped().BindItem(storePkg, rowName, false), rowName2,
+				"the imported declaration binds the next free name")
+		})
+
+		t.Run("makes Claim report false for a name that another file of the package declares", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, scoped().Claim(storePkg, rowName),
+				"an import of the name would collide with the declaration of the package")
+		})
+
+		t.Run("makes Claim report true for a declaration of the file's own package", func(t *testing.T) {
+			t.Parallel()
+
+			s := scoped()
+			s.SetHome(storePkg)
+			assert.True(t, s.Claim(storePkg, rowName),
+				"the declaration of another file of the package is the declaration that the name refers to")
+		})
+
+		t.Run("makes Use return an error for a name that another file of the package declares", func(t *testing.T) {
+			t.Parallel()
+
+			s := scoped()
+			err := s.Use(storePkg, storeLocal, "")
+			assert.HasError(t, err, "a suffix would break the reference of the template")
+			assert.Contains(t, err.Error(), "another file of the package", "the error names the declaration")
+		})
+
+		t.Run("leaves Reserved false for a name that another file of the package declares", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, scoped().Reserved(storeLocal), "Reserved reports the declarations of the file")
+		})
+
+		t.Run("takes no name for a nil function", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetPackageScope(nil)
+			assert.Equal(t, s.Bind(storePkg, storeLocal), storeLocal, "the name is free")
+		})
+	})
+
 	t.Run("Enter", func(t *testing.T) {
 		t.Parallel()
 
@@ -1046,6 +1112,15 @@ func TestImportSet(t *testing.T) {
 			assert.True(t, s.Pending(storeName), "the next file renders its declarations from the first")
 		})
 
+		t.Run("drops the package scope of the file", func(t *testing.T) {
+			t.Parallel()
+
+			var s render.ImportSet
+			s.SetPackageScope(siblingScope)
+			s.Reset()
+			assert.Equal(t, s.Bind(storePkg, storeLocal), storeLocal, "the next file is in a package of its own")
+		})
+
 		t.Run("keeps the policy of the set", func(t *testing.T) {
 			t.Parallel()
 
@@ -1285,6 +1360,7 @@ func importWrites() []importWrite {
 		{name: "SetPackage", write: func(s *render.ImportSet) { s.SetPackage(refs[1]) }},
 		{name: "SetReferents", write: func(s *render.ImportSet) { s.SetReferents(refs) }},
 		{name: "SetPolicy", write: func(s *render.ImportSet) { s.SetPolicy(plugin.Policy{}) }},
+		{name: "SetPackageScope", write: func(s *render.ImportSet) { s.SetPackageScope(siblingScope) }},
 		{name: "Reserve", write: func(s *render.ImportSet) { s.Reserve(rowName) }},
 		{
 			name: "Enter",
@@ -1303,6 +1379,13 @@ func importWrites() []importWrite {
 			write: func(s *render.ImportSet) {
 				s.Bind(storePkg, storeLocal)
 				s.Bind(legacyPkg, storeLocal)
+			},
+		},
+		{
+			name: "Bind", caseName: "a name that another file of the package declares", allocs: 1,
+			write: func(s *render.ImportSet) {
+				s.SetPackageScope(siblingScope)
+				s.Bind(storePkg, storeLocal)
 			},
 		},
 		{name: "BindItem", write: func(s *render.ImportSet) { s.BindItem(storePkg, rowName, false) }},
@@ -1377,6 +1460,13 @@ func referents() []symbol.Identity {
 		{Lang: referentLang, Package: auditPkg, Name: auditDeclared, Kind: symbol.KindPackage},
 		{Lang: referentLang, Package: storePkg, Name: storeDeclared, Kind: symbol.KindPackage},
 	}
+}
+
+// siblingScope is the package scope of the fixture: it reports true for
+// storeLocal and rowName, the names that two declarations of another file
+// of the package take, and false for every other name.
+func siblingScope(name string) bool {
+	return name == storeLocal || name == rowName
 }
 
 // declaring returns the declared names of the fixture: storeDeclared for

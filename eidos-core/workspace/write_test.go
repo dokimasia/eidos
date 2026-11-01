@@ -6,6 +6,7 @@ package workspace_test
 import (
 	"errors"
 	"maps"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -158,6 +159,17 @@ const clauseHelper = "clause"
 // widthHelper is the name of the helper through which the struct template
 // of the width printer writes the choice of the width policy.
 const widthHelper = "width"
+
+// scopeHelper is the name of the helper through which the struct template
+// of the scope printer binds the cache package and writes the name that
+// the import of the package binds. cacheLocal is that name where no other
+// declaration of the package takes it, and cacheLocal2 the name with the
+// first suffix.
+const (
+	scopeHelper = "bound"
+	cacheLocal  = "cache"
+	cacheLocal2 = cacheLocal + "2"
+)
 
 // cacheClause is the name that the package clause of the cache package
 // declares in the cases of the declared names, and renamedClause the name
@@ -316,6 +328,54 @@ func TestWrite(t *testing.T) {
 			body := string(o.opened()[0].Files()[coretest.StorePath+"/gen.txt"])
 			assert.Contains(t, body, "type ForAlpha "+cacheClause,
 				"the render reads the name that the package clause of the cache declares")
+		})
+
+		t.Run("keeps the import of a file off a name that a source file of its package declares", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			s := coretest.Struct(coretest.StorePath, "Alpha")
+			s.Pos = position.Pos{File: alphaFile, Line: 3, Col: 1}
+			pkg := coretest.Package(coretest.StorePath, s)
+			pkg.Files[0].Path = alphaFile
+			pkg.Files = append(pkg.Files, &node.File{
+				ID:   coretest.ID(coretest.StorePath, "kit.go", symbol.KindFile),
+				Path: coretest.StorePath + "/kit.go",
+				Decls: node.Symbols{&node.Constant{
+					ID: coretest.ID(coretest.StorePath, cacheLocal, symbol.KindConstant), Name: cacheLocal,
+				}},
+			})
+			g := store.New()
+			assert.NoError(t, g.AddPackage(pkg), "the store package is admitted")
+			_, err := scopeWriting(t, layout.Config{}, o.open).Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			body := string(o.opened()[0].Files()[coretest.StorePath+"/gen.txt"])
+			assert.Contains(t, body, "type ForAlpha "+cacheLocal2+"\n",
+				"the import binds around the constant of the other file of the package")
+		})
+
+		t.Run("binds the name of an import that no file of its package declares", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			_, err := scopeWriting(t, layout.Config{}, o.open).Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			body := string(o.opened()[0].Files()[coretest.StorePath+"/gen.txt"])
+			assert.Contains(t, body, "type ForAlpha "+cacheLocal+"\n", "the name of the import is free")
+		})
+
+		t.Run("binds the name of an import in a package that the run did not load", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			cfg := layout.Config{Policy: layout.PolicyCentralised, Dir: "out"}
+			_, err := scopeWriting(t, cfg, o.open).Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the run is clean")
+			body := string(o.opened()[0].Files()["out/"+coretest.StorePath+"/gen.txt"])
+			assert.Contains(t, body, "type ForAlpha "+cacheLocal+"\n",
+				"no source file of the package declares the name")
 		})
 
 		t.Run("renders no declared name for a package that the run did not load", func(t *testing.T) {
@@ -513,6 +573,39 @@ func clausePrinter(target plugin.Target, path string) plugin.Backend {
 		Build()
 }
 
+// scopePrinter returns a kit backend of target whose files of one package
+// share one scope, and whose package of a routed file is the package of
+// its directory. Its struct template binds the package at bound under the
+// last element of its path, and writes the name that the import binds
+// after the name of the struct. Each call returns a new backend.
+func scopePrinter(target plugin.Target, bound string) plugin.Backend {
+	return backend.New("scopes", target, plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} {{" + scopeHelper + "}}\n",
+		}).
+		Packages(func(p plugin.Placement) (symbol.Identity, error) {
+			return symbol.Identity{Lang: symbol.Lang(target), Package: path.Dir(p.Path), Kind: symbol.KindPackage}, nil
+		}).
+		Funcs(func(set *render.ImportSet) template.FuncMap {
+			return template.FuncMap{scopeHelper: func() string {
+				return set.Bind(bound, path.Base(bound))
+			}}
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		PackageScope(func(d symbol.Symbol, yield func(name string)) {
+			if decl, named := d.(node.Declaration); named {
+				yield(decl.Identity().Name)
+			}
+		}).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
 // widthPrinter returns a kit backend of the lowering target that declares
 // the width policy. Its struct template writes the choice of the policy,
 // as the import set of the file has it, after the name of the struct. Each
@@ -560,6 +653,31 @@ func clauseWriting(tb assert.TB, open func() (output.Sink, error), path string) 
 		Output(open).
 		Build()
 	assert.NoError(tb, err, "the clause writing composition composes")
+	return w
+}
+
+// scopeWriting returns a composition whose one plan mirrors the structs of
+// the store package under the layout cfg into the output that open
+// returns. The plan renders through the scope printer of the fixtures'
+// language, which binds the cache package.
+func scopeWriting(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) *workspace.Workspace {
+	tb.Helper()
+
+	target := plugin.Target(coretest.Lang)
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(stamper("noter", quiet)).
+		Targets(target).
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirror("mirror")},
+			Backend:    scopePrinter(target, coretest.CachePath),
+			Sources:    workspace.Sources{Packages: []string{coretest.StorePath}},
+			Layout:     cfg,
+		}).
+		Output(open).
+		Build()
+	assert.NoError(tb, err, "the scope writing composition composes")
 	return w
 }
 

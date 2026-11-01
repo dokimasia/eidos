@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // origin is the identity that the suite renders under. A render reports
@@ -43,6 +44,11 @@ type Fixture struct {
 	// through the import set of each file. The zero Policy declares no key,
 	// and a backend then renders under the defaults of its policies.
 	Policy plugin.Policy
+	// Declarations calls yield for each source file of the package at a
+	// path, which a language whose files of one package share one scope
+	// reads, as [plugin.RenderContext.Declarations] describes it. A nil
+	// Declarations has no declaration for any path.
+	Declarations func(path string, yield func(file string, decls []symbol.Symbol))
 	// Layout is the input of the layout of the plan that routes the store,
 	// as the Layout of the plugin test kit returns it, and nil routes the
 	// store as [Files] does. The context of a render sets the store, the
@@ -83,7 +89,7 @@ func (f *Fixture) Context(b backend.Backend, sink *diag.Sink) (*plugin.RenderCon
 	}
 	return &plugin.RenderContext{
 		Emit: f.Emit, Files: files, Schedule: f.Schedule, Trees: f.Trees, Policy: f.Policy,
-		Funcs: f.Funcs, Overrides: f.Overrides,
+		Funcs: f.Funcs, Overrides: f.Overrides, Declarations: f.Declarations,
 		Sink: sink, Plugin: origin,
 	}, nil
 }

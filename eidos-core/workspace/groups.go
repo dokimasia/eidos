@@ -291,6 +291,10 @@ func (pg *planGroups) record(lane *state.Lane) {
 		for _, pkg := range s.packages {
 			g.Reads = append(g.Reads, state.DeclarationEdge(pkg))
 		}
+		if s.scoped {
+			pkg := s.pkg.PackageIdentity()
+			g.Reads = append(g.Reads, state.PackageEdge(pkg), state.PackageScopeEdge(pg.plan, pkg))
+		}
 		g.Findings = append(g.Findings, s.findings...)
 	}
 

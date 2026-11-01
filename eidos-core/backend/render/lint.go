@@ -75,17 +75,20 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides, files []strin
 	// the render refuses fails here too.
 	header := func() *emit.File { return nil }
 	value := func(emit.Value) (string, error) { return "", nil }
+	imports := func(string, ...string) (string, error) { return "", nil }
 	stubs := referenceBuiltins(
 		func() (string, error) { return "", nil },
 		func(string) (string, error) { return "", nil },
-		func(string, ...string) (string, error) { return "", nil },
+		imports,
+		imports,
 		header,
 		value,
 	)
 	fileStubs := fileBuiltins(
 		func(any) (string, error) { return "", nil },
 		func(*emit.Method) (string, error) { return "", nil },
-		func(string, ...string) (string, error) { return "", nil },
+		imports,
+		imports,
 		func(string, symbol.Symbol) (string, error) { return "", nil },
 		header,
 		value,

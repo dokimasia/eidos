@@ -34,6 +34,7 @@ const (
 	edgeModules     = 'm'
 	edgeUnit        = 'u'
 	edgeFiles       = 'w'
+	edgeNames       = 'c'
 )
 
 // The tags that open the key of a name edge: a bare reference's package,
@@ -173,6 +174,18 @@ func DirectoryEdge(dir string) EdgeHash {
 func FilesEdge(pkg symbol.Identity) EdgeHash {
 	var spelling [spellingCap]byte
 	return hashOf(appendIdentity(append(spelling[:0], edgeFiles), pkg))
+}
+
+// PackageScopeEdge returns the hash of the edge of the file-level names
+// that the files of a plan declare in the scope of one package: what a
+// group records for each of its files whose imports keep off those names,
+// in a language whose files of one package share one scope. It is dirty
+// when a name of a file of the plan enters or leaves the package. pkg is
+// the identity of the package, which [symbol.Identity.PackageIdentity]
+// returns. It allocates nothing for a spelling that fits in 255 bytes.
+func PackageScopeEdge(plan string, pkg symbol.Identity) EdgeHash {
+	var spelling [spellingCap]byte
+	return hashOf(appendIdentity(wire.AppendText(append(spelling[:0], edgeNames), plan), pkg))
 }
 
 // UnitEdge returns the hash of the edge of one unit of a plan: what the

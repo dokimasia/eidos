@@ -86,6 +86,24 @@ func TestFixture(t *testing.T) {
 			expect.NotEmpty(t, got.Plugin, "the context renders under the identity of the suite")
 		})
 
+		t.Run("returns a context with the declarations of the fixture", func(t *testing.T) {
+			t.Parallel()
+
+			decls := []symbol.Symbol{coretest.Struct(coretest.StorePath, "Row")}
+			f := &backendtest.Fixture{
+				Emit: plugin.NewEmit(),
+				Declarations: func(_ string, yield func(string, []symbol.Symbol)) {
+					yield(coretest.UnitFile, decls)
+				},
+			}
+			got, err := f.Context(wellBackend(t), diag.NewSink())
+			assert.NoError(t, err, "the files of the fixture route")
+			assert.NotNil(t, got.Declarations, "the context has the declarations of the fixture")
+			var yielded []symbol.Symbol
+			got.Declarations(coretest.StorePath, func(_ string, d []symbol.Symbol) { yielded = d })
+			assert.Equal(t, yielded, decls, "the context yields the declarations of the fixture", assert.ByIdentity())
+		})
+
 		t.Run("routes the store through the layout of the fixture", func(t *testing.T) {
 			t.Parallel()
 

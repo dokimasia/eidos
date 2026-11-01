@@ -436,37 +436,44 @@ func TestLoadStateAllocs(t *testing.T) {
 	assert.True(t, anchor.Equal(past), "Anchor returns the recording run's anchor")
 
 	fresh := func() *state.LoadState { return g.Load(t.Context()) }
-	var n int
+	var (
+		n   int
+		err error
+	)
 	assert.MaxAllocsWithSetup(t, fresh, func(ls *state.LoadState) {
 		n = 0
-		for range ls.Files() {
+		for _, ferr := range ls.Files() {
+			err = cmp.Or(err, ferr)
 			n++
 		}
 	}, filesAllocs, "a first range over Files reads the files table")
+	assert.NoError(t, err, "the files read")
 	assert.Equal(t, n, len(report.Files), "the range yields every file")
 	assert.MaxAllocsWithSetup(t, fresh, func(ls *state.LoadState) {
 		n = 0
-		for range ls.Units() {
+		for _, uerr := range ls.Units() {
+			err = cmp.Or(err, uerr)
 			n++
 		}
 	}, unitsAllocs, "a first range over Units reads the units table")
+	assert.NoError(t, err, "the units read")
 	assert.Equal(t, n, len(report.Units), "the range yields every unit")
 	assert.MaxAllocs(t, func() {
 		n = 0
-		for range s.Files() {
+		for _, ferr := range s.Files() {
+			err = cmp.Or(err, ferr)
 			n++
 		}
-		for range s.Units() {
+		for _, uerr := range s.Units() {
+			err = cmp.Or(err, uerr)
 			n++
 		}
 	}, 0, "a range over tables read before allocates nothing")
+	assert.NoError(t, err, "the tables read")
 	assert.Equal(t, n, len(report.Files)+len(report.Units), "the ranges yield every file and every unit")
 
 	u := lastUnit(t, s)
-	var (
-		region *store.Region
-		err    error
-	)
+	var region *store.Region
 	assert.MaxAllocs(t, func() {
 		var rerr error
 		region, rerr = s.Region(u)
@@ -543,27 +550,35 @@ func BenchmarkLoadState(b *testing.B) {
 		b.Run("a first range", func(b *testing.B) {
 			c := bench.Start(b).MaxAllocs(filesAllocs)
 			defer c.End()
-			var fresh *state.LoadState
+			var (
+				fresh *state.LoadState
+				err   error
+			)
 			n := 0
 			for c.Loop() {
 				c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
-				for range fresh.Files() {
+				for _, ferr := range fresh.Files() {
+					err = cmp.Or(err, ferr)
 					n++
 				}
 			}
+			assert.NoError(b, err, "the files read")
 			assert.Equal(b, n, len(report.Files), "the range yields every file")
 		})
 
 		b.Run("a range over a table read before", func(b *testing.B) {
 			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
+			var err error
 			n := 0
 			for c.Loop() {
 				n = 0
-				for range s.Files() {
+				for _, ferr := range s.Files() {
+					err = cmp.Or(err, ferr)
 					n++
 				}
 			}
+			assert.NoError(b, err, "the files read")
 			assert.Equal(b, n, len(report.Files), "the range yields every file")
 		})
 	})
@@ -572,27 +587,35 @@ func BenchmarkLoadState(b *testing.B) {
 		b.Run("a first range", func(b *testing.B) {
 			c := bench.Start(b).MaxAllocs(unitsAllocs)
 			defer c.End()
-			var fresh *state.LoadState
+			var (
+				fresh *state.LoadState
+				err   error
+			)
 			n := 0
 			for c.Loop() {
 				c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
-				for range fresh.Units() {
+				for _, uerr := range fresh.Units() {
+					err = cmp.Or(err, uerr)
 					n++
 				}
 			}
+			assert.NoError(b, err, "the units read")
 			assert.Equal(b, n, len(report.Units), "the range yields every unit")
 		})
 
 		b.Run("a range over a table read before", func(b *testing.B) {
 			c := bench.Start(b).Warmup(1).MaxAllocs(0)
 			defer c.End()
+			var err error
 			n := 0
 			for c.Loop() {
 				n = 0
-				for range s.Units() {
+				for _, uerr := range s.Units() {
+					err = cmp.Or(err, uerr)
 					n++
 				}
 			}
+			assert.NoError(b, err, "the units read")
 			assert.Equal(b, n, len(report.Units), "the range yields every unit")
 		})
 	})

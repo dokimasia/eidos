@@ -108,10 +108,10 @@ const (
 	// declaration, with or without hooks. text/template allocates most of
 	// them, for the parse trees of the file skeleton and the two kind
 	// templates and for the function maps that it keeps for each template.
-	// The eight builtins and the helper of the fixture are nine names, so
+	// The nine builtins and the helper of the fixture are ten names, so
 	// each of these maps grows past one group of eight slots. The composed
 	// pass and the backend allocate the rest.
-	buildAllocs = 185
+	buildAllocs = 191
 	// policiesAllocs is the allocation count of a Policies call that adds
 	// one spec to a new declaration. The call allocates the list of specs.
 	policiesAllocs = 1
@@ -619,6 +619,48 @@ func TestBackend(t *testing.T) {
 			})
 			assert.NoError(t, err, "a refused template is a finding")
 			coretest.AssertCodes(t, sink, render.RefusedTemplate)
+		})
+	})
+
+	t.Run("PackageScope", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend whose imports keep off a name that a source file declares", func(t *testing.T) {
+			t.Parallel()
+
+			b := backend.New(kitName, kitTarget, kitSyntax()).
+				FileTemplate(kitFile).
+				KindTemplates(map[symbol.Kind]string{
+					symbol.KindStruct: "type {{.Name}} {{" + qualifyHelper + " " +
+						strconv.Quote(storePkg) + " " + strconv.Quote(rowName) + "}}\n",
+				}).
+				Funcs(kitBinding).
+				Naming(kitNaming).
+				Scaffold(kitScaffold).
+				Imports(kitImports).
+				PackageScope(kitScope).
+				Finalise(kitFinalise).
+				Build()
+			e := plugin.NewEmit()
+			row := &emit.Struct{Origin: coretest.Struct(coretest.CachePath, rowName).ID, Name: rowName}
+			assert.NoError(t, e.Add(plugin.Unit{
+				Plugin: kitEmitter, Per: plugin.PerPlan, Word: kitWord, Pkg: coretest.PackageID(coretest.CachePath),
+				Decls: []symbol.Symbol{row},
+			}), "the unit of one struct is added")
+			sink := diag.NewSink()
+			files, err := b.Render(&plugin.RenderContext{
+				Emit: e, Files: backendtest.Files(e, b), Sink: sink, Plugin: kitName,
+				Declarations: func(p string, yield func(string, []symbol.Symbol)) {
+					if p == coretest.CachePath {
+						yield(coretest.UnitFile, []symbol.Symbol{coretest.Struct(coretest.CachePath, storeLocal)})
+					}
+				},
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "the fixture renders one file")
+			assert.Contains(t, string(files[0].Body), "type "+rowName+" "+storeLocal+"2."+rowName+"\n",
+				"the import binds around the declaration of the other file")
 		})
 	})
 
@@ -1584,6 +1626,15 @@ func setters() []setter {
 				return b.TemplateImport(func(string, string) (string, string, bool) { return "", "", false })
 			},
 		},
+		{name: "PackageScope", set: func(b *backend.Builder) *backend.Builder { return b.PackageScope(kitScope) }},
+	}
+}
+
+// kitScope is the package scope of the fixture's language: the name of the
+// identity of each source declaration.
+func kitScope(d symbol.Symbol, yield func(name string)) {
+	if decl, named := d.(interface{ Identity() symbol.Identity }); named {
+		yield(decl.Identity().Name)
 	}
 }
 

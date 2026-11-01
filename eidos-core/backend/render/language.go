@@ -144,14 +144,28 @@ type Language struct {
 	// are language facts.
 	Imports func(set *ImportSet) string
 	// TemplateImport returns the binding of an import that a template
-	// states through the use builtin. name is the name that the template
-	// states, and empty where it states none. local is the name that the
-	// import binds in the file. item is the declaration of path that local
-	// refers to, and empty where local refers to the whole package.
-	// TemplateImport reports false for an import that does not bind a
-	// name. With a nil TemplateImport, the use builtin records every import
-	// outside the name assignment.
+	// states through the use builtin or the import builtin. name is the
+	// name that the template states, and empty where it states none. local
+	// is the name that the import binds in the file. item is the
+	// declaration of path that local refers to, and empty where local refers
+	// to the whole package. TemplateImport reports false for an import that
+	// does not bind a name. With a nil TemplateImport, the use builtin
+	// records every import outside the name assignment, and every call of
+	// the import builtin fails.
 	TemplateImport func(path, name string) (local, item string, ok bool)
+	// PackageScope yields the names that a file-level declaration of a
+	// source file declares in the scope of its package, for a language
+	// whose files of one package share one scope, as the package block of Go
+	// is. The render then keeps the imports of each file off the names that
+	// the other files of its package declare: the source files of the
+	// package through PackageScope, and the routed and the kept files of the
+	// package through their file-level names. A source file at the path of a
+	// routed file does not count, because the run writes the file again. The
+	// render calls PackageScope on its workers, once for each declaration of
+	// each package of a routed file, so the function is safe for concurrent
+	// use. With a nil PackageScope, the imports of a file keep off the names
+	// of its own declarations alone.
+	PackageScope func(d symbol.Symbol, yield func(name string))
 	// Finalise is the language formatter, run last per file. A language
 	// declares one formatter: Finalise or FinaliseUnder.
 	Finalise func(src []byte) ([]byte, error)

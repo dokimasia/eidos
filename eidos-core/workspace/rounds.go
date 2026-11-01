@@ -673,9 +673,11 @@ func (wp *warmPlan) renamed(e *plugin.Emit) (bool, error) {
 // files declare, with the names that the generation records for the files
 // of the dirty groups, after the settle and the layout: a name that
 // settled apart, or moved to another file or package, makes its scope and
-// its entries dirty. It also makes dirty the group of each recorded file
-// of the plan that a new path equals or clashes with. It reports whether a
-// group joined the dirty groups.
+// its entries dirty. A name without a receiver that entered or left the
+// package of a file also makes the package scope edge of the package
+// dirty, before and after a move. It also makes dirty the group of each
+// recorded file of the plan that a new path equals or clashes with. It
+// reports whether a group joined the dirty groups.
 //
 // Error modes: an error wrapping [state.ErrDamaged] for a record that does
 // not read whole.
@@ -710,12 +712,19 @@ func (wp *warmPlan) respelled(files []plugin.File, names []plugin.NameEntry) (bo
 		return grew, err
 	}
 	changed := map[emittedName]struct{}{}
+	scopes := map[symbol.Identity]struct{}{}
+	scoped := func(n emittedName, pkg symbol.Identity) {
+		if n.receiver == "" && !pkg.IsZero() {
+			scopes[pkg.PackageIdentity()] = struct{}{}
+		}
+	}
 	for _, e := range prior {
 		n := nameOf(e)
 		was := spelling{settled: e.Settled, file: e.File, pkg: e.FilePkg}
 		at := slices.Index(spelled[n], was)
 		if at < 0 {
 			changed[n] = struct{}{}
+			scoped(n, e.FilePkg)
 			continue
 		}
 		spelled[n] = slices.Delete(spelled[n], at, at+1)
@@ -724,9 +733,19 @@ func (wp *warmPlan) respelled(files []plugin.File, names []plugin.NameEntry) (bo
 		if len(rest) > 0 {
 			changed[n] = struct{}{}
 		}
+		for _, s := range rest {
+			scoped(n, s.pkg)
+		}
 	}
 	for _, n := range slices.SortedFunc(maps.Keys(changed), compareEmitted) {
 		joined, err := wp.nameChanged(n)
+		if err != nil {
+			return grew, err
+		}
+		grew = grew || joined
+	}
+	for _, pkg := range slices.SortedFunc(maps.Keys(scopes), symbol.Identity.Compare) {
+		joined, err := wp.dirtyEdge(state.PackageScopeEdge(wp.p.plan.name, pkg))
 		if err != nil {
 			return grew, err
 		}

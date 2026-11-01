@@ -64,8 +64,11 @@ type Pass struct {
 	finalUnder func(src []byte, p plugin.Policy) ([]byte, error)
 	coverage   Coverage
 	// templateImport is the language's [Language.TemplateImport], which
-	// the use builtin calls.
+	// the use builtin and the import builtin call.
 	templateImport func(path, name string) (local, item string, ok bool)
+	// packageScope is the language's [Language.PackageScope], and nil for a
+	// language whose files are namespaces of their own.
+	packageScope func(d symbol.Symbol, yield func(name string))
 	// memberIndent is the language's [Language.MemberIndent], which the
 	// memberbody builtin writes before each line of a member's content.
 	memberIndent string
@@ -185,6 +188,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		scaffold: l.Scaffold, value: l.Value, imports: l.Imports,
 		final: l.Finalise, finalUnder: l.FinaliseUnder,
 		coverage: l.Coverage, memberIndent: l.MemberIndent, templateImport: l.TemplateImport,
+		packageScope: l.PackageScope,
 	}, nil
 }
 
@@ -209,8 +213,11 @@ func (p *Pass) SplitUnit(u plugin.Unit) []plugin.Unit {
 // each file reads the declared names of the context's Names, and a
 // rendered file lists the packages whose names it read in its Packages.
 // The import set of each file has the context's Policy, and it names each
-// declaration under render. A returned error is a defect in the inputs,
-// never a finding.
+// declaration under render. In a language with a [Language.PackageScope],
+// the import set of each file of a package has the scope of the package,
+// which the context's Declarations, Files and Others give, and a rendered
+// file that binds an import reports PackageScope. A returned error is a
+// defect in the inputs, never a finding.
 func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	if ctx == nil || ctx.Emit == nil {
 		return nil, errors.New("render: the pass needs a plan's emit store")
@@ -227,6 +234,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 
 	seed := &frame{pass: p, sink: ctx.Sink, origin: origin, trees: ctx.Trees}
 	merged := seed.mergeVocabulary(ctx)
+	scopes := newPackageScopes(ctx, p.packageScope)
 
 	// Files are independent of each other, so workers share the
 	// render. Each worker has its own frame, buffers and parsed
@@ -243,6 +251,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		packages []string
 		found    []diag.Diag
 		held     bool
+		scoped   bool
 	}
 	results := make([]rendered, len(order))
 	workers := min(runtime.GOMAXPROCS(0), len(order))
@@ -253,7 +262,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		wg.Go(func() {
 			w := &frame{
 				pass: p, sink: diag.NewSink(), origin: origin,
-				trees: ctx.Trees, merged: merged,
+				trees: ctx.Trees, merged: merged, scopes: scopes,
 			}
 			w.set.SetNames(ctx.Names)
 			w.set.SetPolicy(ctx.Policy)
@@ -273,6 +282,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				if held {
 					r.plugins, r.sources = derivation(order[i].Units)
 					r.packages = w.set.Packages()
+					r.scoped = w.scoped && (len(w.set.packages) > 0 || len(w.set.items) > 0)
 				}
 				if found := slices.Collect(w.sink.All()); len(found) > 0 {
 					r.found = found
@@ -297,7 +307,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 			files = append(files, plugin.RenderedFile{
 				Path: order[i].Path, Pkg: order[i].Pkg,
 				Plugins: results[i].plugins, Sources: results[i].sources, Packages: results[i].packages,
-				Body: results[i].body, Findings: results[i].found,
+				PackageScope: results[i].scoped, Body: results[i].body, Findings: results[i].found,
 			})
 		}
 	}
@@ -361,6 +371,10 @@ type frame struct {
 	// frame parsed, keyed as refCache is. Their builtins are bound to
 	// this frame.
 	fileCache map[refKey]*template.Template
+	// scoped reports that the file under render is a file of a package in
+	// a language with a package scope, whose imports keep off the names of
+	// the other files of the package now and after a later edit.
+	scoped bool
 	// claiming reports that a claimed file's template is executing, and
 	// placed contains the record bodies that it placed so far, which
 	// the check of stranded slot content reads.
@@ -391,6 +405,9 @@ type frame struct {
 	// ord is the memory of the order of a file, which every file of the
 	// frame reuses.
 	ord orderScratch
+	// scopes are the scopes of the packages of the render, nil for a
+	// language without a package scope.
+	scopes *packageScopes
 }
 
 // refKey addresses one parsed reference template: the plugin whose
@@ -438,6 +455,7 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		BuiltinBody:       f.body,
 		BuiltinMemberBody: f.memberBody,
 		BuiltinUse:        f.use,
+		BuiltinImport:     f.bindImport,
 		BuiltinImports:    f.importsBlock,
 		BuiltinDecls:      f.decls,
 		BuiltinNested:     f.nested,
@@ -502,6 +520,50 @@ func (f *frame) use(path string, name ...string) (string, error) {
 	return "", nil
 }
 
+// bindImport binds one import that a template states into the file under
+// render, and returns the name by which the file refers to it. It is the
+// import builtin, whose optional second argument is the name that the
+// template states. The language's TemplateImport returns the binding of the
+// path under that name. An import of a declaration binds through
+// [ImportSet.BindItem]. An import of a whole package binds through
+// [ImportSet.Bind], under the name that the package clause of the path
+// declares where the template states no name and [ImportSet.Declared] has
+// that name. Either binding takes the lowest free numeric suffix of a name
+// that the file binds already, and returns the name of an earlier binding
+// of the same path or declaration, so the template and the references of
+// the file qualify the import alike. The file's own package returns the
+// empty name, so a template writes a qualified name as
+// {{with $pkg}}{{.}}.{{end}}Name.
+//
+// Error modes: more than one name, a language without TemplateImport, and
+// an import that does not bind a name, such as a blank import, each return
+// an error.
+func (f *frame) bindImport(path string, name ...string) (string, error) {
+	if len(name) > 1 {
+		return "", fmt.Errorf("render: import binds one name, got %d", len(name))
+	}
+	if f.pass.templateImport == nil {
+		return "", fmt.Errorf("render: %s binds no name for an import of %q", f.pass.name, path)
+	}
+	stated := ""
+	if len(name) == 1 {
+		stated = name[0]
+	}
+	local, item, ok := f.pass.templateImport(path, stated)
+	if !ok {
+		return "", fmt.Errorf("render: the import of %q binds no name", path)
+	}
+	if item != "" {
+		return f.set.BindItem(path, item, false), nil
+	}
+	if stated == "" {
+		if declared, known := f.set.Declared(path); known {
+			local = declared
+		}
+	}
+	return f.set.Bind(path, local), nil
+}
+
 // importsBlock renders the file's collected set the language's
 // way; it is the skeleton's imports builtin, executed after the
 // declarations rendered, which is what makes the set complete.
@@ -534,9 +596,11 @@ func (f *frame) header() *emit.File {
 // header through the header builtin. The header passes the guard of the
 // coverage before the declarations render. The file's package is the import
 // home, so a reference into it spells bare and every other package it
-// names is imported. A false result means the file is withheld, and the
-// findings that explain it are on the sink: the skeleton, the formatter
-// or the claimed file's template refused the file, the file mixes the
+// names is imported. The import set of the file has the scope of its
+// package where the scope has a name. A false result means the file is
+// withheld, and the findings that explain it are on the sink: the
+// skeleton, the formatter or the claimed file's template refused the
+// file, the file mixes the
 // units of a claimed family with other units, the coverage rejects a
 // fact of the header, or every declaration of it was skipped, which
 // leaves no content to stamp. A file whose units contain an emit.File
@@ -550,6 +614,8 @@ func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 	f.set.Reset()
 	f.set.SetPackage(g.Pkg)
 	f.set.SetReferents(g.Referents)
+	f.set.SetPackageScope(f.scopes.of(g.Pkg))
+	f.scoped = f.pass.packageScope != nil && !g.Pkg.IsZero()
 	f.at = position.Pos{File: g.Path}
 	f.head = &g.Header
 	c, claimed, mixed := claimOf(g)

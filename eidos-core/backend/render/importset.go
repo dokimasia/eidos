@@ -52,6 +52,11 @@ type Entry struct {
 // took for a declaration of the file is never bound. The render
 // binds in canonical declaration order, so two runs bind alike.
 //
+// A set can have the package scope of its file: the names that the other
+// files of the package declare, in a language whose files of one package
+// share one scope. [ImportSet.SetPackageScope] sets it, and no import
+// binds such a name.
+//
 // A set can have the names that the package clauses of a run declare.
 // [ImportSet.SetNames] sets them, and [ImportSet.Declared] returns the
 // name of one package and records its path. [ImportSet.Packages] returns
@@ -110,6 +115,10 @@ type ImportSet struct {
 	// position of the reservation of the declaration under render.
 	reservations int
 	current      int
+	// scope reports whether another file of the package of the file
+	// declares a name in the scope of the package, and is nil for a file
+	// without a package scope.
+	scope func(name string) bool
 	// callable is the function or the method whose body the pass spells,
 	// and host is the declaration whose template places the body. Both are
 	// nil outside a body.
@@ -244,6 +253,19 @@ func (s *ImportSet) Reserve(names ...string) {
 	}
 }
 
+// SetPackageScope sets the function that reports whether another file of
+// the package of the file declares a name in the scope of the package. A
+// language whose files of one package share one scope, as the package
+// block of Go is, gives each file the scope of its package. No import binds
+// such a name: [ImportSet.Bind] and [ImportSet.BindItem] take the name with
+// the lowest free numeric suffix, [ImportSet.Claim] reports false for an
+// import from another package, and [ImportSet.Use] returns an error.
+// [ImportSet.Reserved] and [ImportSet.Pending] report the declarations of
+// the file alone. The render pass sets the scope of each file after the
+// Reset of the set, and a nil function takes no name. SetPackageScope does
+// not allocate.
+func (s *ImportSet) SetPackageScope(scope func(name string) bool) { s.scope = scope }
+
 // Reserved reports whether a declaration of the file took name through
 // [ImportSet.Reserve]. A language with global names checks it before it
 // writes a global name without an import, because a declaration of the
@@ -298,11 +320,11 @@ func (s *ImportSet) SetPolicy(p plugin.Policy) { s.policy = p }
 func (s *ImportSet) Policy() plugin.Policy { return s.policy }
 
 // Bind imports a whole package and returns the name the file refers
-// to it by: name where no other binding and no declaration of the
-// file takes it, and otherwise name with the lowest free numeric
-// suffix. A path bound before returns its name again, and the file's
-// own package returns empty, because a file never qualifies its own
-// names. Go binds its imports through it.
+// to it by: name, or name with the lowest free numeric suffix where another
+// binding, a declaration of the file or a declaration of the package scope
+// takes name. A path bound before returns its name
+// again, and the file's own package returns empty, because a file never
+// qualifies its own names. Go binds its imports through it.
 func (s *ImportSet) Bind(path, name string) string {
 	if path == "" || path == s.home {
 		return ""
@@ -348,7 +370,8 @@ func (s *ImportSet) BindItem(path, item string, typeOnly bool) string {
 // Claim imports one declaration under its own simple name and
 // reports whether the name is the file's: true where the name is
 // free or already binds this declaration, false where another
-// import or a declaration of the file takes it. Java claims its
+// import, a declaration of the file or, for a declaration of another
+// package, a declaration of the package scope takes it. Java claims its
 // imports: a false result means the spelling is written fully
 // qualified.
 //
@@ -363,6 +386,9 @@ func (s *ImportSet) Claim(path, name string) bool {
 	bound := binding{path: path, item: name}
 	if cur, held := s.locals[name]; held {
 		return cur == bound
+	}
+	if path != s.home && s.scope != nil && s.scope(name) {
+		return false
 	}
 	if s.items == nil {
 		s.items = map[binding]string{}
@@ -386,10 +412,13 @@ func (s *ImportSet) Claim(path, name string) bool {
 // records nothing.
 //
 // Use returns an error where local binds another path, another item or
-// a declaration of the file, and where the file binds the import under
-// another name. The template refers to the import by local, so a suffix
-// would break the reference. For the file's own package and for an
-// empty path, Use does not record an entry and returns nil.
+// a declaration of the file, where a declaration of the package scope
+// takes local, and where the file binds the import under another name.
+// The template refers to the import by local, so a suffix would break the
+// reference. A template that refers to an import by the name that the
+// render chooses imports it through the import builtin instead. For the
+// file's own package and for an empty path, Use does not record an entry
+// and returns nil.
 //
 // # Allocation contract
 //
@@ -409,6 +438,10 @@ func (s *ImportSet) Use(path, local, item string) error {
 			)
 		}
 		return nil
+	}
+	if s.scope != nil && s.scope(local) {
+		return fmt.Errorf("render: the template imports %q as %s, which another file of the package declares",
+			path, local)
 	}
 	if item == "" {
 		if other, held := s.packages[path]; held {
@@ -548,9 +581,9 @@ func (s *ImportSet) Len() int {
 }
 
 // Reset drops every entry, binding, reservation, declared name and
-// referent of the file, and the declaration under render. It keeps the
-// storage, the names and the policy, so the pass reuses one set across a
-// call's files.
+// referent of the file, its package scope, and the declaration under
+// render. It keeps the storage, the names and the policy, so the pass
+// reuses one set across a call's files.
 func (s *ImportSet) Reset() {
 	clear(s.entries)
 	clear(s.locals)
@@ -561,16 +594,19 @@ func (s *ImportSet) Reset() {
 	s.referents = nil
 	s.reservations = 0
 	s.current = 0
+	s.scope = nil
 	s.journal = s.journal[:0]
 }
 
 // free returns the name a binding takes: name where it is free or
 // already refers to the binding, and otherwise name with the
-// lowest numeric suffix, from 2, that is.
+// lowest numeric suffix, from 2, that is. A name of the package scope
+// is not free.
 func (s *ImportSet) free(name string, b binding) string {
 	candidate := name
 	for n := 2; ; n++ {
-		if cur, held := s.locals[candidate]; !held || cur == b {
+		cur, held := s.locals[candidate]
+		if held && cur == b || !held && (s.scope == nil || !s.scope(candidate)) {
 			return candidate
 		}
 		candidate = name + strconv.Itoa(n)

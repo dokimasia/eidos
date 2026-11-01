@@ -1276,6 +1276,14 @@ func damageScenarios() []damageScenario {
 			after:  func() fstest.MapFS { return clauseTree(renamedClause) },
 		},
 		{
+			name: "a warm run whose new name enters the package scope of a kept file",
+			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
+				return built(tb, scopeLowering(l, func() (output.Sink, error) { return output.NewMem(), nil }))
+			},
+			before: func() fstest.MapFS { return scopeTree() },
+			after:  func() fstest.MapFS { return scopeTree(cacheTypeLine) },
+		},
+		{
 			name: "a warm run whose edit changes the winner of a fact that an invocation read",
 			build: func(tb assert.TB, l ledger.Ledger) *workspace.Workspace {
 				return built(tb, warmBuilder(tb, l, &warmKeys{}))

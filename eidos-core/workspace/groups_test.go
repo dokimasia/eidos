@@ -154,6 +154,32 @@ func TestGroups(t *testing.T) {
 					"the backend writes the name that the cache package declares into the file")
 			})
 
+		t.Run("records the package edge of a file that keeps its imports off the names of its package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				mem := ledger.NewMem()
+				w := built(t, scopeBuilder(mem, workspace.Plan{
+					Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)},
+				}, func() (output.Sink, error) { return output.NewMem(), nil }))
+				sealedRun(t, w, workspace.Input{Tree: warmTree(rowLine)})
+				assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.PackageEdge(storePackage),
+					"a declaration of a source file of the package can take the name of an import of the file")
+			})
+
+		t.Run("records the package scope edge of a file that keeps its imports off the names of its package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				mem := ledger.NewMem()
+				w := built(t, scopeBuilder(mem, workspace.Plan{
+					Name: "plan", Generators: []plugin.Generator{mirror(mirrorID)},
+				}, func() (output.Sink, error) { return output.NewMem(), nil }))
+				sealedRun(t, w, workspace.Input{Tree: warmTree(rowLine)})
+				assert.Contains(t, groupOf(t, mem, mirroredFile).Reads, state.PackageScopeEdge("plan", storePackage),
+					"a declaration of another file of the plan can take the name of an import of the file")
+			})
+
 		t.Run("records the route of the unit of a file", func(t *testing.T) {
 			t.Parallel()
 

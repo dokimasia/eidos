@@ -916,22 +916,28 @@ const (
 	// newPassAllocs is one composition of the fixture language. Most of
 	// them are text/template's parse trees of the default file skeleton
 	// and the two kind templates, and the function maps of the render's
-	// builtins each template binds.
-	newPassAllocs = 143
+	// builtins each template binds. The fixture language has no
+	// vocabulary, so the nine builtins pass the eight entries that one
+	// group of a Go map takes, and each map of each template grows a
+	// second group.
+	newPassAllocs = 167
 	// refusedKindsAllocs is one copy of a refusal map of one entry: the
 	// map and its group.
 	refusedKindsAllocs = 2
-	// renderOneAllocs is one Render of one file of one struct: 27 for
-	// the clone of the parsed templates and the eight builtins that bind
-	// them to the file's import set, about 22 for the worker, its frame
-	// and its import set, and about 23 for the file: the template's run
-	// through reflection, its buffers and the rendered bytes.
-	renderOneAllocs = 72
+	// renderOneAllocs is one Render of one file of one struct: about 49
+	// for the clone of the parsed templates and the nine builtins that bind
+	// them to the file's import set, about 22 for the worker, its frame and
+	// its import set, and about 23 for the file: the template's run through
+	// reflection, its buffers and the rendered bytes. The fixture language
+	// has no vocabulary, so the nine builtins pass the eight entries of one
+	// group of a Go map, and the maps of each clone grow a second group.
+	renderOneAllocs = 94
 	// renderStructsAllocs is one render of 1,000 files of 200 structs:
-	// 613,293 on average with a standard deviation of 6. Each struct's
-	// template run through reflection allocates 3, and each file about
-	// 13 for its buffers, its import set and its bytes.
-	renderStructsAllocs = 613_293 + 8*6
+	// 613,361 with four workers, and a standard deviation of 6. Each
+	// struct's template run through reflection allocates 3, each file about
+	// 13 for its buffers, its import set and its bytes, and each worker
+	// about 49 for the clones of the templates and the nine builtins.
+	renderStructsAllocs = 613_361 + 8*6
 	// renderOrderedAllocs is the same render in a language that orders
 	// the declarations of a file: 613,364 on average over 8 runs with a
 	// standard deviation of 11. Each of the four workers grows the memory
