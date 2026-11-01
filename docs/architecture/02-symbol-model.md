@@ -176,6 +176,15 @@ type parameters, as two overloads of `createElement` in the DOM do. Each
 such overload spells its type parameters in brackets before its
 parameters, with `:` before each bound and `=` before a default.
 
+An embed is a member of its host. The embed of a struct is a field
+that the language promotes under the bare name of the embedded type,
+and the embed has that name. The embed of an interface adds the
+methods of the embedded type to the interface, and two embeds of one
+interface can have one bare name, as `a.Source` and `b.Source` do. Its
+name is the spelling of its whole reference, with the qualifier and
+with the type arguments in angle brackets, as a discriminator spells a
+type.
+
 Identity survives reparsing. A reloaded file yields symbols with the
 same identities wherever the declarations did not change. Everything
 that refers to symbols across time keys on it: read sets and
