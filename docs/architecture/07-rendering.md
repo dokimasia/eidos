@@ -120,9 +120,10 @@ data of each record. It writes the declarations of the file through the
 language's funcmap, and it places the body of a record through the
 `body` builtin. The language's file skeleton then frames the output
 with the header and the imports that the template recorded through
-`use`. A file that mixes the units of a claimed family with other units
-is withheld under `MixedClaim`. This is the presentation path, for
-output whose shape belongs to the plugin rather than to the language.
+`use` or bound through `import`. A file that mixes the units of a
+claimed family with other units is withheld under `MixedClaim`. This is
+the presentation path, for output whose shape belongs to the plugin
+rather than to the language.
 
 **Slot contents always render through the backend's kind
 machinery**, whichever mode the host uses. So a cross-cutting
@@ -430,6 +431,23 @@ flow runs the same way in every satellite:
    has not rendered yet. While the pass spells a body, `Body` returns its
    callable and the declaration that places it. `Has` reads back an
    entry that the vocabulary recorded for the file.
+
+   A language whose files of one package share one scope, as the package
+   block of Go is, declares `PackageScope`. The pass then computes the
+   scope of each package once per render: the names that the source
+   files of the package declare, the names of its other routed files and
+   the names of its kept files. `Declarations` of the render context
+   passes the path and the declarations of each source file as symbols.
+   `SetPackageScope` gives the set of each file the scope of its package.
+   No import binds a name of the scope. A rendered file that binds an
+   import reports `PackageScope`. A warm run renders such a file again
+   after a name enters or leaves the scope of its package.
+
+   The builtin `use` binds the name that the template states. The render
+   refuses the file where another binding or declaration takes that name.
+   The builtin `import` binds the path under a name that is free in the
+   file and returns the name. The template then refers to the import as
+   `{{$pkg := import "path"}}` and `{{$pkg}}.Name`.
 6. **Finalise** through the language formatter. A format failure is
    a positioned Error carrying the file it could not format, and the
    pass continues with the remaining files. The sink never receives

@@ -168,7 +168,14 @@ units, and what its settle, routing and render read. Those reads are
 the name entries its references read across files of the plan, the
 source scopes of the names of its files, each origin's name override,
 the residents of each directory a target placed one of its files in,
-the files of the package of each per-package unit, and the modules.
+the files of the package of each per-package unit, and the modules. A
+file whose imports keep off the names of its package
+([07-rendering.md](07-rendering.md)) adds the package edge of its
+package and the package scope edge of the plan and the package. A round
+makes the edge `state.PackageScopeEdge` of a package dirty when a
+file-level name of the plan enters or leaves the package, so a kept file
+renders again when another file of the plan takes the name of one of its
+imports.
 
 An invocation that previews a route through `Out.Package` reads the
 same routing edges for the file of the preview: the declaration edges

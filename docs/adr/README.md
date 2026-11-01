@@ -136,3 +136,4 @@ way.
 | [0115](0115-a-protoc-plugin-runs-an-eidos-composition.md) | A protoc plugin runs an eidos composition | Accepted |
 | [0116](0116-a-protoc-plugin-sets-the-layout-of-a-plan-and-generates-every-file-in-one-call.md) | A protoc plugin sets the layout of a plan and generates every file in one call | Accepted |
 | [0117](0117-a-protobuf-schema-written-back-compiles-to-the-descriptors-of-its-source.md) | A protobuf schema written back compiles to the descriptors of its source | Accepted |
+| [0118](0118-the-imports-of-a-file-keep-off-the-names-of-its-package.md) | The imports of a file keep off the names of its package | Accepted |
