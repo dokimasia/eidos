@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/lang
 
+## 0.4.3
+
+### Patch Changes
+
+- Updated dependencies [a768eb9, ff6382c, 4f1656f, f9a7c37, 96c1299, b1d13a4, ff21053, 24a7537, 23860b0]
+  - go.dokimi.dev/eidos/core@0.13.0
+  - go.dokimi.dev/eidos/sdk@0.9.0
+
 ## 0.4.2
 
 ### Patch Changes

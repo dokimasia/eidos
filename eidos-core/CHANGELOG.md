@@ -1,5 +1,27 @@
 # go.dokimi.dev/eidos/core
 
+## 0.13.0
+
+### Minor Changes
+
+- a768eb9: Add the template builtin `import`, which binds an import under a free name and returns the name.
+- ff6382c: **Breaking:** Add `Interface.Constraints` with the fact `Constraints`.
+- a768eb9: Add `backendtest.Fixture.Declarations` for the source declarations that the render of a fixture reads.
+- a768eb9: Add `render.Language.PackageScope` and `backend.Builder.PackageScope` to keep the imports of a file off the names that the other files of its package declare.
+- a768eb9: Add `plugin.RenderedFile.PackageScope` to mark a file whose imports keep off the names of its package.
+- 24a7537: **Breaking:** Add `MemberSep` to `rules.Resolver` for the separator of a method reference of a language.
+- a768eb9: Add `plugin.RenderContext.Declarations` and `plugin.RenderContext.Others` for the source declarations and the kept names that a render reads.
+- 24a7537: Resolve a method reference in a callable param, such as `store.Writer.Commit`, to the method of a type in scope.
+- a768eb9: Add `render.ImportSet.SetPackageScope` for the names that no import of a file binds.
+- ff6382c: Add the line `<interface> constrains <spelling>` to the surface of a package for each constraint element of an interface.
+
+### Patch Changes
+
+- ff21053: Fix `plugintest.Loaded` to index each directive of a fixture under its name as written.
+- 23860b0: Fix the load to name the embed of an interface by its whole reference, so an interface keeps two embeds of one bare name.
+- a768eb9: Render a file again in a warm run after a name of the scope of its package appears or disappears.
+- ff21053: Fix `plugintest.Fixture.Validated` to attach no raw instance to a subject that has raw instances from `Fixture.Attach`.
+
 ## 0.12.0
 
 ### Minor Changes

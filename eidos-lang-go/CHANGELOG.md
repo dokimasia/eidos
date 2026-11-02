@@ -1,5 +1,23 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.7.0
+
+### Minor Changes
+
+- 5969c73: Import a package under a free name where another file of the package of a generated file declares its name.
+- e21df7d: Resolve a method expression such as `store.Writer.Commit` in a callable reference.
+- 06153ae: **Breaking:** Lower the constraint elements of an interface to `Interface.Constraints` in place of the key `golang.typeSet`.
+- 06153ae: Write the constraint elements of an interface in the Go backend.
+
+### Patch Changes
+
+- 8d191b8: Report false from ZeroValue for a reference whose aliases form a cycle, in place of a stack overflow.
+- 06153ae: Read the terms of `Interface.Constraints` for the witness of a type parameter.
+- Updated dependencies [a768eb9, ff6382c, 4f1656f, f9a7c37, 96c1299, b1d13a4, ff21053, 24a7537, 23860b0]
+  - go.dokimi.dev/eidos/core@0.13.0
+  - go.dokimi.dev/eidos/sdk@0.9.0
+  - go.dokimi.dev/eidos/lang@0.4.3
+
 ## 0.6.3
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # go.dokimi.dev/eidos/protoc
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [a768eb9, 8d191b8, ff6382c, 4f1656f, f9a7c37, 96c1299, b1d13a4, 5969c73, e21df7d, ff21053, 06153ae, 24a7537, 23860b0, 359e23c]
+  - go.dokimi.dev/eidos/core@0.13.0
+  - go.dokimi.dev/eidos/lang/go@0.7.0
+  - go.dokimi.dev/eidos/sdk@0.9.0
+  - go.dokimi.dev/eidos/lang/protobuf@0.3.1
+  - go.dokimi.dev/eidos/lang@0.4.3
+
 ## 0.1.0
 
 ### Minor Changes
