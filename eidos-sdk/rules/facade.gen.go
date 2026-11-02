@@ -478,8 +478,12 @@ type ResolveError = core.ResolveError
 // resolution kind selects the declaration that the walk looks for:
 //
 //   - A callable resolves among the methods of the type of a method
-//     subject, which the method calls through its receiver, and then to a
-//     function in scope.
+//     subject, which the method calls through its receiver. It then
+//     resolves through a method reference to a method of a type in scope,
+//     and then to a function in scope. A method reference joins the
+//     spelling of a type in scope and the name of its method with
+//     [Resolver.MemberSep], as store.Writer.Commit does in Go. The type
+//     resolves through a chain of transparent aliases.
 //   - A package variable resolves to a constant or a variable in scope.
 //   - A type resolves to a declaration in scope, and then to the
 //     placeholder of the language.
@@ -504,8 +508,8 @@ type ResolveError = core.ResolveError
 // Resolve allocates what the resolver allocates. Its binding of the
 // member walk has no memo, so a resolution in scope allocates no object of
 // its own. A member resolution also allocates the list of the types that
-// it searches and what the member walk allocates. A refusal allocates its
-// error.
+// it searches and what the member walk allocates. A method reference
+// allocates what the member walk allocates. A refusal allocates its error.
 func Resolve(r Resolver, src SourceRules, v View, scope Scope, name string, kind directive.ResolutionKind) (symbol.Symbol, error) {
 	return core.Resolve(r, src, v, scope, name, kind)
 }

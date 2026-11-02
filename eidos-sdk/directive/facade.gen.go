@@ -340,9 +340,10 @@ type ResolutionKind = core.ResolutionKind
 const (
 	// ResolveNone marks a non-reference param.
 	ResolveNone = core.ResolveNone
-	// ResolveCallableInScope names a callable the subject can see: for
-	// a method, a method of the type it belongs to before a function in
-	// scope.
+	// ResolveCallableInScope names a callable the subject can see. For a
+	// method, a method of the type it belongs to comes first. A method
+	// reference to a method of a type in scope, such as Store.Get in Go,
+	// comes before a function in scope.
 	ResolveCallableInScope = core.ResolveCallableInScope
 	// ResolvePackageVar names a package-level variable.
 	ResolvePackageVar = core.ResolvePackageVar
