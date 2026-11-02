@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.4.0
+
+### Minor Changes
+
+- 8f3aeb5: Add the mixin `returns-on-error` for a call that returns a field of its request beside every error.
+
 ## 0.3.0
 
 ### Minor Changes
