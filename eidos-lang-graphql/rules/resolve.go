@@ -31,6 +31,8 @@ const packageSep = "/"
 //     and its own name, joined by dots.
 //   - A built-in scalar resolves to a stand-in with its name and no
 //     package, because no declaration declares it.
+//   - A callable spelled as a schema coordinate, as Query.search, resolves
+//     to the field with arguments of the type.
 //   - Every member of GraphQL is public, so a subject can use every member.
 //   - The value of a nullable type is a value of the type.
 //
@@ -121,6 +123,10 @@ func (resolver) Value(ref *node.TypeRef, _ rules.View) *node.TypeRef {
 	}
 	return ref
 }
+
+// MemberSep returns the dot of a schema coordinate of GraphQL, which
+// separates a type from its field, as in Query.search.
+func (resolver) MemberSep() string { return symbol.OwnerSep }
 
 // lookup returns the declaration of the package pkg with the owner chain,
 // the name and the first of the kinds that the view contains. It reports

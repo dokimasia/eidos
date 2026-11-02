@@ -141,6 +141,24 @@ func TestResolve(t *testing.T) {
 				kind: directive.ResolveCallableInScope, want: newID,
 			},
 			{
+				name:    "resolves a method at the level of an instance through the path of its type",
+				subject: openID,
+				give:    "Memory::len",
+				kind:    directive.ResolveCallableInScope,
+				want: symbol.Identity{
+					Lang: rust.Lang, Package: storePkg, Owner: "Memory", Name: "len", Kind: symbol.KindMethod,
+				},
+			},
+			{
+				name:    "resolves a method of a trait through the path of the trait",
+				subject: openID,
+				give:    "Named::name",
+				kind:    directive.ResolveCallableInScope,
+				want: symbol.Identity{
+					Lang: rust.Lang, Package: storePkg, Owner: "Named", Name: "name", Kind: symbol.KindMethod,
+				},
+			},
+			{
 				name: "resolves a type of the standard library to a stand-in", subject: storeID, give: "io::Error",
 				kind: directive.ResolveTypeInScope,
 				want: symbol.Identity{Lang: rust.Lang, Package: "std/io", Name: errorName, Kind: symbol.KindAlias},
@@ -355,14 +373,7 @@ func TestResolve(t *testing.T) {
 				subject: openID,
 				give:    "Memory::missing",
 				kind:    directive.ResolveCallableInScope,
-				want:    "rust: no Function named Memory::missing",
-			},
-			{
-				name:    "returns an error for an associated method at the level of an instance",
-				subject: openID,
-				give:    "Memory::len",
-				kind:    directive.ResolveCallableInScope,
-				want:    "rust: no Function named Memory::len",
+				want:    "rust: " + memoryID.String() + " has no method named missing that " + openID.String() + " can use",
 			},
 			{
 				name: "returns an error for a path whose prefix names no type", subject: openID, give: "nothing::open",

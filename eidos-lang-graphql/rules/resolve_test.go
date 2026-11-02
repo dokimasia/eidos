@@ -128,6 +128,13 @@ func TestResolve(t *testing.T) {
 				},
 			},
 			{
+				name:    "returns the field with arguments that a schema coordinate names",
+				subject: bookID, give: "Query.search", kind: directive.ResolveCallableInScope,
+				want: symbol.Identity{
+					Lang: graphql.Lang, Package: shopPkg, Owner: "Query", Name: "search", Kind: symbol.KindMethod,
+				},
+			},
+			{
 				name:    "returns a field of the subject",
 				subject: bookID, give: "title", kind: directive.ResolveValueField, want: titleID,
 			},
@@ -219,6 +226,11 @@ func TestResolve(t *testing.T) {
 			{
 				name:    "returns an error for a package variable, which GraphQL does not declare",
 				subject: bookID, give: "limit", kind: directive.ResolvePackageVar, want: "no Constant or Variable",
+			},
+			{
+				name:    "returns an error for a schema coordinate of a field without arguments",
+				subject: bookID, give: "Book.title", kind: directive.ResolveCallableInScope,
+				want: "has no method named title",
 			},
 			{
 				name:    "returns an error for a field that the type does not declare",

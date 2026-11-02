@@ -69,8 +69,10 @@ const chainSize = 8
 // A member resolves only where the subject can use it. A public member
 // resolves on every type. A protected member resolves on the own type of
 // the subject, and a private member only when the own type of the subject
-// declares it. Resolve refuses a name that is not a TypeScript name or
-// path. A refusal is a *[rules.ResolveError].
+// declares it. A callable spelled as a type and a method joined by a dot,
+// as Repo.get, resolves to the method of the type before the scope order
+// looks for a function of a namespace. Resolve refuses a name that is not a
+// TypeScript name or path. A refusal is a *[rules.ResolveError].
 //
 // # Allocation contract
 //
@@ -172,6 +174,10 @@ func (resolver) Value(ref *node.TypeRef, v rules.View) *node.TypeRef {
 	}
 	return t
 }
+
+// MemberSep returns the dot, which separates a class or an interface from
+// its method in a reference of TypeScript, as in Repo.get.
+func (resolver) MemberSep() string { return pathSep }
 
 // segments splits a path of names into its first name, the namespace
 // path between its first and its last name as a package path, and its

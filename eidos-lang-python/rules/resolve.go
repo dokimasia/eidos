@@ -35,9 +35,12 @@ const exportDepth = 8
 //
 // A dotted name resolves to a member of the class that its first name names,
 // and through a module that an import binds its first name to, to the name
-// in the longest module of its names. A name that a module publishes and
-// does not declare resolves through the imports and the star imports of the
-// module, as a module that imports the name reads it at run time.
+// in the longest module of its names. A callable of a dotted name, as
+// Account.limit, resolves to the method of the class that its other names
+// name before a function of a module of its names. A name that a module
+// publishes and does not declare resolves through the imports and the star
+// imports of the module, as a module that imports the name reads it at run
+// time.
 //
 // A type of builtins without a declaration in the view, such as int where
 // the load reads no typeshed, resolves to a stand-in with its name in
@@ -154,6 +157,10 @@ func (resolver) Value(ref *node.TypeRef, v rules.View) *node.TypeRef {
 	}
 	return t
 }
+
+// MemberSep returns the dot, which separates a class from its method in a
+// dotted name of Python, as in Account.limit.
+func (resolver) MemberSep() string { return python.ModuleSep }
 
 // finder looks up the declaration of one resolution through a view.
 type finder struct {

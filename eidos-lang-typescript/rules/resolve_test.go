@@ -310,6 +310,17 @@ func TestResolve(t *testing.T) {
 			})
 		}
 
+		t.Run("resolves the method of a class in scope that a method reference names", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			scope := rules.Scope{Subject: load, File: f.file(t, aPkg, aFile)}
+			got, err := tsrules.New().Resolve(scope, "Repo.get", directive.ResolveCallableInScope, f.view)
+			assert.NoError(t, err, "the method reference resolves")
+			decl, _ := got.(node.Declaration)
+			assert.Equal(t, decl.Identity(), repoGet, "Resolve returns the method get of Repo")
+		})
+
 		members := []struct {
 			name    string
 			kind    directive.ResolutionKind
@@ -434,6 +445,11 @@ func TestResolve(t *testing.T) {
 				name: "refuses a callable that neither the type nor the scope declares",
 				kind: directive.ResolveCallableInScope, give: "nope", subject: helper,
 				want: "has no method named nope, and no function named nope is in scope",
+			},
+			{
+				name: "refuses a method reference to a protected method from a function",
+				kind: directive.ResolveCallableInScope, give: "Derived.guard", subject: load,
+				want: "has no method named guard that",
 			},
 			{
 				name: "refuses a private field of a type that the subject inherits", kind: directive.ResolveValueField,

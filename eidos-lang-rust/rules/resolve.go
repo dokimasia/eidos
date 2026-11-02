@@ -49,8 +49,9 @@ var typeKinds = []symbol.Kind{
 //  3. Any other path opens at a child module of the module, at the target of
 //     the use binding of its first segment, or at an external crate.
 //  4. A path to an associated item, as Store::Item, is an item of the type
-//     that its other segments name. A function of a path is also an
-//     associated function of the type, as Store::open.
+//     that its other segments name. A callable of a path is a method of the
+//     type, at the level of the type or of an instance, as Store::open and
+//     Store::get, before a function of a module of the path.
 //  5. Self is the type of the subject: the type that declares a member, and
 //     a type itself. A path from Self, as Self::new, is a path to an
 //     associated item of that type.
@@ -192,6 +193,10 @@ func (rs resolver) Value(ref *node.TypeRef, v rules.View) *node.TypeRef {
 	}
 	return nil
 }
+
+// MemberSep returns ::, which separates the type and the method of a path
+// to a method of Rust, as in Store::get.
+func (resolver) MemberSep() string { return pathSep }
 
 // finder looks up the declaration of one resolution through a view.
 type finder struct {

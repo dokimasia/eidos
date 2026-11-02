@@ -279,6 +279,13 @@ func TestResolve(t *testing.T) {
 				},
 			},
 			{
+				name:    "resolves the method of a class in scope that a method reference names",
+				kind:    directive.ResolveCallableInScope,
+				subject: idFieldID,
+				give:    "Account.limit",
+				want:    limitGetID,
+			},
+			{
 				name:    "resolves a function that a star import publishes",
 				kind:    directive.ResolveCallableInScope,
 				subject: fetchID,
@@ -410,11 +417,11 @@ func TestResolve(t *testing.T) {
 				want:    "named Callable is in scope",
 			},
 			{
-				name:    "refuses a function of an owner chain",
+				name:    "refuses a method reference to a method that the class does not declare",
 				kind:    directive.ResolveCallableInScope,
 				subject: idFieldID,
-				give:    "Account.limit",
-				want:    "no Function named Account.limit is in scope",
+				give:    "Account.nope",
+				want:    "Account has no method named nope that",
 			},
 			{
 				name:    "refuses a function of a star import of a module outside the view",
