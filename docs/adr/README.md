@@ -139,3 +139,4 @@ way.
 | [0118](0118-the-imports-of-a-file-keep-off-the-names-of-its-package.md) | The imports of a file keep off the names of its package | Accepted |
 | [0119](0119-the-embed-of-an-interface-is-named-by-its-whole-reference.md) | The embed of an interface is named by its whole reference | Accepted |
 | [0120](0120-an-interface-states-its-constraint-elements-as-type-references.md) | An interface states its constraint elements as type references | Accepted |
+| [0121](0121-a-callable-reference-can-refer-to-a-method-of-a-type-in-scope.md) | A callable reference can refer to a method of a type in scope | Accepted |

@@ -228,6 +228,17 @@ scope at a declared resolution kind, which is one of
 callable-in-scope, package-var, type-in-scope, value-field,
 host-param or member-on-handle.
 
+A callable in scope resolves in this order:
+
+1. a method of the type of a method subject
+2. a method of a type in scope, through a method reference
+3. a function in scope
+
+A method reference joins the spelling of a type in scope and the name
+of its method with the member separator of the language. Go, TypeScript
+and Python write `Store.Get`, GraphQL writes the schema coordinate
+`Query.search`, and Rust writes `Store::get`.
+
 Directive params bind through it ([05-directives.md](05-directives.md)),
 classification resolves against it
 ([12-shape-catalog.md](12-shape-catalog.md)), and the kernel's Link
