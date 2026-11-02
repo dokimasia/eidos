@@ -40,7 +40,7 @@ way.
 | [0019](0019-a-family-claims-its-files-through-a-template.md) | A family claims its files through a file template | Accepted, superseded in part by [0099](0099-a-reference-with-a-target-resolves-to-a-record.md) |
 | [0020](0020-the-interface-rules-account-for-properties.md) | The interface rules account for properties | Accepted |
 | [0021](0021-the-receiver-avoids-the-names-of-its-signature.md) | The receiver of an implementation avoids the names of its signature | Accepted |
-| [0022](0022-a-rules-implementation-reads-a-named-key-through-fact.md) | A rules implementation reads a named key through rules.Fact | Accepted |
+| [0022](0022-a-rules-implementation-reads-a-named-key-through-fact.md) | A rules implementation reads a named key through rules.Fact | Accepted, superseded in part by [0120](0120-an-interface-states-its-constraint-elements-as-type-references.md) |
 | [0023](0023-a-template-passes-a-signature-slot-by-address.md) | A template passes a signature slot to its helper by address | Accepted |
 | [0024](0024-the-shared-helpers-keep-the-departures-of-their-implementation.md) | The shared helpers keep the departures of their implementation | Accepted |
 | [0025](0025-the-kit-mechanisms-keep-the-departures-of-their-implementation.md) | The kit mechanisms keep the departures of their implementation | Accepted |
@@ -138,3 +138,4 @@ way.
 | [0117](0117-a-protobuf-schema-written-back-compiles-to-the-descriptors-of-its-source.md) | A protobuf schema written back compiles to the descriptors of its source | Accepted |
 | [0118](0118-the-imports-of-a-file-keep-off-the-names-of-its-package.md) | The imports of a file keep off the names of its package | Accepted |
 | [0119](0119-the-embed-of-an-interface-is-named-by-its-whole-reference.md) | The embed of an interface is named by its whole reference | Accepted |
+| [0120](0120-an-interface-states-its-constraint-elements-as-type-references.md) | An interface states its constraint elements as type references | Accepted |

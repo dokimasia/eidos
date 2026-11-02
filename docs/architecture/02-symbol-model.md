@@ -155,6 +155,7 @@ each addition:
 | `Enum.Underlying` | the representation that an enum declares: the target of Go's `type Level uint8` and the integer of Rust's `#[repr(u8)]`. TypeScript, protobuf and Java leave it nil |
 | `Enum.Methods` | Java enums are classes with members. Most languages leave it empty |
 | `Enum.Implements` / `Sum.Implements` | the contracts of an enum or a sum: the interfaces of a Java enum, and the traits that the trait impls of Rust implement for an enum or a data enum. Every other language leaves them empty |
+| `Interface.Constraints` | the constraint elements of a Go interface in the order of the source: a union such as `~int \| ~float64` with a child for each term, or the reference of a type term such as `[]byte`. Every other language leaves it empty |
 | `Package.Path` | hierarchical segments. Rust `mod` nesting, TypeScript namespaces and a proto package's dotted name map into them, and the original spelling stays in language metadata |
 
 ## Symbol identity

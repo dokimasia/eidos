@@ -561,13 +561,17 @@ classifies a shape by its form, such as `DeriveSamples`, reads an
 unknown shape. The spoke of a target spells the shape at every depth of
 a type ([10-cross-language.md](10-cross-language.md)).
 
-Witnesses are usually authored rather than derived. A language can
-derive one only where the constraint's type set is knowable without
-loading the package that declares it, which in Go means `any` and
-`comparable` and nothing else. So `Witnesses` reads the
-`gen.witness` stamps first, and derivation is the narrow fallback.
+Witnesses are usually authored rather than derived, so `Witnesses`
+reads the `gen.witness` stamps first, and derivation is the narrow
+fallback. A language derives a witness only where the view contains the
+type set of the bound. Go derives `int` where the bound is:
+
+- absent, `any` or `comparable`
+- an alias of a bound that admits `int`
+- an interface of the view without methods whose constraint elements
+  each have `int` as the type or as a term of a union
 
 **The unprojectable goes to metadata**: `rust.lifetimeParams`,
-`golang.typeSet`, `typescript.conditionalType`, `kotlin.reified`.
+`golang.cgo`, `typescript.conditionalType`, `kotlin.reified`.
 Anyone may read them, and in practice that language's bindings do,
 which is Tier 3 doing its job.

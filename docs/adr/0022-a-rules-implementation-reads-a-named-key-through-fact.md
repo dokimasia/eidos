@@ -4,7 +4,7 @@ title: A rules implementation reads a named key through rules.Fact
 status: Accepted
 date: 2026-10-12
 supersedes: none
-superseded-by: none
+superseded-by: ADR-0120
 rfc: RFC-0030
 ---
 

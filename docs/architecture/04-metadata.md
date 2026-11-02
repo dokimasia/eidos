@@ -210,7 +210,7 @@ preserves but the projection cannot hold
 
 Frontends stamp their own namespace: lifted annotations under
 `java.annotation.*`, plus `rust.lifetimeParams`,
-`golang.typeSet`, `java.nullability=unknown`,
+`golang.cgo`, `java.nullability=unknown`,
 `kotlin.companion`, and the original spelling behind every
 normalization, such as visibility and package paths.
 
