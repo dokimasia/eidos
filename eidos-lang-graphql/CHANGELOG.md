@@ -1,5 +1,19 @@
 # go.dokimi.dev/eidos/lang/graphql
 
+## 0.2.0
+
+### Minor Changes
+
+- e6ada4c: Resolve the schema coordinate of a field with arguments, such as `Query.search`, in a callable reference.
+
+### Patch Changes
+
+- 359e23c: Refuse the constraint elements of an interface.
+- Updated dependencies [a768eb9, ff6382c, 4f1656f, f9a7c37, 96c1299, b1d13a4, ff21053, 24a7537, 23860b0]
+  - go.dokimi.dev/eidos/core@0.13.0
+  - go.dokimi.dev/eidos/sdk@0.9.0
+  - go.dokimi.dev/eidos/lang@0.4.3
+
 ## 0.1.10
 
 ### Patch Changes

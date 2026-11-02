@@ -1,5 +1,19 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.9.0
+
+### Minor Changes
+
+- 4f1656f: Re-export `symbol.FactConstraints`.
+- 96c1299: Add `render.BuiltinImport` and the package scope of an import set to the facade.
+- b1d13a4: **Breaking:** Add `MemberSep` to `rules.Resolver` of the SDK.
+
+### Patch Changes
+
+- f9a7c37: Regenerate the facade of `plugintest.Loaded` for the directive instances that a fixture attaches.
+- Updated dependencies [a768eb9, ff6382c, ff21053, 24a7537, 23860b0]
+  - go.dokimi.dev/eidos/core@0.13.0
+
 ## 0.8.0
 
 ### Minor Changes

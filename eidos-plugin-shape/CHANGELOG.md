@@ -1,5 +1,20 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.3.0
+
+### Minor Changes
+
+- f557ecc: Add the documentary mixin `runs-until-cancelled` for a callable that runs until its context ends.
+- dbae70b: Add OfDeclaration, which returns every classification of another declaration than the subject of a match, such as a method of a matched interface.
+- f557ecc: Add the param `observe` of the mixin `bounded` for the callable that reads the use of the resource.
+- be6064c: Add the param `observe` of the mixin `conservative` for the callable that returns the total of the quantity.
+
+### Patch Changes
+
+- Updated dependencies [a768eb9, ff6382c, 4f1656f, f9a7c37, 96c1299, b1d13a4, ff21053, 24a7537, 23860b0]
+  - go.dokimi.dev/eidos/core@0.13.0
+  - go.dokimi.dev/eidos/sdk@0.9.0
+
 ## 0.2.0
 
 ### Minor Changes
