@@ -51,6 +51,11 @@ type Resolver interface {
 	// the type ref, such as the target of a pointer. It returns nil for a
 	// reference without such a type.
 	Value(ref *node.TypeRef, v View) *node.TypeRef
+	// MemberSep returns the separator between the spelling of a type and
+	// the name of one of its members in a method reference of the
+	// language, such as the dot of Store.Get in Go and the :: of
+	// Store::get in Rust.
+	MemberSep() string
 }
 
 // ResolveError is the refusal of a resolution. Its text starts with the
@@ -70,8 +75,12 @@ func (e *ResolveError) Error() string { return string(e.Lang) + ": " + e.Msg }
 // resolution kind selects the declaration that the walk looks for:
 //
 //   - A callable resolves among the methods of the type of a method
-//     subject, which the method calls through its receiver, and then to a
-//     function in scope.
+//     subject, which the method calls through its receiver. It then
+//     resolves through a method reference to a method of a type in scope,
+//     and then to a function in scope. A method reference joins the
+//     spelling of a type in scope and the name of its method with
+//     [Resolver.MemberSep], as store.Writer.Commit does in Go. The type
+//     resolves through a chain of transparent aliases.
 //   - A package variable resolves to a constant or a variable in scope.
 //   - A type resolves to a declaration in scope, and then to the
 //     placeholder of the language.
@@ -96,8 +105,8 @@ func (e *ResolveError) Error() string { return string(e.Lang) + ": " + e.Msg }
 // Resolve allocates what the resolver allocates. Its binding of the
 // member walk has no memo, so a resolution in scope allocates no object of
 // its own. A member resolution also allocates the list of the types that
-// it searches and what the member walk allocates. A refusal allocates its
-// error.
+// it searches and what the member walk allocates. A method reference
+// allocates what the member walk allocates. A refusal allocates its error.
 func Resolve(
 	r Resolver, src SourceRules, v View, scope Scope, name string, kind directive.ResolutionKind,
 ) (symbol.Symbol, error) {
@@ -135,25 +144,66 @@ func Resolve(
 }
 
 // callableNamed resolves a callable from a subject. For a method subject,
-// a method of the type of the method comes before a function in scope.
-// Every other subject resolves a function in scope alone.
+// a method of the type of the method comes first. A method reference to a
+// method of a type in scope comes next, and a function in scope last. The
+// own type of the subject is the host of a method or a field, and the
+// subject itself for any other subject.
 func callableNamed(r Resolver, b Bound, scope Scope, name string) (symbol.Symbol, error) {
 	sym, _ := b.view.Lookup(scope.Subject)
+	own := scope.Subject
 	method, isMethod := sym.(*node.Method)
-	if !isMethod {
-		return r.InScope(scope, name, functionKinds, b.view)
-	}
-	owner, _ := b.view.Lookup(method.Host)
-	if host, isType := owner.(node.Declaration); isType {
-		if sibling, found := memberNamed(r, b, host, name, method.Host, scope, methodKinds); found {
-			return sibling, nil
+	if isMethod {
+		own = method.Host
+		owner, _ := b.view.Lookup(method.Host)
+		if host, isType := owner.(node.Declaration); isType {
+			if sibling, found := memberNamed(r, b, host, name, method.Host, scope, methodKinds); found {
+				return sibling, nil
+			}
 		}
 	}
-	if fn, err := r.InScope(scope, name, functionKinds, b.view); err == nil {
-		return fn, nil
+	if field, isField := sym.(*node.Field); isField {
+		own = field.Host
 	}
-	return nil, refusal(b, "%s has no method named %s, and no function named %s is in scope of %s",
-		method.Host, name, name, scope.Subject)
+	host, methodName, typed := methodHost(r, b, scope, name)
+	if typed {
+		if m, found := memberNamed(r, b, host, methodName, own, scope, methodKinds); found {
+			return m, nil
+		}
+	}
+	fn, err := r.InScope(scope, name, functionKinds, b.view)
+	switch {
+	case err == nil:
+		return fn, nil
+	case typed:
+		return nil, refusal(b, "%s has no method named %s that %s can use", host.Identity(), methodName, scope.Subject)
+	case isMethod:
+		return nil, refusal(b, "%s has no method named %s, and no function named %s is in scope of %s",
+			method.Host, name, name, scope.Subject)
+	default:
+		return nil, err
+	}
+}
+
+// methodHost resolves the type of a method reference. It resolves the
+// spelling before the last [Resolver.MemberSep] to a type in scope, through
+// a chain of transparent aliases, and returns the declaration of the type
+// and the spelling after the separator, the name of the method. It reports
+// false for a spelling without the separator, for an empty part and for a
+// type that does not resolve to a declaration with members.
+func methodHost(r Resolver, b Bound, scope Scope, name string) (node.Declaration, string, bool) {
+	typeName, methodName, cut := strings.CutLast(name, r.MemberSep())
+	if !cut || typeName == "" || methodName == "" {
+		return nil, "", false
+	}
+	sym, err := r.InScope(scope, typeName, typeKinds, b.view)
+	if err != nil {
+		return nil, "", false
+	}
+	if alias, isAlias := sym.(*node.Alias); isAlias && !alias.Defined && alias.Target != nil {
+		sym, _ = b.view.Lookup(Unaliased(alias.Target, b.view).Target)
+	}
+	host, isType := typeDecl(sym)
+	return host, methodName, isType
 }
 
 // memberIn resolves a name among the effective members of the types that

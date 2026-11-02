@@ -27,16 +27,26 @@ const (
 	maxName     = "Max"
 	putName     = "Put"
 	nextName    = "Next"
+	entryName   = "Entry"
+	closeName   = "close"
 	pageParam   = "page"
 	sizeField   = "size"
 	secretField = "secret"
 	innerField  = "inner"
 )
 
-// valueFieldAllocs is the allocation count of the resolution of a value
-// field on a type subject. The walk allocates the list of the one type that
-// it searches and the members that the member walk returns.
-const valueFieldAllocs = 2
+// memberSep is the separator that [probing] states between the spelling of
+// a type and the name of a member.
+const memberSep = "."
+
+// The allocation counts of a member resolution. The resolution of a value
+// field on a type subject allocates the list of the one type that it
+// searches and the members that the member walk returns. The resolution of
+// a method reference allocates the members of the walk alone.
+const (
+	valueFieldAllocs = 2
+	methodRefAllocs  = 1
+)
 
 // errNotInScope is the error that [probing] returns for a name that the
 // package of the subject does not declare.
@@ -46,8 +56,8 @@ var errNotInScope = errors.New("rules_test: no declaration of the name is in sco
 // declaration in the package of the subject that has the name and one of
 // the kinds. It resolves int to a placeholder, and it takes the element of
 // an optional as the type of its value. No subject can use the member
-// named [secretField], and only the own type can use the member named
-// [innerField].
+// named [secretField], and only the own type can use the members named
+// [innerField] and [closeName]. A dot separates a type from its member.
 type probing struct{}
 
 // InScope returns the first declaration in the package of the subject that
@@ -62,19 +72,22 @@ func (probing) InScope(scope rules.Scope, name string, kinds []symbol.Kind, v ru
 	return nil, errNotInScope
 }
 
-// Usable reports false for the secret member, and for the inner member
-// where own is zero.
+// Usable reports false for the secret member, and for the inner and the
+// close member where own is zero.
 func (probing) Usable(m rules.Member, own symbol.Identity, _ rules.Scope) bool {
 	decl, _ := m.Symbol.(node.Declaration)
 	switch decl.Identity().Name {
 	case secretField:
 		return false
-	case innerField:
+	case innerField, closeName:
 		return !own.IsZero()
 	default:
 		return true
 	}
 }
+
+// MemberSep returns the dot.
+func (probing) MemberSep() string { return memberSep }
 
 // Placeholder returns an alias named int for int, and false for every
 // other name.
@@ -129,6 +142,55 @@ func TestResolve(t *testing.T) {
 				give:    helperName,
 				kind:    directive.ResolveCallableInScope,
 				want:    coretest.ID(resPath, helperName, symbol.KindFunction),
+			},
+			{
+				name:    "resolves a method reference of a function subject to a method of a type in scope",
+				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
+				give:    rowName + memberSep + putName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, putName, symbol.KindMethod),
+			},
+			{
+				name:    "resolves a method reference of a method subject to a method of another type",
+				subject: coretest.MemberID(resPath, pageName, nextName, symbol.KindMethod),
+				give:    rowName + memberSep + getName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, getName, symbol.KindMethod),
+			},
+			{
+				name:    "resolves a method reference through a transparent alias of a type",
+				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
+				give:    entryName + memberSep + getName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, getName, symbol.KindMethod),
+			},
+			{
+				name:    "resolves a method reference before a function of the same spelling",
+				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
+				give:    rowName + memberSep + getName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, getName, symbol.KindMethod),
+			},
+			{
+				name:    "resolves a method reference that only the own type can use from a type subject",
+				subject: coretest.ID(resPath, rowName, symbol.KindStruct),
+				give:    rowName + memberSep + closeName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, closeName, symbol.KindMethod),
+			},
+			{
+				name:    "resolves a method reference that only the own type can use from a method subject",
+				subject: coretest.MemberID(resPath, rowName, getName, symbol.KindMethod),
+				give:    rowName + memberSep + closeName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, closeName, symbol.KindMethod),
+			},
+			{
+				name:    "resolves a method reference that only the own type can use from a field subject",
+				subject: coretest.MemberID(resPath, rowName, countField, symbol.KindField),
+				give:    rowName + memberSep + closeName,
+				kind:    directive.ResolveCallableInScope,
+				want:    coretest.MemberID(resPath, rowName, closeName, symbol.KindMethod),
 			},
 			{
 				name:    "resolves a package variable to a constant in scope",
@@ -253,6 +315,34 @@ func TestResolve(t *testing.T) {
 				want:    "has no method named Ghost",
 			},
 			{
+				name:    "returns an error for a method reference to a method that the type does not declare",
+				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
+				give:    rowName + memberSep + ghostName,
+				kind:    directive.ResolveCallableInScope,
+				want:    "golang:res.Row has no method named Ghost that golang:res.Fetch() can use",
+			},
+			{
+				name:    "returns an error for a method reference to a field",
+				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
+				give:    rowName + memberSep + nameField,
+				kind:    directive.ResolveCallableInScope,
+				want:    "has no method named name",
+			},
+			{
+				name:    "returns an error for a method reference that only the own type can use from another subject",
+				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
+				give:    rowName + memberSep + closeName,
+				kind:    directive.ResolveCallableInScope,
+				want:    "has no method named close",
+			},
+			{
+				name:    "returns an error for a method reference of a method subject whose type is not in scope",
+				subject: coretest.MemberID(resPath, rowName, getName, symbol.KindMethod),
+				give:    ghostName + memberSep + putName,
+				kind:    directive.ResolveCallableInScope,
+				want:    "has no method named Ghost.Put, and no function named Ghost.Put is in scope",
+			},
+			{
 				name:    "returns an error for a member that no searched type declares",
 				subject: coretest.ID(resPath, fetchName, symbol.KindFunction),
 				give:    ghostName,
@@ -355,6 +445,15 @@ func TestResolve(t *testing.T) {
 				assert.ErrorIs(t, err, errNotInScope, "the walk returns the error of the resolver unchanged")
 			})
 		}
+
+		t.Run("returns the error of the resolver for a method reference whose type is not in scope",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, err := resolveIn(t, coretest.ID(resPath, fetchName, symbol.KindFunction),
+					ghostName+memberSep+putName, directive.ResolveCallableInScope)
+				assert.ErrorIs(t, err, errNotInScope, "the walk returns the error of the function in scope unchanged")
+			})
 	})
 
 	t.Run("ResolveError", func(t *testing.T) {
@@ -388,8 +487,8 @@ func BenchmarkResolve(b *testing.B) {
 	benchCalls(b, resolveCalls(b))
 }
 
-// resolveCalls returns a resolution of a package variable and of a value
-// field on a type subject over the resolution fixture.
+// resolveCalls returns a resolution of a package variable, of a value field
+// on a type subject and of a method reference over the resolution fixture.
 func resolveCalls(tb assert.TB) []allocCall {
 	tb.Helper()
 
@@ -397,6 +496,7 @@ func resolveCalls(tb assert.TB) []allocCall {
 	source := scripted()
 	fetch := rules.Scope{Subject: coretest.ID(resPath, fetchName, symbol.KindFunction)}
 	row := rules.Scope{Subject: coretest.ID(resPath, rowName, symbol.KindStruct)}
+	putRef := rowName + memberSep + putName
 	var (
 		sym symbol.Symbol
 		err error
@@ -421,6 +521,18 @@ func resolveCalls(tb assert.TB) []allocCall {
 				assert.Equal(tb, sym.Kind(), symbol.KindField, "Resolve returns the field")
 			},
 		},
+		{
+			name:     "Resolve",
+			caseName: "a method reference",
+			allocs:   methodRefAllocs,
+			call: func() {
+				sym, err = rules.Resolve(probing{}, source, v, fetch, putRef, directive.ResolveCallableInScope)
+			},
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve resolves the method")
+				assert.Equal(tb, sym.Kind(), symbol.KindMethod, "Resolve returns the method")
+			},
+		},
 	}
 }
 
@@ -440,12 +552,13 @@ func resolveIn(
 
 // resolving builds the resolution fixture. It declares these:
 //   - Row, with the fields name, count, secret and inner, and the methods
-//     Get and Put
+//     Get, Put and close
+//   - Entry, a transparent alias of Row
 //   - Page, with the field size and the method Next, which returns a Row
 //   - Fetch, which takes a Page and returns a Row
 //   - Open, which returns an optional Row
 //   - Pure, which takes an int and returns an int
-//   - helper, a function, and Max, a constant
+//   - helper and Row.Get, two functions, and Max, a constant
 func resolving() *node.Package {
 	rowRef := named(resPath, rowName, symbol.KindStruct)
 	row := coretest.Struct(resPath, rowName)
@@ -455,7 +568,11 @@ func resolving() *node.Package {
 		field(resPath, rowName, secretField, builtin(intSpelling)),
 		field(resPath, rowName, innerField, builtin(intSpelling)),
 	}
-	row.Methods = []*node.Method{method(resPath, rowName, getName), method(resPath, rowName, putName)}
+	row.Methods = []*node.Method{
+		method(resPath, rowName, getName), method(resPath, rowName, putName), method(resPath, rowName, closeName),
+	}
+	entry := coretest.Alias(resPath, entryName)
+	entry.Target = named(resPath, rowName, symbol.KindStruct)
 	page := coretest.Struct(resPath, pageName)
 	page.Fields = []*node.Field{field(resPath, pageName, sizeField, builtin(intSpelling))}
 	next := coretest.Method(resPath, pageName, nextName)
@@ -473,6 +590,7 @@ func resolving() *node.Package {
 	pure := coretest.Function(resPath, pureName)
 	pure.Params[0].Type = builtin(intSpelling)
 	pure.Returns[0].Type = builtin(intSpelling)
-	return coretest.Package(resPath, row, page, fetch, open, pure,
-		coretest.Function(resPath, helperName), coretest.Constant(resPath, maxName))
+	return coretest.Package(resPath, row, entry, page, fetch, open, pure,
+		coretest.Function(resPath, helperName), coretest.Function(resPath, rowName+memberSep+getName),
+		coretest.Constant(resPath, maxName))
 }
