@@ -451,6 +451,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("FactConstraints", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("equals the kernel's value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, symbol.FactConstraints, core.FactConstraints, "the facade re-declares the kernel's value")
+		})
+	})
+
 	t.Run("FactDefined", func(t *testing.T) {
 		t.Parallel()
 

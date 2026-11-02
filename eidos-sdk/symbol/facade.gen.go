@@ -76,6 +76,7 @@ const (
 	FactExtends          = core.FactExtends
 	FactPermits          = core.FactPermits
 	FactProperties       = core.FactProperties
+	FactConstraints      = core.FactConstraints
 	FactDefined          = core.FactDefined
 	FactVariance         = core.FactVariance
 	FactConstParam       = core.FactConstParam

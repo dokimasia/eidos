@@ -509,6 +509,12 @@ type Struct = core.Struct
 // subtypes are enumerated, and the enumeration where the language
 // states one.
 //
+// Constraints are the constraint elements of a Go interface, such as
+// the union ~int | ~float64, in the order of the source. A union is a
+// reference of the form Union with a child for each term, and every
+// other element is the reference of its type. An interface of a
+// language without type sets has none.
+//
 // This is the node spelling of the kind.
 type Interface = core.Interface
 
