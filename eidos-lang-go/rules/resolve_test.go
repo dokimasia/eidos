@@ -48,6 +48,15 @@ const (
 	volFile      = "wide/vol/v.go"
 )
 
+// The packages of the tree of the method reference cases, and the file of
+// their subject. The package refs/store declares a function with the name
+// of a method of the interface refs.Store.
+const (
+	refsPath      = "refs"
+	refsStorePath = "refs/store"
+	refsFile      = "refs/a.go"
+)
+
 // The routes of the package scope cases: a directory below the directory of
 // Subject and a directory beside it, each with an external test package.
 const (
@@ -80,6 +89,11 @@ const (
 	// the map of the scope of the subject's file, which imports nothing, the
 	// list of candidates, and the path of the package.
 	routedAllocs = 1 + 1 + 3
+	// methodRefAllocs is a resolution of a method reference to a method of
+	// a type of another package: the scope of the subject's file, whose one
+	// import binds no dot import, three allocations, the list of the
+	// candidates of the type, and the member list of the walk.
+	methodRefAllocs = 3 + 1 + 1
 )
 
 // A directive names a declaration by a spelling, and the Go rules
@@ -746,6 +760,83 @@ func TestResolve(t *testing.T) {
 			assert.HasError(t, err, "the package vis cannot use the field value of dep.Item")
 			assert.Contains(t, err.Error(), visPath, "the refusal names the package of the subject")
 		})
+
+		read := id(refsPath, "Read", symbol.KindStruct)
+		references := []struct {
+			name string
+			give string
+			want symbol.Identity
+		}{
+			{
+				name: "returns the method of a type of the package over a function of an unaliased import of the name",
+				give: "Store.Get", want: memberOf(refsPath, "Store", "Get", symbol.KindMethod),
+			},
+			{
+				name: "returns the method with a pointer receiver that a method reference names",
+				give: "Cache.Put", want: memberOf(refsPath, "Cache", "Put", symbol.KindMethod),
+			},
+			{
+				name: "returns the unexported method of a type of the subject's package",
+				give: "Cache.drop", want: memberOf(refsPath, "Cache", "drop", symbol.KindMethod),
+			},
+			{
+				name: "returns the method of the target of a transparent alias",
+				give: "Entry.Put", want: memberOf(refsPath, "Cache", "Put", symbol.KindMethod),
+			},
+			{
+				name: "returns the method of an interface of the package that a qualifier binds",
+				give: "store.Writer.Commit", want: memberOf(refsStorePath, "Writer", "Commit", symbol.KindMethod),
+			},
+			{
+				name: "returns the method of a type under a full import path",
+				give: refsStorePath + ".Writer.Commit",
+				want: memberOf(refsStorePath, "Writer", "Commit", symbol.KindMethod),
+			},
+			{
+				name: "returns the function of the package that a qualifier binds",
+				give: "store.Get", want: id(refsStorePath, "Get", symbol.KindFunction),
+			},
+		}
+		for _, tt := range references {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := refsOver(t, read)
+				got, err := r.Resolve(f.scope(read), tt.give, directive.ResolveCallableInScope, f.view)
+				assert.NoError(t, err, "the method reference resolves")
+				assert.Equal(t, got.(node.Declaration).Identity(), tt.want, "to the callable that it names")
+			})
+		}
+
+		referencesRefused := []struct {
+			name string
+			give string
+		}{
+			{name: "returns an error for an unexported method of a type of another package", give: "store.Batch.flush"},
+			{name: "returns an error for a method of the struct under a defined type", give: "Local.Put"},
+			{name: "returns an error for a method reference with a decorated receiver", give: "(*Cache).Put"},
+		}
+		for _, tt := range referencesRefused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := refsOver(t, read)
+				_, err := r.Resolve(f.scope(read), tt.give, directive.ResolveCallableInScope, f.view)
+				assert.HasError(t, err, "the method reference names no method that the subject can use")
+			})
+		}
+
+		t.Run("returns an error naming the type of a method reference to a method that it does not declare",
+			func(t *testing.T) {
+				t.Parallel()
+
+				f := refsOver(t, read)
+				_, err := r.Resolve(f.scope(read), "Cache.Ghost", directive.ResolveCallableInScope, f.view)
+				assert.HasError(t, err, "Cache declares no method Ghost")
+				expect.That(t, err.Error()).
+					Contains("refs.Cache", "the refusal names the type").
+					Contains("Ghost", "the refusal names the method")
+			})
 	})
 }
 
@@ -945,13 +1036,79 @@ func newOuter() {}
 	}
 }
 
-// fieldOf returns the identity of a field of a struct in a package.
-func fieldOf(path, host, name string) symbol.Identity {
-	return symbol.Identity{Lang: golang.Lang, Package: path, Owner: host, Name: name, Kind: symbol.KindField}
+// refsOver returns a fixture over the tree of the method reference cases,
+// with a tracked view over it and the file of its subject.
+func refsOver(tb assert.TB, subject symbol.Identity) *fixture {
+	tb.Helper()
+
+	return viewOver(tb, rulestest.Loaded(tb, gofrontend.New(nil), refsTree()), subject, refsFile)
 }
 
-// resolveCalls returns a call of Resolve through the probe and through
-// the member walk.
+// refsTree is the Go source of the method reference cases. Read in a.go
+// imports refs/store without an alias, and refs/store declares the function
+// Get beside the interface Writer and the struct Batch with an unexported
+// method. The package refs declares the interface Store, the struct Cache
+// with a method of each receiver, the transparent alias Entry and the
+// defined type Local over Cache.
+func refsTree() fstest.MapFS {
+	return fstest.MapFS{
+		refsFile: {Data: []byte(`package refs
+
+import "refs/store"
+
+// Read refers to the methods of the types of the cases.
+type Read struct{ W store.Writer }
+`)},
+		"refs/b.go": {Data: []byte(`package refs
+
+// Store reads values.
+type Store interface {
+	Get(key string) (string, error)
+}
+
+// Cache keeps values.
+type Cache struct{}
+
+func (c *Cache) Put(key string) {}
+
+func (c Cache) drop() {}
+
+// Entry is a transparent alias of Cache.
+type Entry = Cache
+
+// Local is a defined type over Cache.
+type Local Cache
+`)},
+		"refs/store/s.go": {Data: []byte(`package store
+
+// Writer writes values.
+type Writer interface {
+	Commit(key, value string) error
+}
+
+// Batch groups writes.
+type Batch struct{}
+
+func (Batch) flush() {}
+
+// Get returns the value under key.
+func Get(key string) string { return key }
+`)},
+	}
+}
+
+// fieldOf returns the identity of a field of a struct in a package.
+func fieldOf(path, host, name string) symbol.Identity {
+	return memberOf(path, host, name, symbol.KindField)
+}
+
+// memberOf returns the identity of a member of a type in a package.
+func memberOf(path, host, name string, kind symbol.Kind) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: path, Owner: host, Name: name, Kind: kind}
+}
+
+// resolveCalls returns a call of Resolve through the probe, through the
+// member walk and through a method reference.
 func resolveCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
@@ -963,11 +1120,24 @@ func resolveCalls(tb testing.TB) []allocCall {
 	wideScope := w.scope(subject)
 	routedScope := w.scope(subject)
 	routedScope.Route = kitDir
+	read := id(refsPath, "Read", symbol.KindStruct)
+	refs := refsOver(tb, read)
+	refScope := refs.scope(read)
 	var (
 		got symbol.Symbol
 		err error
 	)
 	return []allocCall{
+		{
+			name: "Resolve", caseName: "a method reference", allocs: methodRefAllocs,
+			call: func() {
+				got, err = r.Resolve(refScope, "store.Writer.Commit", directive.ResolveCallableInScope, refs.view)
+			},
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve finds Commit")
+				assert.Equal(tb, got.Kind(), symbol.KindMethod, "Resolve returns the method")
+			},
+		},
 		{
 			name: "Resolve", caseName: "a function of the external test package of the route", allocs: routedAllocs,
 			call: func() { got, err = r.Resolve(routedScope, "newKit", directive.ResolveCallableInScope, w.view) },

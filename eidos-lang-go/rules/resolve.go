@@ -59,6 +59,11 @@ const (
 //   - A member resolves only where Go code of the subject's package can
 //     use it, so an unexported member of a type of another package does
 //     not resolve.
+//   - A callable spelled as a method expression, such as Store.Get,
+//     store.Writer.Commit or example.com/shop/store.Writer.Commit, resolves
+//     to the method of the type before the resolver probes for a function.
+//     The method can have a pointer receiver. A decorated receiver, as in
+//     (*Store).Get, is not a Go name.
 //   - A pointer counts as the type that it points to.
 //   - A predeclared type resolves to a stand-in with the name of the type
 //     and no package. A type whose qualifier binds a package that the view
@@ -85,8 +90,10 @@ const (
 // list of candidates. A member resolution allocates the list of the types
 // that it searches and what the member walk allocates. A callable of a
 // method subject resolves among the members first, and through the probe
-// where no member has the name. A stand-in and a refusal allocate
-// themselves.
+// where no member has the name. A callable with a dot probes for the type
+// of a method expression first, so a qualified function probes the file
+// twice. A method expression also allocates what the member walk
+// allocates. A stand-in and a refusal allocate themselves.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -198,6 +205,10 @@ func (resolver) Value(ref *node.TypeRef, _ rules.View) *node.TypeRef {
 	}
 	return ref
 }
+
+// MemberSep returns the dot, which separates the type and the method of a
+// method expression of Go, as in store.Writer.Commit.
+func (resolver) MemberSep() string { return qualifierSep }
 
 // bindingsOf returns the bindings of the imports of a file. For a
 // subject without a file, it returns the zero Bindings, which binds
