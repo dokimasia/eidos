@@ -43,8 +43,8 @@ const (
 const (
 	symbolsEncodeAllocs    = 859
 	symbolsDecodeAllocs    = 910
-	symbolsMarshalAllocs   = 248
-	symbolsUnmarshalAllocs = 181
+	symbolsMarshalAllocs   = 239
+	symbolsUnmarshalAllocs = 191
 )
 
 // symbolsPoolAllocs is the headroom of a JSON ceiling. encoding/json
@@ -515,6 +515,7 @@ func TestSymbols(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Interface with every child the original has", assert.EquateEmpty())
@@ -990,6 +991,7 @@ func symbolsList() Symbols {
 		subject.Types = append(subject.Types, &Interface{})
 		subject.Embeds = append(subject.Embeds, &Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
+		subject.Constraints = append(subject.Constraints, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		out = append(out, subject)
 	}

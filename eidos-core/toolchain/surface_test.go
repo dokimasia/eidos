@@ -43,6 +43,7 @@ Shape implements Measured
 Shape.Area() float
 Shape.Circle(radius float)
 Shape.Empty()
+Store constrains ~int | ~float64
 Store extends Closer
 Store permits Row
 Store.Get(string) string
@@ -275,7 +276,11 @@ func everyKind(path, _ string) []symbol.Symbol {
 		TypeParams: []*node.TypeParam{{Name: "K"}},
 		Extends:    []*node.TypeRef{{Spelling: "Closer"}},
 		Permits:    []*node.TypeRef{{Spelling: "Row"}},
-		Fields:     []*node.Field{{Name: "handle", Visibility: public, Type: &node.TypeRef{Spelling: "Handle"}}},
+		Constraints: []*node.TypeRef{{
+			Spelling: "~int | ~float64", Form: symbol.FormUnion,
+			Elems: []*node.TypeRef{{Spelling: "int"}, {Spelling: "float64"}},
+		}},
+		Fields: []*node.Field{{Name: "handle", Visibility: public, Type: &node.TypeRef{Spelling: "Handle"}}},
 		Methods: []*node.Method{{
 			Name: "Get", Visibility: public,
 			Params:  []*node.Param{{Name: "key", Type: &node.TypeRef{Spelling: "string"}}},

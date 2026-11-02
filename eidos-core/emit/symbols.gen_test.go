@@ -33,10 +33,10 @@ const jsonFixedPoint = "DecodeJSON must return an error or a declaration whose e
 // of 10 runs: encoding/json's encoder and decoder state, boxed values
 // and buffers, and the decoded declarations' own values.
 const (
-	symbolsEncodeAllocs    = 157
-	symbolsDecodeAllocs    = 132
-	symbolsMarshalAllocs   = 159
-	symbolsUnmarshalAllocs = 163
+	symbolsEncodeAllocs    = 162
+	symbolsDecodeAllocs    = 140
+	symbolsMarshalAllocs   = 164
+	symbolsUnmarshalAllocs = 171
 )
 
 // symbolsPoolAllocs is the headroom of a JSON ceiling. encoding/json
@@ -477,6 +477,7 @@ func TestSymbols(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				expect.RoundTrip(t, EncodeJSON, DecodeJSON, symbol.Symbol(subject),
 					"DecodeJSON returns a Interface with every child the original has", assert.EquateEmpty())
@@ -941,6 +942,7 @@ func symbolsList() Symbols {
 		subject.TypesSlot().Append(&Interface{})
 		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
+		subject.Constraints = append(subject.Constraints, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		out = append(out, subject)
 	}

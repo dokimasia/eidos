@@ -17,7 +17,7 @@ import (
 
 // factsStated is how many facts the every-kind subjects state: each
 // fact of each kind, set once.
-const factsStated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
+const factsStated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
 
 // factsKinds is how many kinds state a fact of their own.
 const factsKinds = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
@@ -1117,6 +1117,15 @@ func TestFacts(t *testing.T) {
 			}
 			{
 				subject := &Interface{}
+				subject.Constraints = []*TypeRef{{}}
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the stated fact alone arrives")
+				assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
+				assert.Equal(t, facts[0], symbol.FactConstraints, "as itself")
+				assert.Nil(t, hosts[0], "the top level has no host")
+			}
+			{
+				subject := &Interface{}
 				subject.Permits = []*TypeRef{{}}
 				hosts, kinds, facts := stated(subject)
 				assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -1310,7 +1319,7 @@ func TestFacts(t *testing.T) {
 				"the Constant facts in schema order")
 			assert.Length(t, table[symbol.KindStruct], 14,
 				"the Struct facts in schema order")
-			assert.Length(t, table[symbol.KindInterface], 10,
+			assert.Length(t, table[symbol.KindInterface], 11,
 				"the Interface facts in schema order")
 			assert.Length(t, table[symbol.KindAlias], 5,
 				"the Alias facts in schema order")
@@ -1544,6 +1553,7 @@ func factsSubjects() []symbol.Symbol {
 		subject.TypesSlot().Append(&Interface{})
 		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = []*TypeRef{{}}
+		subject.Constraints = []*TypeRef{{}}
 		subject.Permits = []*TypeRef{{}}
 		subject.Annotations = symbol.Annotations{{}}
 		out = append(out, subject)

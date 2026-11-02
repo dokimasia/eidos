@@ -1180,6 +1180,10 @@ func (w *binaryWriter) encodeInterface(x *Interface) error {
 	for _, child := range x.Extends {
 		w.encodeTypeRef(child)
 	}
+	w.unsigned(uint64(len(x.Constraints)))
+	for _, child := range x.Constraints {
+		w.encodeTypeRef(child)
+	}
 	w.unsigned(uint64(len(x.Permits)))
 	for _, child := range x.Permits {
 		w.encodeTypeRef(child)
@@ -1233,6 +1237,12 @@ func (r *binaryReader) decodeInterface() *Interface {
 		x.Extends = make([]*TypeRef, n)
 		for i := range x.Extends {
 			x.Extends[i] = ref[*TypeRef](r)
+		}
+	}
+	if n := r.count(); n > 0 {
+		x.Constraints = make([]*TypeRef, n)
+		for i := range x.Constraints {
+			x.Constraints[i] = ref[*TypeRef](r)
 		}
 	}
 	if n := r.count(); n > 0 {

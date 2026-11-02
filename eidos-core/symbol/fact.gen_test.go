@@ -59,6 +59,7 @@ var factNamings = []struct {
 	{fact: FactExtends, want: "Extends"},
 	{fact: FactPermits, want: "Permits"},
 	{fact: FactProperties, want: "Properties"},
+	{fact: FactConstraints, want: "Constraints"},
 	{fact: FactDefined, want: "Defined"},
 	{fact: FactVariance, want: "Variance"},
 	{fact: FactConstParam, want: "ConstParam"},

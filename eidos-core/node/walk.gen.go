@@ -177,6 +177,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Extends {
 			Walk(child, visit)
 		}
+		for _, child := range x.Constraints {
+			Walk(child, visit)
+		}
 		for _, child := range x.Permits {
 			Walk(child, visit)
 		}

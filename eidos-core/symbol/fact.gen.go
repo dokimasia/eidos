@@ -51,6 +51,7 @@ const (
 	FactExtends
 	FactPermits
 	FactProperties
+	FactConstraints
 	FactDefined
 	FactVariance
 	FactConstParam
@@ -100,6 +101,7 @@ var factNames = [...]string{
 	FactExtends:          "Extends",
 	FactPermits:          "Permits",
 	FactProperties:       "Properties",
+	FactConstraints:      "Constraints",
 	FactDefined:          "Defined",
 	FactVariance:         "Variance",
 	FactConstParam:       "ConstParam",
@@ -158,6 +160,7 @@ func Facts() []Fact {
 		FactExtends,
 		FactPermits,
 		FactProperties,
+		FactConstraints,
 		FactDefined,
 		FactVariance,
 		FactConstParam,

@@ -404,6 +404,9 @@ func statedFacts(
 		if len(x.Extends) > 0 {
 			f(host, symbol.KindInterface, symbol.FactExtends)
 		}
+		if len(x.Constraints) > 0 {
+			f(host, symbol.KindInterface, symbol.FactConstraints)
+		}
 		if len(x.Permits) > 0 {
 			f(host, symbol.KindInterface, symbol.FactPermits)
 		}
@@ -599,6 +602,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactTypes,
 			symbol.FactEmbeds,
 			symbol.FactExtends,
+			symbol.FactConstraints,
 			symbol.FactPermits,
 			symbol.FactAnnotations,
 		},

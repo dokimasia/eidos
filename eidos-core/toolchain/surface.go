@@ -53,6 +53,7 @@ const (
 	relImplements  = " implements "
 	relEmbeds      = " embeds "
 	relPermits     = " permits "
+	relConstrains  = " constrains "
 	variadicMark   = "..."
 	optionalMark   = "?"
 	positionalMark = "/"
@@ -149,6 +150,7 @@ func appendDecl(lines []string, host string, s symbol.Symbol) []string {
 			d.Kind().String()+" "+name+typeParams(d.TypeParams))
 		lines = appendRelations(lines, name+relExtends, d.Extends)
 		lines = appendRelations(lines, name+relPermits, d.Permits)
+		lines = appendRelations(lines, name+relConstrains, d.Constraints)
 		lines = appendEmbeds(lines, name, d.Embeds)
 		lines = appendFields(lines, name, d.Fields)
 		lines = appendMethods(lines, name, d.Methods)

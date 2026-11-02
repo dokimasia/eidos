@@ -875,6 +875,12 @@ func (x *Struct) EmbedList() []symbol.Symbol {
 // subtypes are enumerated, and the enumeration where the language
 // states one.
 //
+// Constraints are the constraint elements of a Go interface, such as
+// the union ~int | ~float64, in the order of the source. A union is a
+// reference of the form Union with a child for each term, and every
+// other element is the reference of its type. An interface of a
+// language without type sets has none.
+//
 // This is the emit spelling of the kind.
 type Interface struct {
 	Origin      symbol.Identity     `json:"origin,omitzero"`
@@ -889,7 +895,8 @@ type Interface struct {
 	Types       Slot[symbol.Symbol] `json:"types,omitzero"` // nested declarations and associated types
 	Embeds      Slot[*Embed]        `json:"embeds,omitzero"`
 	Extends     []*TypeRef          `json:"extends,omitzero"`
-	Permits     []*TypeRef          `json:"permits,omitzero"` // the enumerated subtypes
+	Constraints []*TypeRef          `json:"constraints,omitzero"` // the unions and type terms of the type set
+	Permits     []*TypeRef          `json:"permits,omitzero"`     // the enumerated subtypes
 	Annotations symbol.Annotations  `json:"annotations,omitzero"`
 }
 

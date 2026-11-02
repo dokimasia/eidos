@@ -546,6 +546,7 @@ func TestKinds(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
 					"a Interface returns the members it has")
@@ -619,6 +620,7 @@ func TestKinds(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a Interface returns the members it has")
@@ -680,6 +682,7 @@ func TestKinds(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
 					"a Interface returns the members it has")
@@ -1621,6 +1624,7 @@ func kindsCases() []kindsCase {
 		subject.Types = append(subject.Types, &Interface{})
 		subject.Embeds = append(subject.Embeds, &Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
+		subject.Constraints = append(subject.Constraints, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		var (
 			kind    symbol.Kind

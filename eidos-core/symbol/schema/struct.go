@@ -89,6 +89,12 @@ type Struct struct {
 // subtypes are enumerated, and the enumeration where the language
 // states one.
 //
+// Constraints are the constraint elements of a Go interface, such as
+// the union ~int | ~float64, in the order of the source. A union is a
+// reference of the form Union with a child for each term, and every
+// other element is the reference of its type. An interface of a
+// language without type sets has none.
+//
 //eidos:subject
 type Interface struct {
 	ID          symbol.Identity    `eidos:"node"`
@@ -105,7 +111,8 @@ type Interface struct {
 	Types       []Symbol           `eidos:"both,walk,slot=types,fact=Types"` // nested declarations and associated types
 	Embeds      []*Embed           `eidos:"both,walk,slot=embeds,fact=Embeds"`
 	Extends     []*TypeRef         `eidos:"both,walk,fact=Extends"`
-	Permits     []*TypeRef         `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
+	Constraints []*TypeRef         `eidos:"both,walk,fact=Constraints"` // the unions and type terms of the type set
+	Permits     []*TypeRef         `eidos:"both,walk,fact=Permits"`     // the enumerated subtypes
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 

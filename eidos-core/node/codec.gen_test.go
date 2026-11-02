@@ -672,6 +672,7 @@ func populated() []symbol.Symbol {
 		subject.Types = append(subject.Types, &Interface{})
 		subject.Embeds = append(subject.Embeds, &Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
+		subject.Constraints = append(subject.Constraints, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		out = append(out, subject)
 	}

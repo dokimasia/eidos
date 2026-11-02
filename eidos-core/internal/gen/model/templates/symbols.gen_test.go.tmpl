@@ -39,10 +39,10 @@ const (
 // of 10 runs: encoding/json's encoder and decoder state, boxed values
 // and buffers, and the decoded declarations' own values.
 const (
-	symbolsEncodeAllocs    = {{if .Identified}}859{{else}}157{{end}}
-	symbolsDecodeAllocs    = {{if .Identified}}910{{else}}132{{end}}
-	symbolsMarshalAllocs   = {{if .Identified}}248{{else}}159{{end}}
-	symbolsUnmarshalAllocs = {{if .Identified}}181{{else}}163{{end}}
+	symbolsEncodeAllocs    = {{if .Identified}}859{{else}}162{{end}}
+	symbolsDecodeAllocs    = {{if .Identified}}910{{else}}140{{end}}
+	symbolsMarshalAllocs   = {{if .Identified}}239{{else}}164{{end}}
+	symbolsUnmarshalAllocs = {{if .Identified}}191{{else}}171{{end}}
 )
 
 // symbolsPoolAllocs is the headroom of a JSON ceiling. encoding/json

@@ -17,7 +17,7 @@ import (
 // walkVisits is what a walk over every kind's populated subject
 // visits: each subject and the one child in each of its traversed
 // fields.
-const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 6 + 1 + 5 + 2 + 3 + 2 + 2 + 9 + 8 + 3 + 3 + 4 + 2 + 1
+const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 6 + 1 + 5 + 2 + 3 + 2 + 2 + 9 + 9 + 3 + 3 + 4 + 2 + 1
 
 // walkOriginated is how many kinds carry origin storage.
 const walkOriginated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
@@ -247,6 +247,7 @@ func TestWalk(t *testing.T) {
 			subject.TypesSlot().Append(&Interface{})
 			subject.EmbedsSlot().Append(&Embed{})
 			subject.Extends = append(subject.Extends, &TypeRef{})
+			subject.Constraints = append(subject.Constraints, &TypeRef{})
 			subject.Permits = append(subject.Permits, &TypeRef{})
 
 			var seen int
@@ -254,7 +255,7 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 8,
+			assert.Equal(t, seen, 9,
 				"the walk descends into every traversed field")
 		})
 
@@ -488,6 +489,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -765,6 +767,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -1014,6 +1017,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -1201,6 +1205,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.EmbedsSlot().Append(&Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Constraints = append(subject.Constraints, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -1650,6 +1655,7 @@ func walkSubjects() []symbol.Symbol {
 		subject.TypesSlot().Append(&Interface{})
 		subject.EmbedsSlot().Append(&Embed{})
 		subject.Extends = append(subject.Extends, &TypeRef{})
+		subject.Constraints = append(subject.Constraints, &TypeRef{})
 		subject.Permits = append(subject.Permits, &TypeRef{})
 		out = append(out, subject)
 	}
