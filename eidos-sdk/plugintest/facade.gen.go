@@ -71,9 +71,12 @@ type Source = core.Source
 // of each plugin under its name, and seals the registry. It registers the
 // kernel's schemas and the schemas of each plugin. It files the
 // classification stamps of each declaration of the packages under
-// [meta.LoadClaim]. It validates the directives of each declaration whose
-// schema it registered, and binds each reference through the rules of the
-// language of the subject in the scope of the file of the subject.
+// [meta.LoadClaim]. It attaches the raw directive instances of each
+// declaration as the frontend parsed them. The directive index of the
+// fixture then keys each instance by its name as written, like the index
+// of a run. It validates the directives of each declaration whose schema it
+// registered, and binds each reference through the rules of the language
+// of the subject in the scope of the file of the subject.
 //
 // The registry is sealed, so a test that needs the keys of another plugin
 // lists the plugin in Plugins instead of calling [Key] afterwards.
