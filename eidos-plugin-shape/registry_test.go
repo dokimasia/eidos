@@ -144,6 +144,7 @@ var readings = []reading{
 	readerOf(shape.ReaderNoError, shape.ReaderNoErrorOf),
 	readerOf(shape.ReaderWithBool, shape.ReaderWithBoolOf),
 	readerOf(shape.RetrySucceeds, shape.RetrySucceedsOf),
+	readerOf(shape.ReturnsOnError, shape.ReturnsOnErrorOf),
 	readerOf(shape.RunsUntilCancelled, shape.RunsUntilCancelledOf),
 	readerOf(shape.Saga, shape.SagaOf),
 	readerOf(shape.Sample, shape.SampleOf),

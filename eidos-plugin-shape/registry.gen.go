@@ -2971,6 +2971,58 @@ var retrySucceedsMixinKey meta.Key[bool] = meta.Named[bool]("shape.retry-succeed
 // shape.retry-succeeds.attempts.
 var retrySucceedsAttemptsKey meta.Key[int64] = meta.Named[int64]("shape.retry-succeeds.attempts")
 
+// ReturnsOnError is the mixin returns-on-error. A failed call returns the
+// value of a field of its request beside the error. The field param refers to
+// the field of the request, and the call does not change its value.
+const ReturnsOnError Mixin = "returns-on-error"
+
+// ReturnsOnErrorField is the key of the param field of the mixin
+// returns-on-error. The param is the field of the request that a failed call
+// returns.
+const ReturnsOnErrorField directive.ParamKey = "field"
+
+// ReturnsOnErrorResult is the key of the param result of the mixin
+// returns-on-error. The param is the field of the result that returns the
+// field of the request.
+const ReturnsOnErrorResult directive.ParamKey = "result"
+
+// ReturnsOnErrorParams are the params of the mixin returns-on-error.
+type ReturnsOnErrorParams struct {
+	// Field is the field of the request that a failed call returns.
+	Field symbol.Identity
+	// Result is the field of the result that returns the field of the request.
+	Result symbol.Identity
+}
+
+// ReturnsOnErrorOf returns the params of the mixin returns-on-error on the
+// subject of m, and false where the subject does not have the mixin. It
+// records each read in the invocation of m.
+func ReturnsOnErrorOf(m sdk.Matcher) (ReturnsOnErrorParams, bool) {
+	var p ReturnsOnErrorParams
+	if _, held := sdk.Fact(m, returnsOnErrorMixinKey); !held {
+		return p, false
+	}
+	p.Field, _ = sdk.Fact(m, returnsOnErrorFieldKey)
+	p.Result, _ = sdk.Fact(m, returnsOnErrorResultKey)
+	return p, true
+}
+
+// returnsOnErrorMixinKey is the handle of the key
+// shape.returns-on-error.mixin.
+var returnsOnErrorMixinKey meta.Key[bool] = meta.Named[bool]("shape.returns-on-error.mixin")
+
+// returnsOnErrorFieldKey is the handle of the key
+// shape.returns-on-error.field.
+var returnsOnErrorFieldKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.returns-on-error.field",
+)
+
+// returnsOnErrorResultKey is the handle of the key
+// shape.returns-on-error.result.
+var returnsOnErrorResultKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
+	"shape.returns-on-error.result",
+)
+
 // RunsUntilCancelled is the mixin runs-until-cancelled. The callable runs
 // until its context ends, such as the loop of a server or a worker. A
 // generator of checks does not call it with a context that does not end, and
@@ -5767,6 +5819,34 @@ func Specs() []Spec {
 			},
 		},
 		{
+			Name:  "returns-on-error",
+			Form:  FormMixin,
+			Doc:   "A failed call returns the value of a field of its request beside the error. The field param refers to the field of the request, and the call does not change its value.",
+			Group: "shape.returns-on-error",
+			Key:   "shape.returns-on-error.mixin",
+			Params: []Param{
+				{
+					ParamSpec: directive.ParamSpec{
+						Key:        ReturnsOnErrorField,
+						Type:       directive.TypeReference,
+						Resolution: directive.ResolveValueField,
+						Required:   true,
+						Doc:        "the field of the request that a failed call returns",
+					},
+					Fact: "shape.returns-on-error.field",
+				},
+				{
+					ParamSpec: directive.ParamSpec{
+						Key:        ReturnsOnErrorResult,
+						Type:       directive.TypeReference,
+						Resolution: directive.ResolveValueField,
+						Doc:        "the field of the result that returns the field of the request",
+					},
+					Fact: "shape.returns-on-error.result",
+				},
+			},
+		},
+		{
 			Name:        "runs-until-cancelled",
 			Form:        FormMixin,
 			Doc:         "The callable runs until its context ends, such as the loop of a server or a worker. A generator of checks does not call it with a context that does not end, and does not expect an error when its context ends.",
@@ -6485,4 +6565,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:7b61ad6de9f290661d776de1da04351fc440752668304a7ca20f7c45cc8b6fa3
+// shapegen:provenance sha256:3a6d5cdcf567572002b67249a526cc312a952ca96887c5e5dbb4cb2fbec541bd

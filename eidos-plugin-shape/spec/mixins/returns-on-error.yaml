@@ -1,0 +1,24 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=../../spec.schema.json
+name: returns-on-error
+form: mixin
+claim: >
+  A failed call returns the value of a field of its request beside the
+  error. The field param refers to the field of the request, and the call
+  does not change its value.
+observation: >
+  A check makes a call fail and compares the returned value with the value
+  of the field of the request. Where the result param refers to a field of
+  the result, the check compares that field. Otherwise it compares the
+  whole result.
+params:
+  - {key: field, type: reference, resolve: value-field, required: true, doc: the field of the request that a failed call returns}
+  - {key: result, type: reference, resolve: value-field, doc: the field of the result that returns the field of the request}
+falsifiability: >
+  A subject that appends to the value of the field before it fails returns
+  another value, and so does a subject that returns the zero value. The
+  check turns red for both.
+counterexamples:
+  edge: a call that fails after it appended a part of its result to the field
