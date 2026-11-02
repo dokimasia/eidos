@@ -29,7 +29,8 @@ import (
 // are no members. The contracts of an enum refuse, because the metaclass of
 // an enum conflicts with the metaclass of a Protocol. Each variant class of
 // a sum takes the contracts of the sum as its bases. An overload signature
-// renders under the decorator overload of typing.
+// renders under the decorator overload of typing. A Protocol has no type
+// set, so the constraint elements of an interface refuse.
 //
 // Coverage builds the table on every call, which the caller keeps.
 func Coverage() render.Coverage {
@@ -75,6 +76,7 @@ func Coverage() render.Coverage {
 			symbol.FactImplements:       render.Renders,
 			symbol.FactPermits:          render.Refuses,
 			symbol.FactProperties:       render.Renders,
+			symbol.FactConstraints:      render.Refuses,
 			symbol.FactDefined:          render.Renders,
 			symbol.FactVariance:         render.Renders,
 			symbol.FactConstParam:       render.Refuses,

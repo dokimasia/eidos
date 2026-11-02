@@ -33,7 +33,8 @@ import (
 //     function, a method and an associated type it refuses through the
 //     helper of the parameter list, because Rust takes none there.
 //   - Nothing promotes members, so the coverage refuses an embed with
-//     every fact on it.
+//     every fact on it. A trait has no type set, so the constraint elements
+//     of an interface refuse.
 //   - The underlying type of an enum renders as its repr attribute. A
 //     computed member has no name in Rust, so the declaration does not
 //     render with the fact or without it. Neither does an overload
@@ -90,6 +91,7 @@ func Coverage() render.Coverage {
 			symbol.FactExtends:          render.Renders,
 			symbol.FactImplements:       render.Refuses,
 			symbol.FactProperties:       render.Refuses,
+			symbol.FactConstraints:      render.Refuses,
 			symbol.FactDefined:          render.Refuses,
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactTypeParamDefault: render.Renders,

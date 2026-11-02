@@ -36,7 +36,8 @@ import (
 //     the declaration does not render with the fact or without it.
 //   - A type parameter, an accessor, an index signature, a construct
 //     signature, a computed name and an overload signature have no form in
-//     a schema either.
+//     a schema either. A GraphQL interface has no type set, so the
+//     constraint elements of an interface refuse.
 //   - The passing of a parameter takes the [render.Holds] verdict, because
 //     a caller always names an argument. A wire name renders as the name of its field, and the
 //     lowering refuses a wire name that is not a GraphQL name or that
@@ -87,6 +88,7 @@ func Coverage() render.Coverage {
 			symbol.FactImplements:       render.Renders,
 			symbol.FactPermits:          render.Refuses,
 			symbol.FactProperties:       render.Renders,
+			symbol.FactConstraints:      render.Refuses,
 			symbol.FactDefined:          render.Renders,
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactConstParam:       render.Refuses,

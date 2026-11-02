@@ -31,7 +31,8 @@ import (
 //     the responses that the lowering declares. The nested types of a
 //     message render, where a service nests nothing.
 //   - Nothing promotes members, so the coverage refuses an embed with every
-//     fact on it.
+//     fact on it. A schema has no interface with a type set, so the
+//     constraint elements of an interface refuse.
 //   - A type parameter, an accessor, an index signature, a construct
 //     signature, a computed name and an overload signature have no form in
 //     a schema, so the declaration does not render with the fact or without
@@ -86,6 +87,7 @@ func Coverage() render.Coverage {
 			symbol.FactImplements:       render.Refuses,
 			symbol.FactPermits:          render.Refuses,
 			symbol.FactProperties:       render.Refuses,
+			symbol.FactConstraints:      render.Refuses,
 			symbol.FactDefined:          render.Refuses,
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactConstParam:       render.Refuses,

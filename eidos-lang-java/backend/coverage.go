@@ -27,7 +27,8 @@ import (
 //     its keyword helper, because a Java interface declares constants
 //     alone.
 //   - Nothing promotes members, so the coverage refuses an embed with
-//     every fact on it.
+//     every fact on it. A Java interface has no type set, so the constraint
+//     elements of an interface refuse.
 //   - A Java enum has no underlying type, so the underlying type refuses,
 //     and so does the mutability of an index signature. A computed member
 //     has no name in Java, so the declaration does not render with the
@@ -85,6 +86,7 @@ func Coverage() render.Coverage {
 			symbol.FactExtends:          render.Renders,
 			symbol.FactImplements:       render.Renders,
 			symbol.FactProperties:       render.Renders,
+			symbol.FactConstraints:      render.Refuses,
 			symbol.FactDefined:          render.Refuses,
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactTypeParamDefault: render.Refuses,
