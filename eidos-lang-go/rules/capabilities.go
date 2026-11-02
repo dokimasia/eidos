@@ -32,11 +32,6 @@ const (
 	// the name of a field that no code can name.
 	interfaceKeyword = "interface"
 	blankField       = "_"
-	// unionSep separates the terms of a type-set element, and
-	// approxMark marks a term that admits every type of its
-	// underlying type.
-	unionSep   = "|"
-	approxMark = "~"
 )
 
 // The methods of the error contract of Go: the method that returns the
@@ -47,11 +42,6 @@ const (
 	isMethod     = "Is"
 	asMethod     = "As"
 )
-
-// typeSet is the handle of the type sets that the Go frontend stamps on
-// an interface. A read resolves the handle in the registry of the facts
-// of the view, and a view without the key reads no type set.
-var typeSet = meta.Named[[]string](golang.TypeSetKey)
 
 // The handles of the marks that the Go frontend stamps on a method with a
 // pointer receiver, on an interface with type-set elements, and on a
@@ -348,14 +338,13 @@ func (r Rules) ImportableValue(pkg symbol.Identity, v emit.Value) error {
 //   - the predeclared any or comparable
 //   - an alias of a bound that admits int
 //   - an interface in the view without methods, embeds and supertypes,
-//     whose type set has int in every element. An interface without a
-//     stamped type set has no such restriction, and a view without facts
-//     reads no type set.
+//     where int is the type of each constraint element or a term of its
+//     union. An interface without constraint elements has no such
+//     restriction.
 //
 // Derive reads the declaration of the bound where the view contains one,
 // and its spelling otherwise. Every other bound has an authored witness
-// or none. Derive allocates the witness, one allocation, and what the
-// read of the type-set fact allocates for an interface bound.
+// or none. Derive allocates the witness, one allocation.
 func (r Rules) Derive(p *node.TypeParam, v rules.View) (*node.TypeRef, bool) {
 	if p == nil {
 		return nil, false
@@ -395,26 +384,23 @@ func (r Rules) admitsWitness(bound *node.TypeRef, v rules.View, depth int) bool 
 		if len(d.Methods) > 0 || len(d.Embeds) > 0 || len(d.Extends) > 0 {
 			return false
 		}
-		elements, stamped := rules.Fact(v, d.ID, typeSet)
-		return !stamped || typeSetNames(elements, witnessSpelling)
+		return constraintsName(d.Constraints, witnessSpelling)
 	default:
 		return false
 	}
 }
 
-// typeSetNames reports whether every type-set element has the type name
-// among the terms of its union, with the approximation mark of each term
-// stripped.
-func typeSetNames(elements []string, name string) bool {
+// constraintsName reports whether name is the type of each constraint
+// element or a term of its union. The terms of a union have no
+// approximation mark, because the spelling of the union keeps the marks.
+// A nil element or term does not match. It does not allocate.
+func constraintsName(elements []*node.TypeRef, name string) bool {
 	for _, element := range elements {
-		named := false
-		for term := range strings.SplitSeq(element, unionSep) {
-			if strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(term), approxMark)) == name {
-				named = true
-				break
-			}
+		terms := []*node.TypeRef{element}
+		if element != nil && element.Form == symbol.FormUnion {
+			terms = element.Elems
 		}
-		if !named {
+		if !slices.ContainsFunc(terms, func(term *node.TypeRef) bool { return term != nil && term.Spelling == name }) {
 			return false
 		}
 	}

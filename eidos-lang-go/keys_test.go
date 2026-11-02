@@ -45,7 +45,7 @@ func TestKeys(t *testing.T) {
 			assert.NoError(t, err, "the vocabulary registers")
 			for _, key := range []meta.KeyName{
 				golang.TestFileKey, golang.ConstraintKey, golang.GeneratedKey,
-				golang.CgoKey, golang.TypeSetKey, golang.ConstraintInterfaceKey,
+				golang.CgoKey, golang.ConstraintInterfaceKey,
 				golang.EmptyInterfaceKey, golang.ReceiverIsPointerKey,
 				golang.UnderlyingKindKey, golang.IterSeqKey, golang.IterSeq2Key,
 				golang.ConstValueKey, golang.HiddenFieldsKey, golang.SatisfiesErrorKey,

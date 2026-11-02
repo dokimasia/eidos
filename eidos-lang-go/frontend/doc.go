@@ -88,17 +88,16 @@
 // methods of the type fold in from every file of the package, as a
 // struct's do.
 //
-// Resolve returns, as one tier, the candidates of the file's
-// [golang.Bindings], which the parse derives from the file's import
-// records. The rules resolve a directive's spelling through the same
-// bindings, and a qualified reference's package is the import path its
-// qualifier binds there. A predeclared type, a constraint term and
-// the shapes no single declaration declares (maps, funcs, channels,
-// inline bodies) return no candidate, and their named element types
-// remain spellings per the model's composite contract. An
-// interface's constraint elements are not
-// embeds: a union, an approximation, a predeclared basic type or a
-// type literal stamps its verbatim spelling under golang.typeSet.
+// Resolve returns, as one tier, the candidates of the [golang.Bindings]
+// of the file, which the parse derives from the import records of the
+// file. The rules resolve the spelling of a directive through the same
+// bindings. The package of a qualified reference is the import path that
+// its qualifier binds there. A predeclared type and a structural form,
+// such as a map, a func, a channel, a union or an inline body, return no
+// candidate. The resolution step resolves each child of a structural form
+// that refers to a declaration. The constraint elements of an interface
+// are not embeds. A union, an approximation, a predeclared basic type or a
+// type literal lowers to a reference in the constraints of the interface.
 //
 // # Dependencies
 //

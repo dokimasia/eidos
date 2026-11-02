@@ -36,10 +36,6 @@ const (
 	// model does not represent.
 	CgoKey meta.KeyName = "golang.cgo"
 
-	// TypeSetKey records an interface's constraint elements, unions
-	// and approximations, as their verbatim spellings.
-	TypeSetKey meta.KeyName = "golang.typeSet"
-
 	// ConstraintInterfaceKey marks an interface with type-set
 	// elements. Such an interface is usable as a bound and never as the
 	// type of a value.
@@ -148,10 +144,6 @@ func Register(r *meta.Registry) (Handles, error) {
 			Doc: "marks a file importing C, whose preamble the model does not represent",
 		},
 		{
-			Name: TypeSetKey, Kinds: []symbol.Kind{symbol.KindInterface},
-			Doc: "records an interface's constraint elements as written",
-		},
-		{
 			Name: ConstraintInterfaceKey, Kinds: []symbol.Kind{symbol.KindInterface},
 			Doc: "marks an interface with type-set elements",
 		},
@@ -255,9 +247,6 @@ func registerKey(r *meta.Registry, spec meta.KeySpec) (meta.Key[bool], error) {
 	switch spec.Name {
 	case ConstraintKey, GeneratedKey, UnderlyingKindKey, ConstValueKey:
 		_, err := meta.Register[string](r, spec)
-		return meta.Key[bool]{}, err
-	case TypeSetKey:
-		_, err := meta.Register[[]string](r, spec)
 		return meta.Key[bool]{}, err
 	default:
 		return meta.Register[bool](r, spec)

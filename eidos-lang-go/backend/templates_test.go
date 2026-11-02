@@ -332,6 +332,19 @@ func TestTemplates(t *testing.T) {
 				"both as embedded lines")
 		})
 
+		t.Run("writes the constraint elements of an interface after its embeds", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: "Number", Constraints: []*emit.TypeRef{
+				composite(symbol.FormUnion, "~int | ~float64", ref("int"), ref("float64")),
+				ref("comparable"),
+			}}
+			i.Embeds.Append(&emit.Embed{Ref: ref("Stringer")})
+			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
+				"type Number interface {\n\tStringer\n\t~int | ~float64\n\tcomparable\n}\n",
+				"each element on a line of its own")
+		})
+
 		t.Run("writes a generic declaration's parameters behind its name", func(t *testing.T) {
 			t.Parallel()
 

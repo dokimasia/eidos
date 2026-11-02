@@ -600,10 +600,10 @@ func TestCapabilities(t *testing.T) {
 		}{
 			{name: "returns int for a parameter bound by any", host: "Box", want: witness},
 			{name: "returns int for a parameter bound by comparable", host: "Pair", want: witness},
-			{name: "returns int for a type set that names ~int", host: "Sized", want: witness},
+			{name: "returns int for a type set of ~int and ~float64", host: "Sized", want: witness},
 			{name: "returns int for an empty interface the graph declares", host: "Sized", param: 2, want: witness},
 			{name: "reports false for a bound that states methods", host: "Bound"},
-			{name: "reports false for a type set that names no int", host: "Sized", param: 1},
+			{name: "reports false for a type set without int", host: "Sized", param: 1},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -626,13 +626,13 @@ func TestCapabilities(t *testing.T) {
 			assert.Equal(t, w.Spelling, witness, "the witness")
 		})
 
-		t.Run("returns int for a constraint interface in a view without facts", func(t *testing.T) {
+		t.Run("reports false for a type set without int in a view without facts", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
 			bare := rules.NewView(f.view.Reader(), nil, nil, f.view.Kernel())
 			_, derived := capability[rules.GenericsRules](t).Derive(paramsOf(t, f, "Sized")[1], bare)
-			assert.True(t, derived, "a view without facts reads no type set, so the empty interface admits int")
+			assert.False(t, derived, "Derive reads the constraint elements of Text without a fact")
 		})
 
 		t.Run("reports false for a missing parameter", func(t *testing.T) {
@@ -1031,6 +1031,7 @@ func capabilityCalls(tb testing.TB) []allocCall {
 	rowValue := emit.Composite(rules.EmitRef(coreRow),
 		emit.NamedField("Next", emit.Call(id(corePath, "NewRow", symbol.KindFunction))))
 	tagged, box := f.field(tb, "Tagged", "Name"), paramsOf(tb, f, "Box")
+	sized := paramsOf(tb, f, "Sized")
 	derived, _ := f.decl(tb, id(fxPath, "Derived", symbol.KindStruct)).(*node.Struct)
 	row, base := ref(fxPath, "Row", symbol.KindStruct), ref(fxPath, "Base", symbol.KindStruct)
 	notFound := ef.decl(tb, id(fxPath, notFoundName, symbol.KindStruct))
@@ -1097,9 +1098,14 @@ func capabilityCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) { assert.Equal(tb, text, jsonTag, "Tag returns the json value") },
 		},
 		{
-			name: "Derive", allocs: witnessAllocs,
+			name: "Derive", caseName: "a parameter bound by any", allocs: witnessAllocs,
 			call:  func() { got, _ = generics.Derive(box[0], f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, got.Spelling, witness, "Derive returns int") },
+		},
+		{
+			name: "Derive", caseName: "a type set of ~int and ~float64", allocs: witnessAllocs,
+			call:  func() { got, _ = generics.Derive(sized[0], f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, got.Spelling, witness, "Derive returns int for Sized") },
 		},
 		{
 			name:  "Reified",

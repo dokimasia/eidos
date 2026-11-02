@@ -951,16 +951,16 @@ func named(name *ast.Ident) bool { return name.Name != blankName }
 // interfaces of an interface body. It lowers an unexported method at every
 // depth, because a type implements the interface only where it has the
 // method. A constraint element, such as a union or an approximation, is not
-// an embed. A stamp of the language records the verbatim spellings of the
-// constraint elements as the type set of the interface. The lowering leaves
-// out an embed whose type has no name, as it does in a struct.
+// an embed. It lowers to a type reference that joins the constraints of the
+// interface in the order of the source. The lowering stamps
+// [golang.ConstraintInterfaceKey] on an interface with constraint elements.
+// It leaves out an embed whose type has no name, as it does in a struct.
 func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
-	var terms []string
 	for _, member := range t.Methods.List {
 		parts := l.declParts(u, plugin.CommentParts{}, member.Doc, member.Comment)
 		if len(member.Names) == 0 {
 			if constraintElement(member.Type) {
-				terms = append(terms, l.spelling(member.Type))
+				it.Constraints = append(it.Constraints, l.typeRef(member.Type))
 				u.RefuseCarriers(UnaddressedCarrier, parts.Carriers, "a constraint element")
 				continue
 			}
@@ -996,13 +996,12 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 		it.Methods = append(it.Methods, m)
 		u.AttachCarriers(m, parts.Carriers, BadCarrier)
 	}
-	if len(terms) > 0 {
-		u.Graph().Stamp(it, meta.RawStamp{Key: golang.TypeSetKey, Value: terms, Pos: it.Pos})
+	if len(it.Constraints) > 0 {
 		u.Graph().Stamp(it, meta.RawStamp{
 			Key: golang.ConstraintInterfaceKey, Value: true, Pos: it.Pos,
 		})
 	}
-	if len(it.Methods) == 0 && len(it.Embeds) == 0 && len(terms) == 0 {
+	if len(it.Methods) == 0 && len(it.Embeds) == 0 && len(it.Constraints) == 0 {
 		u.Graph().Stamp(it, meta.RawStamp{
 			Key: golang.EmptyInterfaceKey, Value: true, Pos: it.Pos,
 		})

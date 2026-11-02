@@ -66,7 +66,7 @@ const (
 	// newAllocs is a build of the backend, chiefly the parse of the file
 	// template and the seven kind templates, and the specs of the policies of
 	// the binding of gRPC and of the width of a line.
-	newAllocs = 1_662
+	newAllocs = 1_683
 	// renderAllocs is one render of the scaled corpus of 200,000
 	// declarations: gofumpt's parse, rules and print of every file, about
 	// half of its allocations, text/template's reflective calls, about four

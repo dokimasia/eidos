@@ -90,6 +90,13 @@ func TestUse(t *testing.T) {
 				want: []symbol.Identity{at(signatureImport, typeName)},
 			},
 			{
+				name:      "records a use of a term of a constraint element at signature depth",
+				giveDepth: plugin.DepthSignatures,
+				giveSrc: "package p\n\nimport \"" + signatureImport + "\"\n\n" +
+					"// N admits an int or a sig.T.\ntype N interface{ ~int | sig.T }\n",
+				want: []symbol.Identity{at(signatureImport, typeName)},
+			},
+			{
 				name:      "does not record a use of an unexported declaration at signature depth",
 				giveDepth: plugin.DepthSignatures,
 				giveSrc:   "package p\n\nimport \"" + signatureImport + "\"\n\ntype t struct{ F sig.T }\n",

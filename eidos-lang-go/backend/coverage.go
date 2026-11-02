@@ -13,7 +13,8 @@ import (
 // it is total and that the rendered findings match it.
 //
 // Visibility renders through the respell, which applies the case
-// convention of Go. Final and the implements of a struct take the
+// convention of Go. The constraint elements of an interface render as the
+// lines of its type set. Final and the implements of a struct take the
 // [render.Holds] verdict, because nothing subclasses and satisfaction is
 // structural. Throws lowers into the appended error return. The
 // mutability of a field or a variable renders, because Go writes a mutable
@@ -81,6 +82,7 @@ func Coverage() render.Coverage {
 			symbol.FactExtends:          render.Renders,
 			symbol.FactImplements:       render.Holds,
 			symbol.FactProperties:       render.Refuses,
+			symbol.FactConstraints:      render.Renders,
 			symbol.FactDefined:          render.Renders,
 			symbol.FactVariance:         render.Refuses,
 			symbol.FactTypeParamDefault: render.Refuses,

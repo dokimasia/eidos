@@ -55,14 +55,16 @@ const (
 	// expresses the supertypes of an interface by embedding. Each embed
 	// has its own docblock, directives and trailing comment, as the embed
 	// of a struct has them. Its guard refuses a tag, because only a struct
-	// field has a tag in Go. Each method follows with its own docblock. A
-	// Go interface method has no body, no receiver and no type
-	// parameters, so the template renders a signature alone, after its
-	// own guard.
+	// field has a tag in Go. Each constraint element follows on a line of
+	// its own, such as the union ~int | ~float64. Each method follows with
+	// its own docblock. A Go interface method has no body, no receiver and
+	// no type parameters, so the template renders a signature alone, after
+	// its own guard.
 	InterfaceTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
 		"{{- range embeds .Embeds}}\n{{memberdocs .Doc}}{{with .Annotations}}{{memberdirectives .}}{{end}}{{embedguard .}}" +
 		"\t{{spell .Ref}}{{with .Comment}} // {{.}}{{end}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
+		"{{- range .Constraints}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Methods.Items}}\n{{memberdocs .Doc}}{{sigguard .}}" +
 		"\t{{.Name}}({{params .Params}}){{results .Returns}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"

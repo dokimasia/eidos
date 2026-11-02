@@ -740,7 +740,7 @@ func TestParse(t *testing.T) {
 			}, "the file has its build constraint first, and the others in source order")
 		})
 
-		t.Run("stamps constraint elements as the interface's type set", func(t *testing.T) {
+		t.Run("lowers the constraint elements of an interface to its constraints", func(t *testing.T) {
 			t.Parallel()
 
 			gb := parsedFile(t, nil, plugin.DepthFull,
@@ -748,10 +748,26 @@ func TestParse(t *testing.T) {
 			n := onlyFile(t, gb).Decls[0].(*node.Interface)
 			assert.Empty(t, n.Embeds, "a type-set element is not an embed")
 			assert.Length(t, n.Methods, 1, "the method survives, and the blank one binds nothing")
-			assert.Equal(t, stampValues(gb, golang.TypeSetKey), []any{[]string{"~int | ~float64"}},
-				"the terms stamp as written")
+			assert.Length(t, n.Constraints, 1, "the union is one constraint element")
+			expect.Equal(t, n.Constraints[0].Form, symbol.FormUnion, "the element is a union")
+			expect.Equal(t, n.Constraints[0].Spelling, "~int | ~float64", "its spelling keeps the approximation marks")
+			expect.Equal(t, spellingsOf(n.Constraints[0].Elems), []string{"int", "float64"},
+				"each term is a child, in order")
 			assert.Equal(t, stampValues(gb, golang.ConstraintInterfaceKey), []any{true},
 				"the interface marks as a bound")
+		})
+
+		t.Run("records the package of a constraint term of another package", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsedFile(t, nil, plugin.DepthFull,
+				"package p\n\nimport \"example.com/protocol\"\n\n"+
+					"type Result interface {\n\tstruct{} | protocol.Ack\n}\n")
+			n := onlyFile(t, gb).Decls[0].(*node.Interface)
+			assert.Length(t, n.Constraints, 1, "the union is one constraint element")
+			assert.Length(t, n.Constraints[0].Elems, 2, "the union has two terms")
+			assert.Equal(t, n.Constraints[0].Elems[1].Package, "example.com/protocol",
+				"the term records the path that its qualifier binds")
 		})
 
 		t.Run("shares one initializer call across its names", func(t *testing.T) {
@@ -1236,7 +1252,7 @@ func TestParse(t *testing.T) {
 				"the tool directive is the file's")
 		})
 
-		t.Run("stamps a single-type constraint as a type set", func(t *testing.T) {
+		t.Run("lowers a single-type constraint to one constraint element", func(t *testing.T) {
 			t.Parallel()
 
 			gb := parsedFile(t, nil, plugin.DepthFull,
@@ -1247,8 +1263,10 @@ func TestParse(t *testing.T) {
 			assert.Empty(t, decls[1].(*node.Interface).Embeds, "a type literal is a term")
 			assert.Length(t, decls[2].(*node.Interface).Embeds, 1,
 				"a named type remains an embed, because only its declaration shows an interface")
-			assert.Equal(t, stampValues(gb, golang.TypeSetKey), []any{[]string{"int"}, []string{"[]byte"}},
-				"each term stamps as written")
+			expect.Equal(t, spellingsOf(decls[0].(*node.Interface).Constraints), []string{"int"},
+				"the basic type is the one constraint element")
+			expect.Equal(t, spellingsOf(decls[1].(*node.Interface).Constraints), []string{"[]byte"},
+				"the type literal is the one constraint element")
 		})
 
 		t.Run("reads an array length in any integer form", func(t *testing.T) {
