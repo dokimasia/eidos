@@ -78,6 +78,10 @@ type Fixture struct {
 
 	emit    *plugin.Emit
 	claimed map[string]bool
+	// attached contains each subject to which [Fixture.Attach] attached raw
+	// instances. [Fixture.Validated] does not attach a raw instance to such
+	// a subject.
+	attached map[symbol.Identity]bool
 	// plugins are the plugins of the source of a fixture that [Loaded]
 	// returns. A phase call binds a plugin in the composition of these
 	// plugins and the plugin itself.
@@ -93,12 +97,13 @@ func New(tb assert.TB) *Fixture {
 	kernel, err := meta.Kernel(keys)
 	assert.NoError(tb, err, "the kernel's keys register")
 	return &Fixture{
-		Graph:   store.New(),
-		Keys:    keys,
-		Facts:   meta.NewFacts(keys),
-		Kernel:  kernel,
-		Turn:    1,
-		claimed: map[string]bool{},
+		Graph:    store.New(),
+		Keys:     keys,
+		Facts:    meta.NewFacts(keys),
+		Kernel:   kernel,
+		Turn:     1,
+		claimed:  map[string]bool{},
+		attached: map[symbol.Identity]bool{},
 	}
 }
 
@@ -122,7 +127,9 @@ func (f *Fixture) LoadDependencies(tb assert.TB, pkgs ...*node.Package) *Fixture
 }
 
 // Attach records raw directive instances on a subject, before the first
-// phase call seals the graph.
+// phase call seals the graph. The index of the store keys each instance
+// under its name as written, as the index of a run keys the instances that
+// a frontend parses.
 func (f *Fixture) Attach(
 	tb assert.TB, subject symbol.Identity, raws ...directive.Raw,
 ) *Fixture {
@@ -130,25 +137,31 @@ func (f *Fixture) Attach(
 
 	assert.NoError(tb, f.Graph.AttachDirectives(subject, raws),
 		"the raw instances attach before the seal")
+	f.attached[subject] = true
 	return f
 }
 
 // Validated sets the typed instances of a subject, in position order and
-// with canonical names, as the validation returns them. It also attaches
-// one raw instance for each directive, because the dispatch routes a gate
-// through the index of spelled names of the store, and only raw
-// attachments enter that index. A load attaches at the parse and
-// validates at the seal, and Validated performs both steps.
+// with canonical names, as the validation returns them. The dispatch routes
+// a gate through the index of spelled names of the store, and only raw
+// attachments enter that index. So Validated attaches one raw instance
+// under the canonical name of each directive to a subject without raw
+// instances. A subject to which [Fixture.Attach] attached raw instances
+// keeps them alone, as the subject of a run keeps the instances that its
+// frontend parsed. A load attaches at the parse and validates at the seal,
+// and Validated performs both steps for a subject without raw instances.
 func (f *Fixture) Validated(
 	tb assert.TB, subject symbol.Identity, ds ...directive.Directive,
 ) *Fixture {
 	tb.Helper()
 
-	raws := make([]directive.Raw, 0, len(ds))
-	for _, d := range ds {
-		raws = append(raws, directive.Raw{Name: d.Name, Pos: d.Pos})
+	if !f.attached[subject] {
+		raws := make([]directive.Raw, 0, len(ds))
+		for _, d := range ds {
+			raws = append(raws, directive.Raw{Name: d.Name, Pos: d.Pos})
+		}
+		f.Attach(tb, subject, raws...)
 	}
-	f.Attach(tb, subject, raws...)
 	if f.Directives == nil {
 		f.Directives = map[symbol.Identity][]directive.Directive{}
 	}

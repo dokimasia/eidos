@@ -5,6 +5,7 @@ package plugintest_test
 
 import (
 	"io/fs"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -38,6 +39,18 @@ const (
 	sealedKey     = "late.key"
 	sealedDoc     = "a key that a test registers after the seal"
 )
+
+// The scripted file of the case of a bare spelling, which writes the table
+// directive of User without the name of its plugin, and that spelling.
+const (
+	bareUserSource = "package svc/api\ntype User string\n+table name=users\n"
+	bareTableName  = "table"
+)
+
+// userID is the identity of the struct User of the scripted tree.
+var userID = symbol.Identity{
+	Lang: frontendtest.ScriptedLang, Package: apiPackage, Name: "User", Kind: symbol.KindStruct,
+}
 
 // The scripted tree of the dependency cases. Its package app imports the
 // package ext/lib, which a dependency round loads from the store of the
@@ -174,6 +187,22 @@ func TestSource(t *testing.T) {
 			}
 			assert.Length(t, f.Directives[user], 1, "User has one validated directive")
 			assert.Equal(t, f.Directives[user][0].Name, directive.Name(tableName), "the directive is the table")
+		})
+
+		t.Run("indexes each directive under the spelling that the frontend parsed", func(t *testing.T) {
+			t.Parallel()
+
+			s := source(nil)
+			s.Tree = fstest.MapFS{userFile: {Data: []byte(bareUserSource)}}
+			f := plugintest.Loaded(t, s)
+			f.Graph.Freeze()
+			user, held := f.Graph.Lookup(userID)
+			assert.True(t, held, "the graph has User")
+			assert.Equal(t, slices.Collect(f.Graph.ByDirective(bareTableName)), []symbol.Symbol{user},
+				"the index keys the carrier under its name as written")
+			assert.Empty(t, slices.Collect(f.Graph.ByDirective(tableName)),
+				"the index keys no carrier under a spelling that the source does not write")
+			assert.Length(t, f.Directives[userID], 1, "the bare spelling validates as the table")
 		})
 
 		t.Run("seals the key registry", func(t *testing.T) {

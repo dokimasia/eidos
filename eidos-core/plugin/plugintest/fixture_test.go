@@ -639,6 +639,31 @@ func TestFixture(t *testing.T) {
 		})
 	})
 
+	t.Run("Validated", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("indexes a subject without raw instances under the canonical names", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, _ := twoStructs(t)
+			f.Validated(t, alpha.ID, directive.Directive{Name: probeSchema.Canonical()})
+			f.Graph.Freeze()
+			assert.Equal(t, slices.Collect(f.Graph.ByDirective(probeSchema.Canonical())), []symbol.Symbol{alpha},
+				"the index keys the carrier under its canonical name")
+		})
+
+		t.Run("attaches no raw instance for a subject that has raw instances", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, _ := twoStructs(t)
+			f.Attach(t, alpha.ID, directive.Raw{Name: probeSchema.Name})
+			f.Validated(t, alpha.ID, directive.Directive{Name: probeSchema.Canonical()})
+			f.Graph.Freeze()
+			assert.Equal(t, f.Graph.DirectivesOf(alpha.ID), []directive.Raw{{Name: probeSchema.Name}},
+				"the subject keeps the raw instance that the test attached")
+		})
+	})
+
 	t.Run("Key", func(t *testing.T) {
 		t.Parallel()
 
