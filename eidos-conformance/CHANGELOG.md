@@ -1,5 +1,12 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.14
+
+### Patch Changes
+
+- Updated dependencies [8f3aeb5]
+  - go.dokimi.dev/eidos/plugin/shape@0.4.0
+
 ## 0.3.13
 
 ### Patch Changes
