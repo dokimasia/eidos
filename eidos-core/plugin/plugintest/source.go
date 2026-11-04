@@ -49,7 +49,11 @@ type Source struct {
 
 // Loaded loads the source into a fixture, as a workspace prepares its first
 // phase call. It loads the tree under the context of tb, and adds the
-// packages of the source to the graph of the fixture. It adds each package
+// packages of the source to the graph of the fixture. The load restores
+// each unit that the load of an earlier fixture of the test binary parsed,
+// from a parse memo that keeps each region encoded. Each fixture decodes
+// declarations of its own, so no fixture sees a stamp or a phase call of
+// another. It adds each package
 // of a dependency round with [Fixture.LoadDependencies]. A walk visits the
 // declarations of such a package, and a rule of the generate phase does not
 // run on them. Plans treat dependency packages the same way. It registers the
@@ -76,7 +80,7 @@ func Loaded(tb assert.TB, s Source) *Fixture {
 
 	sink := diag.NewSink()
 	g, _, err := load.Load(assert.Context(tb), load.Config{
-		FS: s.Tree, Stores: s.Stores, Frontends: s.Frontends, Sink: sink, Brand: s.Brand,
+		FS: s.Tree, Stores: s.Stores, Frontends: s.Frontends, Sink: sink, Brand: s.Brand, Memo: parses,
 	})
 	assert.NoError(tb, err, "the source tree loads")
 	reportedClean(tb, sink, "the load of the source tree")
