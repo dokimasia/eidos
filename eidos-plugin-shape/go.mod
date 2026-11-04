@@ -7,11 +7,11 @@ go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.10.0
-	go.dokimi.dev/eidos/sdk v0.9.0
+	go.dokimi.dev/eidos/sdk v0.9.1
 )
 
 require (
-	go.dokimi.dev/eidos/core v0.13.0 // indirect
+	go.dokimi.dev/eidos/core v0.13.1 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
 

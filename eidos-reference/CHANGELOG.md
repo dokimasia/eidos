@@ -1,5 +1,18 @@
 # go.dokimi.dev/eidos/reference
 
+## 0.1.15
+
+### Patch Changes
+
+- Updated dependencies [057e4b2, e86cf5a]
+  - go.dokimi.dev/eidos/sdk@0.9.1
+  - go.dokimi.dev/eidos/core@0.13.1
+  - go.dokimi.dev/eidos/lang@0.4.4
+  - go.dokimi.dev/eidos/lang/go@0.7.1
+  - go.dokimi.dev/eidos/lang/typescript@0.5.1
+  - go.dokimi.dev/eidos/cli@0.3.6
+  - go.dokimi.dev/eidos/declarative@0.1.13
+
 ## 0.1.14
 
 ### Patch Changes

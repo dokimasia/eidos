@@ -1,5 +1,23 @@
 # go.dokimi.dev/eidos
 
+## 0.2.13
+
+### Patch Changes
+
+- Updated dependencies [057e4b2, e86cf5a]
+  - go.dokimi.dev/eidos/sdk@0.9.1
+  - go.dokimi.dev/eidos/core@0.13.1
+  - go.dokimi.dev/eidos/lang@0.4.4
+  - go.dokimi.dev/eidos/lang/go@0.7.1
+  - go.dokimi.dev/eidos/lang/graphql@0.2.1
+  - go.dokimi.dev/eidos/lang/java@0.2.12
+  - go.dokimi.dev/eidos/lang/protobuf@0.3.2
+  - go.dokimi.dev/eidos/lang/python@0.2.1
+  - go.dokimi.dev/eidos/lang/rust@0.3.1
+  - go.dokimi.dev/eidos/lang/typescript@0.5.1
+  - go.dokimi.dev/eidos/cli@0.3.6
+  - go.dokimi.dev/eidos/declarative@0.1.13
+
 ## 0.2.12
 
 ### Patch Changes
