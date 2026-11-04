@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.9.1
+
+### Patch Changes
+
+- 057e4b2: Copy the docblock of `plugintest.Loaded` with its parse memo into the facade.
+- Updated dependencies [e86cf5a]
+  - go.dokimi.dev/eidos/core@0.13.1
+
 ## 0.9.0
 
 ### Minor Changes

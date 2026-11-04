@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/core
 
+## 0.13.1
+
+### Patch Changes
+
+- e86cf5a: Restore in `plugintest.Loaded` each unit that the load of an earlier fixture of the test binary parsed.
+
 ## 0.13.0
 
 ### Minor Changes
