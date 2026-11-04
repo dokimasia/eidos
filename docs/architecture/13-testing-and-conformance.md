@@ -99,7 +99,10 @@ the directives of the plugins, as a workspace prepares its first phase
 call. The fixture contains each package of a dependency round because a
 plan admits those packages. A source that lists its packages does not
 change that. A rule of the generate phase does not run on their
-declarations. The reference ensemble builds its fixtures this way.
+declarations. The reference ensemble builds its fixtures this way. The
+fixtures of one test binary share a parse memo of encoded regions. A
+later fixture of the same tree restores its units from the memo and
+decodes declarations of its own.
 
 **backendtest**, through `RunBackendSuite(t, setup Setup)`. Over a
 hand-built emit fixture it checks: that the fixture is populated,
