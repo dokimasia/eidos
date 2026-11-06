@@ -91,6 +91,7 @@ var readings = []reading{
 	readerOf(shape.ConcurrentReaders, shape.ConcurrentReadersOf),
 	readerOf(shape.Conservative, shape.ConservativeOf),
 	readerOf(shape.CrdtMerge, shape.CrdtMergeOf),
+	readerOf(shape.Creates, shape.CreatesOf),
 	readerOf(shape.Cursor, shape.CursorOf),
 	readerOf(shape.DefaultOnError, shape.DefaultOnErrorOf),
 	readerOf(shape.DeleteRemoves, shape.DeleteRemovesOf),

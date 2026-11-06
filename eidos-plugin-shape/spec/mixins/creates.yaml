@@ -1,0 +1,23 @@
+# Copyright Dokimasia B.V. 2026
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=../../spec.schema.json
+name: creates
+form: mixin
+documentary: true
+claim: >
+  The callable creates a record and returns the key of the record, so a
+  later call can refer to the record by that key. The key param refers to
+  the field of the first value result that contains the key. Without the
+  param, the first value result is the key.
+observation: >
+  Nothing. The mixin documents the callable and licenses no check. A
+  generator of checks can take the key that a call returns as an input of
+  the later calls of its case.
+params:
+  - {key: key, type: reference, resolve: value-field, doc: the field of the first value result that contains the key}
+falsifiability: >
+  Nothing turns red, because the mixin licenses no check.
+counterexamples:
+  edge: a call that creates the record and then fails, so that no result returns its key
+  refused: a callable that returns the key of a record that it did not create, such as a lookup of the key of a name

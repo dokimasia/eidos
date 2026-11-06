@@ -934,6 +934,40 @@ var crdtMergeReadKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity](
 	"shape.crdt-merge.read",
 )
 
+// Creates is the mixin creates. The callable creates a record and returns the
+// key of the record, so a later call can refer to the record by that key. The
+// key param refers to the field of the first value result that contains the
+// key. Without the param, the first value result is the key.
+const Creates Mixin = "creates"
+
+// CreatesKey is the key of the param key of the mixin creates. The param is
+// the field of the first value result that contains the key.
+const CreatesKey directive.ParamKey = "key"
+
+// CreatesParams are the params of the mixin creates.
+type CreatesParams struct {
+	// Key is the field of the first value result that contains the key.
+	Key symbol.Identity
+}
+
+// CreatesOf returns the params of the mixin creates on the subject of m, and
+// false where the subject does not have the mixin. It records each read in the
+// invocation of m.
+func CreatesOf(m sdk.Matcher) (CreatesParams, bool) {
+	var p CreatesParams
+	if _, held := sdk.Fact(m, createsMixinKey); !held {
+		return p, false
+	}
+	p.Key, _ = sdk.Fact(m, createsKeyKey)
+	return p, true
+}
+
+// createsMixinKey is the handle of the key shape.creates.mixin.
+var createsMixinKey meta.Key[bool] = meta.Named[bool]("shape.creates.mixin")
+
+// createsKeyKey is the handle of the key shape.creates.key.
+var createsKeyKey meta.Key[symbol.Identity] = meta.Named[symbol.Identity]("shape.creates.key")
+
 // Cursor is the contract cursor. A next callable reads the next element of a
 // cursor, and a close callable releases it. Either the two are callables of
 // one package, or an open callable returns a handle, and the next-method and
@@ -4818,6 +4852,25 @@ func Specs() []Spec {
 			},
 		},
 		{
+			Name:        "creates",
+			Form:        FormMixin,
+			Doc:         "The callable creates a record and returns the key of the record, so a later call can refer to the record by that key. The key param refers to the field of the first value result that contains the key. Without the param, the first value result is the key.",
+			Group:       "shape.creates",
+			Key:         "shape.creates.mixin",
+			Documentary: true,
+			Params: []Param{
+				{
+					ParamSpec: directive.ParamSpec{
+						Key:        CreatesKey,
+						Type:       directive.TypeReference,
+						Resolution: directive.ResolveValueField,
+						Doc:        "the field of the first value result that contains the key",
+					},
+					Fact: "shape.creates.key",
+				},
+			},
+		},
+		{
 			Name:  "cursor",
 			Form:  FormContract,
 			Doc:   "A next callable reads the next element of a cursor, and a close callable releases it. Either the two are callables of one package, or an open callable returns a handle, and the next-method and close-method params refer to the methods of the handle.",
@@ -6565,4 +6618,4 @@ func Specs() []Spec {
 	}
 }
 
-// shapegen:provenance sha256:3a6d5cdcf567572002b67249a526cc312a952ca96887c5e5dbb4cb2fbec541bd
+// shapegen:provenance sha256:171f735b1b7180134a93b38107fe436659112c14d073bd5a6cac75f42628a1e4
