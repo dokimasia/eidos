@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/plugin/shape
 
+## 0.5.0
+
+### Minor Changes
+
+- dddfeba: Add the mixin `creates` for a callable that creates a record and returns its key.
+
 ## 0.4.1
 
 ### Patch Changes
