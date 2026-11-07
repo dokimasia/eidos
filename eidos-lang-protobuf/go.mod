@@ -7,7 +7,7 @@ go 1.27.3
 
 require (
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9
-	go.dokimi.dev/assert v0.10.0
+	go.dokimi.dev/assert v0.16.0
 	go.dokimi.dev/eidos/lang v0.4.4
 	go.dokimi.dev/eidos/sdk v0.9.1
 	google.golang.org/protobuf v1.36.12
@@ -16,6 +16,7 @@ require (
 require (
 	buf.build/gen/go/bufbuild/protodescriptor/protocolbuffers/go v1.36.12-20261012172039-ff528c23443f.2 // indirect
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.4 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/tidwall/btree v1.8.2 // indirect

@@ -2,8 +2,8 @@ buf.build/gen/go/bufbuild/protodescriptor/protocolbuffers/go v1.36.12-2026101217
 buf.build/gen/go/bufbuild/protodescriptor/protocolbuffers/go v1.36.12-20261012172039-ff528c23443f.2/go.mod h1:Gjxz0o7qPHokNsmlX8D+/aKd29NRLRr9CCUkPeMAzJ0=
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 h1:NbnlmV26O7oZ1iM5tsCI+GEx+3ZSdrhvnKQ/eWSrLiY=
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2/go.mod h1:TCt1lluMFnctISJXvkIQ4x3ABrPuUKCWKyjKdkJNBpw=
-github.com/bmatcuk/doublestar/v4 v4.10.0 h1:zU9WiOla1YA122oLM6i4EXvGW62DvKZVxIe6TYWexEs=
-github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
+github.com/bmatcuk/doublestar/v4 v4.10.4 h1:oTKkRmRuOsKMqFe1AQazd9gGBFNEpOmgKp/xzB97dnA=
+github.com/bmatcuk/doublestar/v4 v4.10.4/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9 h1:RccwveUpgRoFeXrRXE3y9VksqVjsED9rnEAQbFxkXiU=
 github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9/go.mod h1:bX3ObJfML+aki7PJevkWLSlOfEZ8EnNsfCz0hiYkhiI=
 github.com/dave/dst v0.28.0 h1:EIEuRC5XmVKuZF2OeyMahXX9ARVt6Xxr8vI0WtIY7K8=
@@ -38,12 +38,12 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/tidwall/btree v1.8.2 h1:mTY5iM4UTh2e80TG7RHDQQmnAY3xGNQA/DbU0olkhkA=
 github.com/tidwall/btree v1.8.2/go.mod h1:jBbTdUWhSZClZWoDg54VnvV7/54modSOzDN7VXftj1A=
-go.dokimi.dev/assert v0.10.0 h1:rRnsUk0oW+/kk9Br5Hk4pM3bywGBHJe5RmJYCjB4ufQ=
-go.dokimi.dev/assert v0.10.0/go.mod h1:NeZvtoRhjUZSooEp8kN1mMakVUowb+EDKFR/YOUey2w=
+go.dokimi.dev/assert v0.16.0 h1:yVzUD+UaDFDK0ROxnOJrcMkWuG/cAlJJwp0ZEw7Ot1s=
+go.dokimi.dev/assert v0.16.0/go.mod h1:NeZvtoRhjUZSooEp8kN1mMakVUowb+EDKFR/YOUey2w=
 go.dokimi.dev/eidos/lang/go v0.7.1 h1:+E+RxoJUq7f9Ok5uSUdE/mHHqkKqlHvyiTY79l1YlUE=
 go.dokimi.dev/eidos/lang/go v0.7.1/go.mod h1:m/E5HTOqQz+NjGJ8mpOBAV0Flsea2zhqzh33Lm2TtBU=
-go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
-go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
+go.yaml.in/yaml/v3 v3.0.6 h1:zcDfvjXEqTQmpjniUBLc91xYJMB2c4QOFxEF/LCEckM=
+go.yaml.in/yaml/v3 v3.0.6/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e h1:HgI6W1OolKK6tcV74is+rl9SMT0njsHlp0TbQiGXI/A=
 golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e/go.mod h1:DBoxwWhjaW8DJJw/YeM4zpeOKMC1FMXSblsYy+1mFSw=
 golang.org/x/mod v0.42.0 h1:ICeL3t2L30ljSPHHxDnR4fqVcBt/zR2zJAb9juavmQg=

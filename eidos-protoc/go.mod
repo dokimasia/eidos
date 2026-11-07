@@ -7,7 +7,7 @@ go 1.27.3
 
 require (
 	github.com/bufbuild/protocompile v0.14.2-0.20260917202354-386f9fcfc7b9
-	go.dokimi.dev/assert v0.10.0
+	go.dokimi.dev/assert v0.16.0
 	go.dokimi.dev/eidos/core v0.13.1
 	go.dokimi.dev/eidos/lang/go v0.7.1
 	go.dokimi.dev/eidos/lang/protobuf v0.3.2

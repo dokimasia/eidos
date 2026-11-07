@@ -6,12 +6,12 @@ module go.dokimi.dev/eidos/plugin/shape/tools
 go 1.27.3
 
 require (
-	go.dokimi.dev/assert v0.10.0
+	go.dokimi.dev/assert v0.16.0
 	go.dokimi.dev/eidos/core v0.13.1
 	go.dokimi.dev/eidos/lang v0.4.4
 	go.dokimi.dev/eidos/lang/go v0.7.1
 	go.dokimi.dev/eidos/sdk v0.9.1
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 )
 
 require (

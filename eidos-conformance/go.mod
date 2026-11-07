@@ -6,7 +6,7 @@ module go.dokimi.dev/eidos/conformance
 go 1.27.3
 
 require (
-	go.dokimi.dev/assert v0.10.0
+	go.dokimi.dev/assert v0.16.0
 	go.dokimi.dev/eidos/cli v0.3.6
 	go.dokimi.dev/eidos/core v0.13.1
 	go.dokimi.dev/eidos/declarative v0.1.13
@@ -20,7 +20,7 @@ require (
 	go.dokimi.dev/eidos/lang/typescript v0.5.1
 	go.dokimi.dev/eidos/plugin/shape v0.5.0
 	go.dokimi.dev/eidos/sdk v0.9.1
-	go.stealthscale.io/cli v0.7.0
+	go.stealthscale.io/cli v0.8.1
 )
 
 require (
@@ -45,8 +45,8 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
 	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
-	go.stealthscale.io/cli/yaml v0.1.7 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.stealthscale.io/cli/yaml v0.1.9 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect

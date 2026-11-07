@@ -7,7 +7,7 @@ go 1.27.3
 
 require (
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
-	go.dokimi.dev/assert v0.10.0
+	go.dokimi.dev/assert v0.16.0
 	go.dokimi.dev/eidos/lang v0.4.4
 	go.dokimi.dev/eidos/sdk v0.9.1
 )
