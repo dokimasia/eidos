@@ -41,14 +41,16 @@ const (
 
 // The paths the cases that vary the dependency tree add: a package no
 // store declares, a file of another frontend and the package it
-// imports, the file a round's listing gains, and a member no store
-// contains.
+// imports, the file a round's listing gains, a member no store
+// contains, and a second package that declares the deep name.
 const (
 	absentPath = "ext/absent"
 	otherFile  = "other/x.zz"
 	otherPath  = "ext/other"
 	noteFile   = "ext/lib/notes.txt"
 	goneFile   = "ext/gone/gone.zz"
+	twinPath   = "ext/twin"
+	twinFile   = "ext/twin/twin.zz"
 )
 
 // The directory whose three files import one package: the first and
@@ -159,6 +161,26 @@ func TestDependency(t *testing.T) {
 			coretest.AssertCodes(t, sink, plugin.ContinuedCarrier)
 		})
 
+		t.Run("does not report an ambiguous reference of a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, depTree(), with(recorded()), stores(twinStore()))
+			coretest.AssertCodes(t, sink)
+			lib, _ := g.Lookup(declIn(libPath, libName))
+			assert.Equal(t, lib.(*node.Struct).Fields[0].Type.Target, declIn(deepPath, deepName),
+				"the first candidate of the ambiguous tier is the target")
+		})
+
+		t.Run("reports AmbiguousReference for an ambiguous reference of a workspace unit", func(t *testing.T) {
+			t.Parallel()
+
+			tree := depTree()
+			tree[appFile] = &fstest.MapFile{Data: []byte("package " + appPath + "\nimport deep " + deepPath + " " +
+				twinPath + "\ntype " + appName + " deep." + deepName + "\n")}
+			_, _, sink := loadTree(t, tree, with(recorded()), stores(twinStore()))
+			coretest.AssertCodes(t, sink, load.AmbiguousReference)
+		})
+
 		t.Run("resolves a workspace reference to a dependency's declaration", func(t *testing.T) {
 			t.Parallel()
 
@@ -215,6 +237,30 @@ func TestDependency(t *testing.T) {
 			warm := loadOf(t, depTree(), with(rec), stores(depStore()), func(cfg *load.Config) { cfg.Prior = prior })
 			assert.Empty(t, rec.rounds, "every round would return its recorded units")
 			assertSameLoad(t, warm, loadOf(t, depTree(), with(recorded()), stores(depStore())))
+		})
+
+		t.Run("does not report an ambiguous reference of a kept dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			warm, cold := warmCold(t, depTree(), depTree(), with(recorded()), stores(twinStore()))
+			coretest.AssertCodes(t, warm.sink)
+			assertSameLoad(t, warm, cold)
+		})
+
+		t.Run("does not report an ambiguity that a kept dependency unit gains", func(t *testing.T) {
+			t.Parallel()
+
+			before := twinStore()
+			before[twinFile] = &fstest.MapFile{Data: []byte("package " + twinPath + "\ntype Other string\n")}
+			prior := committed(t, loadOf(t, depTree(), with(recorded()), stores(before)).report)
+			after := twinStore()
+			after[twinFile].ModTime = editTime
+			warm := loadOf(t, depTree(), with(recorded()), stores(after), func(cfg *load.Config) { cfg.Prior = prior })
+			lib := unitOf(t, warm.report, member(libFile))
+			assert.Equal(t, lib.From, load.FromGeneration, "the library's key is the recorded one")
+			assert.Nil(t, lib.Region, "its reference keeps the first candidate as its target")
+			coretest.AssertCodes(t, warm.sink)
+			assertSameLoad(t, warm, loadOf(t, depTree(), with(recorded()), stores(after)))
 		})
 
 		t.Run("reports the recorded rounds' findings again", func(t *testing.T) {
@@ -795,6 +841,17 @@ func depStore() fstest.MapFS {
 		deepFile:   {Data: []byte("package " + deepPath + "\ntype " + deepName + " string\n")},
 		unusedFile: {Data: []byte("package ext/unused\ntype Unused string\n")},
 	}
+}
+
+// twinStore returns the dependency store whose library imports the alias
+// deep from the deep package and from the twin package, which both
+// declare the deep name, so the reference of the library is ambiguous.
+func twinStore() fstest.MapFS {
+	store := depStore()
+	store[libFile] = &fstest.MapFile{Data: []byte("package " + libPath + "\nimport deep " + deepPath + " " +
+		twinPath + "\ntype " + libName + " deep." + deepName + "\n")}
+	store[twinFile] = &fstest.MapFile{Data: []byte("package " + twinPath + "\ntype " + deepName + " string\n")}
+	return store
 }
 
 // useTree returns the workspace tree whose one file uses the store's

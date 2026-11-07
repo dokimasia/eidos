@@ -31,12 +31,13 @@ import (
 // the bindings of its file's language: the frontend's Resolve names
 // the candidates in shadowing tiers, and the first tier with a
 // candidate the graph contains decides. That candidate is the
-// target, and several such candidates in the tier report under
-// [AmbiguousReference]. A reference no tier resolves keeps its
-// spelling alone: degradation a reader can ask about, not a
-// failure. For a language whose frontend is a [plugin.Importer], a
-// target declared in another file sets the reference's package to
-// the import the frontend names for that file.
+// target. Several such candidates in the tier report under
+// [AmbiguousReference] for a reference of a workspace unit, and a
+// unit of a dependency round does not report one. A reference no tier
+// resolves keeps its spelling alone: degradation a reader can ask
+// about, not a failure. For a language whose frontend is a
+// [plugin.Importer], a target declared in another file sets the
+// reference's package to the import the frontend names for that file.
 //
 // A file without a recorded scope resolves nothing: there are no
 // bindings to resolve through, and its references keep their
@@ -267,7 +268,7 @@ func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.Impo
 			}
 		}
 	}
-	record.Findings = ambiguity(ref, f, hits)
+	record.Findings = w.unit.ambiguity(ref, f, hits)
 	for _, d := range record.Findings {
 		w.sink.Report(d)
 	}
@@ -381,10 +382,12 @@ func byExporterPath(a, b exporterEntry) int {
 	return strings.Compare(a.scope.file.Path, b.scope.file.Path)
 }
 
-// ambiguity returns the finding of a reference whose first tier with a
-// match matched more than one declaration, and nothing for any other.
-func ambiguity(ref *node.TypeRef, f plugin.Frontend, hits []symbol.Identity) []diag.Diag {
-	if len(hits) < 2 {
+// ambiguity returns the finding of a reference of u whose first tier with a
+// match matched more than one declaration, and nothing for any other. A
+// unit of a dependency round does not report an ambiguity, because the
+// author of the workspace cannot change the source of a dependency.
+func (u *unit) ambiguity(ref *node.TypeRef, f plugin.Frontend, hits []symbol.Identity) []diag.Diag {
+	if len(hits) < 2 || u.round > 0 {
 		return nil
 	}
 	names := make([]string, len(hits))

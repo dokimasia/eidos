@@ -40,7 +40,8 @@ var DuplicateDeclaration = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 // AmbiguousReference reports a type reference whose candidates in
 // one shadowing tier match more than one declaration. The first
 // match is the target: degradation a reader can ask about, not a
-// failure.
+// failure. A reference of a unit of a dependency round does not
+// report it.
 var AmbiguousReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  38,
 	Meaning: "a type reference resolves to more than one declaration",

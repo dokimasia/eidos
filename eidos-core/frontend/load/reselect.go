@@ -134,7 +134,7 @@ func (w *linker) reselect(u *unit, r *store.Region) (bool, error) {
 		if len(hits) > 0 {
 			target = hits[0]
 		}
-		findings := ambiguity(ref, u.frontend, hits)
+		findings := u.ambiguity(ref, u.frontend, hits)
 		if ref.Target == target && slices.Equal(link.Followed, w.followed) &&
 			slices.Equal(link.Reached, w.reached) && sameFindings(link.Findings, findings) {
 
