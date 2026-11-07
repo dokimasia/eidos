@@ -1,5 +1,17 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.10.0
+
+### Minor Changes
+
+- bc6a093: Re-export `plugin.Qualifier`, `frontendtest.ScriptedQualifier` and `frontendtest.NewScriptedQualifier`.
+- 3fd5905: Re-export `rules.WrapRules`.
+
+### Patch Changes
+
+- Updated dependencies [d1f796e, 3fd5905, 9324e49]
+  - go.dokimi.dev/eidos/core@0.14.0
+
 ## 0.9.1
 
 ### Patch Changes

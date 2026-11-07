@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang/protobuf
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [d1f796e, 3fd5905, bc6a093, 9324e49]
+  - go.dokimi.dev/eidos/core@0.14.0
+  - go.dokimi.dev/eidos/sdk@0.10.0
+  - go.dokimi.dev/eidos/lang@0.4.5
+
 ## 0.3.2
 
 ### Patch Changes

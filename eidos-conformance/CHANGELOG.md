@@ -1,5 +1,25 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.17
+
+### Patch Changes
+
+- 3fd5905: Add the row of `rules.WrapRules` to the support matrix.
+- Updated dependencies [d1f796e, 46cfc1a, 3fd5905, bc6a093, 9324e49, 64ce214]
+  - go.dokimi.dev/eidos/core@0.14.0
+  - go.dokimi.dev/eidos/lang/go@0.8.0
+  - go.dokimi.dev/eidos/sdk@0.10.0
+  - go.dokimi.dev/eidos/cli@0.3.7
+  - go.dokimi.dev/eidos/declarative@0.1.14
+  - go.dokimi.dev/eidos/lang@0.4.5
+  - go.dokimi.dev/eidos/lang/graphql@0.2.2
+  - go.dokimi.dev/eidos/lang/java@0.2.13
+  - go.dokimi.dev/eidos/lang/protobuf@0.3.3
+  - go.dokimi.dev/eidos/lang/python@0.2.2
+  - go.dokimi.dev/eidos/lang/rust@0.3.2
+  - go.dokimi.dev/eidos/lang/typescript@0.5.2
+  - go.dokimi.dev/eidos/plugin/shape@0.5.1
+
 ## 0.3.16
 
 ### Patch Changes

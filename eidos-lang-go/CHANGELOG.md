@@ -1,5 +1,21 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.8.0
+
+### Minor Changes
+
+- 46cfc1a: Add `golang.Bindings.Tiers`, `golang.Bindings.ImportIn`, `golang.Qualifies` and `golang.ImportNameIn`.
+- 46cfc1a: **Breaking:** Make `golang.PackageBindings` a struct with the fields `Files` and `Names`.
+- 64ce214: Add `Rules.Wrapped`, which returns the first operand of a call of `fmt.Errorf` whose format opens with `%w`.
+
+### Patch Changes
+
+- 46cfc1a: Fix the Go frontend and rules to bind an import without an alias to the name in the package clause of the imported package.
+- Updated dependencies [d1f796e, 3fd5905, bc6a093, 9324e49]
+  - go.dokimi.dev/eidos/core@0.14.0
+  - go.dokimi.dev/eidos/sdk@0.10.0
+  - go.dokimi.dev/eidos/lang@0.4.5
+
 ## 0.7.1
 
 ### Patch Changes
