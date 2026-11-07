@@ -363,6 +363,16 @@ type Importer = core.Importer
 // re-export targets the declaration it publishes.
 type Exporter = core.Exporter
 
+// Qualifier is the optional frontend role of a language whose import binds
+// the name that the imported package declares, as a Go import without an
+// alias binds the name in the package clause of the imported package. The
+// resolution step passes each declaration that a candidate of a reference
+// names to Qualifies, with the name that the package of the declaration
+// declares. It keeps the declaration among the hits of its tier only where
+// Qualifies reports true, so two hits that Qualifies admits report as an
+// ambiguity, and a hit that it refuses does not.
+type Qualifier = core.Qualifier
+
 // Candidates is what one spelling could mean, in tiers: each tier is
 // the candidate identities one scope offers, in probe order, and an
 // earlier tier shadows every later one. A language whose scopes

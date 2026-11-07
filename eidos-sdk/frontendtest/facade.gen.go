@@ -206,6 +206,8 @@ type ScriptedOptions = core.ScriptedOptions
 // signature-sensitive declaration. One statement per line:
 //
 //	package PATH          the file's package path
+//	name NAME             the name that the package declares, which is
+//	                      the last element of its path otherwise
 //	import ALIAS PATH...  bind an alias to one or more packages, one
 //	                      import record per path
 //	use PATH NAME         a use of the declaration NAME of the package
@@ -282,6 +284,20 @@ type ScriptedExporter = core.ScriptedExporter
 // role, under its usual claim.
 func NewScriptedExporter() *ScriptedExporter {
 	return core.NewScriptedExporter()
+}
+
+// ScriptedQualifier is the scripted language in the [plugin.Qualifier] role,
+// the shape of a Go import without an alias. Its Resolve returns a bare
+// capital in the first tier, and the name in each package that the alias of a
+// qualified spelling binds in the second tier. Qualifies admits a declaration
+// of the second tier only where its package declares the alias as its name,
+// which a name statement states.
+type ScriptedQualifier = core.ScriptedQualifier
+
+// NewScriptedQualifier returns the scripted language in the qualifier role,
+// under its usual claim.
+func NewScriptedQualifier() *ScriptedQualifier {
+	return core.NewScriptedQualifier()
 }
 
 // Brand is the brand every suite load runs under. A fixture writes

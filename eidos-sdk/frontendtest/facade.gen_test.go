@@ -301,6 +301,26 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("ScriptedQualifier", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[frontendtest.ScriptedQualifier](), reflect.TypeFor[core.ScriptedQualifier](), "the facade aliases the kernel's type")
+		})
+	})
+
+	t.Run("NewScriptedQualifier", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(frontendtest.NewScriptedQualifier), reflect.TypeOf(core.NewScriptedQualifier), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("Brand", func(t *testing.T) {
 		t.Parallel()
 

@@ -411,6 +411,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Qualifier", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[plugin.Qualifier](), reflect.TypeFor[core.Qualifier](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("Candidates", func(t *testing.T) {
 		t.Parallel()
 
