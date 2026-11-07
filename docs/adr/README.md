@@ -140,3 +140,5 @@ way.
 | [0119](0119-the-embed-of-an-interface-is-named-by-its-whole-reference.md) | The embed of an interface is named by its whole reference | Accepted |
 | [0120](0120-an-interface-states-its-constraint-elements-as-type-references.md) | An interface states its constraint elements as type references | Accepted |
 | [0121](0121-a-callable-reference-can-refer-to-a-method-of-a-type-in-scope.md) | A callable reference can refer to a method of a type in scope | Accepted |
+| [0122](0122-a-qualifier-admits-the-declared-name-of-the-package-of-a-hit.md) | A qualifier admits the declared name of the package of a hit | Accepted |
+| [0123](0123-the-rules-state-the-error-value-that-an-error-value-wraps.md) | The rules state the error value that an error value wraps | Accepted |

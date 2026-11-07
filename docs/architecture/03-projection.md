@@ -92,8 +92,8 @@ type SourceRules interface {
 A handler reaches the kernel's walks through the bound `Rules()` on
 its match: `CallableOf`, `TypeOf`, `FieldTypeOf`, `MembersOf`,
 `Satisfies`, `Implementers`, `SamplesOf`, `ZeroValue`, `LiteralFor`,
-`Witnesses`, `Tag`, `SentinelName`, `SentinelBase`, `ErrorContract` and
-`Importable`, over the invocation's tracked view.
+`Witnesses`, `Tag`, `SentinelName`, `SentinelBase`, `ErrorContract`,
+`Wrapped` and `Importable`, over the invocation's tracked view.
 Every read that a projection makes records on that invocation. A value
 is safe for concurrent use, because it has no state of its own.
 
@@ -407,8 +407,8 @@ derived.
 ## Tier 2: declared by satisfying, found by asserting
 
 A language declares an optional capability by implementing the
-interface. The bound rules wrap eight capabilities: `Tag`,
-`SentinelName`, `SentinelBase`, `ErrorContract`, `Importable`,
+interface. The bound rules wrap nine capabilities: `Tag`,
+`SentinelName`, `SentinelBase`, `ErrorContract`, `Wrapped`, `Importable`,
 `ImportableValue`, `FieldTypeOf` and `Witnesses`. A handler reads them
 through methods that report false for a language without the capability.
 `Importable` and `ImportableValue` return nil for such a language,
@@ -430,6 +430,9 @@ type ErrorValueRules interface {
 }
 type ErrorTypeRules interface {
     ErrorContract(decl symbol.Symbol, v View) (ErrorContract, bool) // message, cause, hooks, pointer
+}
+type WrapRules interface {
+    Wrapped(v *node.Variable, view View) (*node.Variable, bool) // the error value that an initializer wraps
 }
 type ResultRules interface {
     Result(ref *node.TypeRef, v View) (value, failure *node.TypeRef, ok bool) // the parts of a result type
@@ -495,6 +498,7 @@ field is the projection.
 | `EnumRules` | project an enumeration: form, zero, foreign values | Go const groups, Java enum classes, TS enums, proto |
 | `ErrorValueRules` | sentinel conventions: the name of a base and the base of a name, paired so they cannot drift | Go |
 | `ErrorTypeRules` | the error contract of a type: the member of its message, the field of its cause, the hooks that the error functions call, and whether a pointer to it is the error | Go method sets, TypeScript classes that extend Error |
+| `WrapRules` | the error value that the initializer of an error value wraps at the opening of its message, which the error functions match through the initializer | Go `fmt.Errorf` with a format that opens with `%w` |
 | `ResultRules` | the value and the failure of a result type, which `CallableOf` splits into two views of a return under the result-type error model | Rust `Result<T, E>` |
 | `TextRules` | the value of a text that an author states for a text type, which `View.Authored` asks for in place of a string literal | Rust `String::from("a")`, and the character literal of `char` |
 | `ContextRules` | the context of a call that a signature does not state, which `CallableOf` puts first among the parameters | the context of every protobuf rpc, which every gRPC binding passes to a handler |

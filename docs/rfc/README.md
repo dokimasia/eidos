@@ -106,3 +106,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0087](0087-data-files-and-line-sets.md) | Data files and line sets | Accepted |
 | [0088](0088-a-protoc-plugin-host.md) | A protoc plugin host | Accepted |
 | [0089](0089-the-constraint-elements-of-an-interface.md) | The constraint elements of an interface | Accepted |
+| [0090](0090-the-declared-name-of-the-package-of-a-reference.md) | The declared name of the package of a reference | Accepted |
