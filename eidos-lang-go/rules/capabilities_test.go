@@ -51,6 +51,15 @@ const (
 	stringName   = "String"
 )
 
+// The file of the fixture of wrapped error values, the parent of its family,
+// and the error value of the package fx/dep that a child of the family
+// wraps.
+const (
+	wrapsFile  = "fx/wraps.go"
+	policyName = "ErrPolicy"
+	baseName   = "ErrBase"
+)
+
 // The file of the fixture of hidden fields, its struct with a blank field,
 // and the package of the stand-in of math/big.
 const (
@@ -113,6 +122,10 @@ const (
 	// methods. errorContractAllocs is the method set alone.
 	methodSetAllocs     = 3
 	errorContractAllocs = methodSetAllocs
+	// wrappedAllocs is the wrap of a child of a family: the parse of its
+	// initializer, 20 allocations, and the bindings of its file with the
+	// resolution of its operand, 8 more.
+	wrappedAllocs = 20 + 8
 )
 
 // TestCapabilities pins each method of the optional capability interfaces
@@ -313,6 +326,73 @@ func TestCapabilities(t *testing.T) {
 
 			_, isError := capability[rules.ErrorTypeRules](t).ErrorContract(nil, errorsLoaded(t).view)
 			assert.False(t, isError, "nothing is no error")
+		})
+	})
+
+	t.Run("Wrapped", func(t *testing.T) {
+		t.Parallel()
+
+		policy, base := id(fxPath, policyName, symbol.KindVariable), id(depPath, baseName, symbol.KindVariable)
+		tests := []struct {
+			name     string
+			give     string
+			wantWrap symbol.Identity
+		}{
+			{name: "returns the operand of a format that opens with %w", give: "ErrExposure", wantWrap: policy},
+			{name: "returns the operand of a raw format", give: "ErrRaw", wantWrap: policy},
+			{name: "returns an error value of another package", give: "ErrBased", wantWrap: base},
+			{name: "returns the operand of a call through an alias of fmt", give: "ErrAliased", wantWrap: policy},
+			{name: "returns the operand of a call through a dot import of fmt", give: "ErrDotted", wantWrap: policy},
+			{name: "returns the operand of a call of fmt.Errorf in parentheses", give: "ErrParened", wantWrap: policy},
+			{name: "reports false for a format that wraps after its opening", give: "ErrLate"},
+			{name: "reports false for a format that is no literal", give: "ErrComputed"},
+			{name: "reports false for a format that is a number", give: "ErrNumbered"},
+			{name: "reports false for an operand that is no variable", give: "ErrCalled"},
+			{name: "reports false for a call without an operand", give: "ErrBare"},
+			{name: "reports false for an operand that is a constant", give: "ErrConstant"},
+			{name: "reports false for an operand that names no declaration", give: "ErrMissing"},
+			{name: "reports false for a method of another value", give: "ErrPrinted"},
+			{name: "reports false for a call through a selector of a field", give: "ErrNested"},
+			{name: "reports false for another function of fmt", give: "ErrSprinted"},
+			{name: "reports false for a function of the package", give: "ErrLocal"},
+			{name: "reports false for a call of an element of a list", give: "ErrIndexed"},
+			{name: "reports false for a dot import of another function", give: "ErrDottedPrint"},
+			{name: "reports false for a value that is no call", give: "ErrText"},
+			{name: "reports false for a call in a file that does not import fmt", give: "ErrUnbound"},
+			{name: "reports false for an error value of errors.New", give: policyName},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := wrapsLoaded(t)
+				v, _ := f.decl(t, id(fxPath, tt.give, symbol.KindVariable)).(*node.Variable)
+				got, wraps := capability[rules.WrapRules](t).Wrapped(v, f.view)
+				expect.Equal(t, wraps, !tt.wantWrap.IsZero(), "whether the initializer wraps an error value")
+				var wrapped symbol.Identity
+				if got != nil {
+					wrapped = got.ID
+				}
+				expect.Equal(t, wrapped, tt.wantWrap, "the error value that the initializer wraps")
+			})
+		}
+
+		t.Run("reports false for a nil error value", func(t *testing.T) {
+			t.Parallel()
+
+			_, wraps := capability[rules.WrapRules](t).Wrapped(nil, wrapsLoaded(t).view)
+			assert.False(t, wraps, "nothing wraps no error value")
+		})
+
+		t.Run("reports false for an initializer that is no expression", func(t *testing.T) {
+			t.Parallel()
+
+			f := wrapsLoaded(t)
+			exposure, _ := f.decl(t, id(fxPath, "ErrExposure", symbol.KindVariable)).(*node.Variable)
+			broken := *exposure
+			broken.Value += " and more"
+			_, wraps := capability[rules.WrapRules](t).Wrapped(&broken, f.view)
+			assert.False(t, wraps, "a call and a trailing text are no expression")
 		})
 	})
 
@@ -1021,8 +1101,13 @@ func BenchmarkCapabilities(b *testing.B) {
 func capabilityCalls(tb testing.TB) []allocCall {
 	tb.Helper()
 
-	f, ef := loaded(tb), errorsLoaded(tb)
+	f, ef, wf := loaded(tb), errorsLoaded(tb), wrapsLoaded(tb)
 	errs, tags := capability[rules.ErrorValueRules](tb), capability[rules.TagRules](tb)
+	wraps := capability[rules.WrapRules](tb)
+	policy, _ := wf.decl(tb, id(fxPath, policyName, symbol.KindVariable)).(*node.Variable)
+	exposure, _ := wf.decl(tb, id(fxPath, "ErrExposure", symbol.KindVariable)).(*node.Variable)
+	plain, _ := wf.decl(tb, id(fxPath, "ErrPlain", symbol.KindVariable)).(*node.Variable)
+	verbal, _ := wf.decl(tb, id(fxPath, "ErrVerbal", symbol.KindVariable)).(*node.Variable)
 	generics, promotion := capability[rules.GenericsRules](tb), capability[rules.PromotionRules](tb)
 	equality, errorTypes := capability[rules.EqualityRules](tb), capability[rules.ErrorTypeRules](tb)
 	imports, web := capability[rules.ImportRules](tb), id(webPath, "", symbol.KindPackage)
@@ -1045,6 +1130,7 @@ func capabilityCalls(tb testing.TB) []allocCall {
 		methods  []*node.Method
 		message  *node.Method
 		contract rules.ErrorContract
+		wrapped  *node.Variable
 		refusal  error
 	)
 	return []allocCall{
@@ -1090,6 +1176,29 @@ func capabilityCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) {
 				assert.True(tb, reported, "ErrorContract takes NotFound as an error")
 				assert.NotNil(tb, contract.Cause, "ErrorContract finds the cause")
+			},
+		},
+		{
+			name: "Wrapped", caseName: "an error value of errors.New",
+			call:  func() { wrapped, reported = wraps.Wrapped(policy, wf.view) },
+			check: func(tb assert.TB) { assert.False(tb, reported, "Wrapped finds no wrap in a call of errors.New") },
+		},
+		{
+			name: "Wrapped", caseName: "an initializer without the verb %w",
+			call:  func() { wrapped, reported = wraps.Wrapped(plain, wf.view) },
+			check: func(tb assert.TB) { assert.False(tb, reported, "Wrapped finds no wrap without the verb %w") },
+		},
+		{
+			name: "Wrapped", caseName: "an initializer without the name Errorf",
+			call:  func() { wrapped, reported = wraps.Wrapped(verbal, wf.view) },
+			check: func(tb assert.TB) { assert.False(tb, reported, "Wrapped finds no wrap without fmt.Errorf") },
+		},
+		{
+			name: "Wrapped", caseName: "a child of a family", allocs: wrappedAllocs,
+			call: func() { wrapped, reported = wraps.Wrapped(exposure, wf.view) },
+			check: func(tb assert.TB) {
+				assert.True(tb, reported, "Wrapped finds the wrap of ErrExposure")
+				assert.Equal(tb, wrapped.Name, policyName, "Wrapped returns ErrPolicy")
 			},
 		},
 		{
@@ -1301,6 +1410,112 @@ func (Legacy) As(target interface{}) bool { return target == nil }
 
 // Wrapper embeds NotFound.
 type Wrapper struct{ NotFound }
+`)},
+	}
+}
+
+// wrapsLoaded returns the fixture of wrapped error values with a tracked view
+// over it.
+func wrapsLoaded(tb assert.TB) *fixture {
+	tb.Helper()
+
+	f := rulestest.Loaded(tb, gofrontend.New(nil), wrapsTree())
+	return viewOver(tb, f, id(fxPath, policyName, symbol.KindVariable), wrapsFile)
+}
+
+// wrapsTree returns the fixture of wrapped error values. ErrPolicy is the
+// parent of a family, and the error values of wraps.go wrap it or another
+// error value in each form of an initializer that the Go rules read. The
+// files aliased.go and dotted.go call fmt through an alias and through a dot
+// import, and unbound.go calls fmt without an import of fmt.
+func wrapsTree() fstest.MapFS {
+	return fstest.MapFS{
+		wrapsFile: {Data: []byte(`package fx
+
+import (
+	"errors"
+	"fmt"
+
+	"fx/dep"
+)
+
+// ErrPolicy is the parent of the family.
+var ErrPolicy = errors.New("fx: invalid policy")
+
+// The error values that wrap another error value, and the error values that
+// wrap none.
+var (
+	ErrExposure = fmt.Errorf("%w: no exposure", ErrPolicy)
+	ErrRaw      = fmt.Errorf(` + "`%w: raw`" + `, ErrPolicy)
+	ErrBased    = fmt.Errorf("%w: based", dep.ErrBase)
+	ErrParened  = (fmt.Errorf)("%w: parened", ErrPolicy)
+	ErrLate     = fmt.Errorf("fx: late: %w", ErrPolicy)
+	ErrComputed = fmt.Errorf(policyFormat+"%w", ErrPolicy)
+	ErrNumbered = fmt.Errorf(7, "%w", ErrPolicy)
+	ErrCalled   = fmt.Errorf("%w: called", errors.New("fx: inner"))
+	ErrBare     = fmt.Errorf("%w")
+	ErrConstant = fmt.Errorf("%w: constant", policyText)
+	ErrMissing  = fmt.Errorf("%w: missing", errUndeclared)
+	ErrPrinted  = printer.Errorf("%w: printed", ErrPolicy)
+	ErrNested   = printers.text.Errorf("%w: nested", ErrPolicy)
+	ErrSprinted = fmt.Sprint("%w: no Errorf", ErrPolicy)
+	ErrLocal    = Errorf("%w: local", ErrPolicy)
+	ErrIndexed  = Errorfs[0]("%w: indexed", ErrPolicy)
+	ErrText     = "%w Errorf"
+	ErrPlain    = fmt.Errorf("fx: plain")
+	ErrVerbal   = errors.New("fx: %w")
+)
+
+// The format and the text that the error values pass to fmt.Errorf.
+const (
+	policyFormat = "computed: "
+	policyText   = "fx: text"
+)
+
+// The values whose method or element Errorf is not fmt.Errorf.
+var (
+	printer  writer
+	printers struct{ text writer }
+	Errorfs  []func(format string, a ...any) error
+)
+
+// writer has a method Errorf of its own.
+type writer struct{}
+
+func (writer) Errorf(format string, a ...any) error { return nil }
+
+// Errorf is a function of the package.
+func Errorf(format string, a ...any) error { return nil }
+`)},
+		"fx/aliased.go": {Data: []byte(`package fx
+
+import f "fmt"
+
+// ErrAliased wraps ErrPolicy through an alias of fmt.
+var ErrAliased = f.Errorf("%w: aliased", ErrPolicy)
+`)},
+		"fx/dotted.go": {Data: []byte(`package fx
+
+import . "fmt"
+
+// ErrDotted wraps ErrPolicy through a dot import of fmt, and
+// ErrDottedPrint calls another function of fmt.
+var (
+	ErrDotted      = Errorf("%w: dotted", ErrPolicy)
+	ErrDottedPrint = Sprint("%w: no Errorf", ErrPolicy)
+)
+`)},
+		"fx/unbound.go": {Data: []byte(`package fx
+
+// ErrUnbound calls fmt without an import of fmt in its file.
+var ErrUnbound = fmt.Errorf("%w: unbound", ErrPolicy)
+`)},
+		"fx/dep/d.go": {Data: []byte(`package dep
+
+import "errors"
+
+// ErrBase is an error value of another package.
+var ErrBase = errors.New("dep: base")
 `)},
 	}
 }

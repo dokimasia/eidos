@@ -9,11 +9,13 @@ import (
 	"go/token"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/lang/spellref"
+	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -41,6 +43,14 @@ const (
 	unwrapMethod = "Unwrap"
 	isMethod     = "Is"
 	asMethod     = "As"
+)
+
+// The call of an error value that wraps another: the import path and the
+// function of the call, and the verb of the operand that the error wraps.
+const (
+	fmtPath    = "fmt"
+	errorfName = "Errorf"
+	wrapVerb   = "%w"
 )
 
 // The handles of the marks that the Go frontend stamps on a method with a
@@ -195,6 +205,70 @@ func (Rules) ErrorContract(decl symbol.Symbol, v rules.View) (rules.ErrorContrac
 		}
 	}
 	return c, true
+}
+
+// Wrapped returns the error value that the initializer of v wraps at the
+// opening of its message: the first operand of a call of fmt.Errorf whose
+// format is a literal that opens with the verb %w. The error that
+// fmt.Errorf returns unwraps to that operand, and its message opens with the
+// message of the operand. The call names fmt through an import of the file
+// of v, by the qualifier of the import or bare through a dot import. The
+// operand resolves in the scope of v to a variable of view. Wrapped reports
+// false for every other initializer, and for a nil v.
+//
+// Wrapped allocates nothing for an initializer without the name Errorf or
+// the verb %w. Any other initializer allocates its parse, and the
+// resolution of its operand.
+func (r Rules) Wrapped(v *node.Variable, view rules.View) (*node.Variable, bool) {
+	if v == nil || !strings.Contains(v.Value, errorfName) || !strings.Contains(v.Value, wrapVerb) {
+		return nil, false
+	}
+	fset := token.NewFileSet()
+	expr, err := parser.ParseExprFrom(fset, "", v.Value, 0)
+	call, isCall := expr.(*ast.CallExpr)
+	if err != nil || !isCall || len(call.Args) < 2 {
+		return nil, false
+	}
+	format, isLiteral := call.Args[0].(*ast.BasicLit)
+	if !isLiteral {
+		return nil, false
+	}
+	// A literal that is no string unquotes to the empty text, which no verb
+	// opens.
+	text, _ := strconv.Unquote(format.Value)
+	scope := view.ScopeOf(v.ID)
+	if !strings.HasPrefix(text, wrapVerb) || !errorf(call.Fun, bindingsOf(scope.File), v.ID.Package) {
+		return nil, false
+	}
+	src := fset.File(call.Pos())
+	operand := v.Value[src.Offset(call.Args[1].Pos()):src.Offset(call.Args[1].End())]
+	// A refusal of the resolution returns no declaration.
+	sym, _ := r.Resolve(scope, operand, directive.ResolvePackageVar, view)
+	wrapped, isVariable := sym.(*node.Variable)
+	return wrapped, isVariable
+}
+
+// fmtErrorf is the candidate of the function Errorf of the package fmt.
+var fmtErrorf = symbol.Identity{Lang: golang.Lang, Package: fmtPath, Name: errorfName}
+
+// errorf reports whether fun names the function Errorf of the package fmt in
+// a file of the package pkg with the bindings b: through a qualifier that an
+// import of fmt binds, or bare through a dot import of fmt. Parentheses
+// around the name do not change it.
+func errorf(fun ast.Expr, b golang.Bindings, pkg string) bool {
+	switch e := ast.Unparen(fun).(type) {
+	case *ast.SelectorExpr:
+		qualifier, isIdent := e.X.(*ast.Ident)
+		if !isIdent || e.Sel.Name != errorfName {
+			return false
+		}
+		path, _ := b.Import(qualifier.Name)
+		return path == fmtPath
+	case *ast.Ident:
+		return slices.Contains(b.Candidates(pkg, e.Name), fmtErrorf)
+	default:
+		return false
+	}
 }
 
 // ValueReceiver reports whether a value of the type of m has m, as the
