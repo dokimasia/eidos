@@ -1,5 +1,17 @@
 # go.dokimi.dev/eidos/core
 
+## 0.14.0
+
+### Minor Changes
+
+- d1f796e: Add the optional frontend role `plugin.Qualifier`, which admits each declaration of a reference by the name that its package declares.
+- 3fd5905: Add the optional capability `rules.WrapRules` and `rules.Bound.Wrapped` for the error value that the initializer of an error value wraps at the opening of its message.
+
+### Patch Changes
+
+- 9324e49: Fix the load so that a reference of a unit of a dependency round does not report `AmbiguousReference`.
+- d1f796e: Select the kept references of a warm load again where an edit renames the package of one of their candidates.
+
 ## 0.13.1
 
 ### Patch Changes

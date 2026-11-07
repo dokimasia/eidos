@@ -7,8 +7,8 @@ go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.10.0
-	go.dokimi.dev/eidos/core v0.13.1
-	go.dokimi.dev/eidos/declarative v0.1.13
+	go.dokimi.dev/eidos/core v0.14.0
+	go.dokimi.dev/eidos/declarative v0.1.14
 	go.stealthscale.io/cli v0.7.0
 	go.stealthscale.io/cli/yaml v0.1.7
 	go.yaml.in/yaml/v3 v3.0.5
