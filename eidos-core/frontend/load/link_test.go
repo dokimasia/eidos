@@ -310,6 +310,47 @@ func TestLink(t *testing.T) {
 				"a later tier decides where every earlier one names nothing the graph contains")
 		})
 
+		t.Run("keeps a declaration whose package declares the alias that the qualifier admits", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, namedDual(leftPath), with(frontendtest.NewScriptedQualifier()))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
+				"the left package declares the alias, and the right package declares its last element")
+		})
+
+		t.Run("targets nothing where the qualifier refuses every declaration", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, namedDual(), with(frontendtest.NewScriptedQualifier()))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, holderRef(t, g, holdPath).Target, symbol.Identity{},
+				"no package declares the alias, so the reference keeps its spelling")
+		})
+
+		t.Run("reports AmbiguousReference for two declarations that the qualifier admits", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, namedDual(leftPath, rightPath), with(frontendtest.NewScriptedQualifier()))
+			coretest.AssertReports(t, sink, load.AmbiguousReference)
+		})
+
+		t.Run("passes the index of the tier of a candidate to the qualifier", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, localTree(), with(frontendtest.NewScriptedQualifier()))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, holderRef(t, g, localPath).Target, thingIn(localPath),
+				"the qualifier admits a bare name of the first tier")
+		})
+
+		t.Run("passes the empty name of a package without a name to the qualifier", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, dualTree(leftPath, rightPath), with(unnamed{frontendtest.NewScriptedQualifier()}))
+			coretest.AssertReports(t, sink, load.AmbiguousReference)
+		})
+
 		t.Run("sets the package from ImportOf for a declaration of another package", func(t *testing.T) {
 			t.Parallel()
 
@@ -374,6 +415,17 @@ func TestLink(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
 				"the barrel declares no Thing and publishes the left package's")
+		})
+
+		t.Run("records no followed re-export for a reference after one that followed", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, sink := loadTree(t, twoRefBarrel(), with(frontendtest.NewScriptedExporter()))
+			coretest.AssertCodes(t, sink)
+			links := unitOf(t, report, holdFile).Region.Links
+			assert.Length(t, links, 2, "the holder records a link for each reference")
+			assert.NotEmpty(t, links[0].Followed, "the first reference follows the re-export of the barrel")
+			assert.Empty(t, links[1].Followed, "the second reference names a type of its own package")
 		})
 
 		t.Run("follows no re-export for a frontend outside the exporter role", func(t *testing.T) {
@@ -456,6 +508,35 @@ func dualTree(bound ...string) fstest.MapFS {
 			Data: []byte("package svc/hold\n" + imports + "\ntype Holder dual.Thing\n"),
 		},
 	}
+}
+
+// namedDual returns the dual tree in which each package at a path of
+// named declares the name dual of the holder's alias. Every other package
+// declares the last element of its path.
+func namedDual(named ...string) fstest.MapFS {
+	tree := dualTree(leftPath, rightPath)
+	files := map[string]string{leftPath: "a/left/l.zz", rightPath: "a/right/r.zz"}
+	for _, p := range named {
+		tree[files[p]] = &fstest.MapFile{Data: []byte("package " + p + "\nname dual\ntype Thing string\n")}
+	}
+	return tree
+}
+
+// unnamed is the scripted language in the qualifier role whose packages
+// declare no name.
+type unnamed struct {
+	*frontendtest.ScriptedQualifier
+}
+
+// Parse lowers the unit, then clears the name of each of its packages.
+func (f unnamed) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := f.ScriptedQualifier.Parse(ctx, u); err != nil {
+		return err
+	}
+	for _, p := range u.Graph().Packages() {
+		p.Name = ""
+	}
+	return nil
 }
 
 // foldTree returns the fold tree and the package the method's alias

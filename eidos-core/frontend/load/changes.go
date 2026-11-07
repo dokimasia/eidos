@@ -318,7 +318,10 @@ func spelled(raws []directive.Raw) map[directive.Name]bool {
 // delta returns the bare identities of the declarations a type position
 // can name that appeared or disappeared between the history and the
 // load, whatever unit declares them: what can move the target of a kept
-// reference.
+// reference. It also returns such declarations of each package that a
+// unit declares under another name than its record did, before and after
+// the edit, because a [plugin.Qualifier] admits a declaration by the name
+// of its package.
 //
 // Error modes: the error of a record that does not read whole.
 func (l *loader) delta(units []*unit, removed []*UnitRecord) ([]symbol.Identity, error) {
@@ -326,17 +329,18 @@ func (l *loader) delta(units []*unit, removed []*UnitRecord) ([]symbol.Identity,
 		return nil, nil
 	}
 	before, now := map[symbol.Identity]bool{}, map[symbol.Identity]bool{}
+	renamed := map[symbol.Identity]bool{}
 	for _, u := range units {
 		if u.from == FromGeneration {
 			continue
 		}
-		var decls []declaration
+		var packages []*node.Package
 		if u.parsed() {
-			decls = declarationsOf(u.src.Graph().Packages())
+			packages = u.src.Graph().Packages()
 		} else {
-			decls = declarationsOf(u.region.Packages)
+			packages = u.region.Packages
 		}
-		for _, d := range decls {
+		for _, d := range declarationsOf(packages) {
 			now[d.id] = true
 		}
 		if u.record != nil {
@@ -346,6 +350,11 @@ func (l *loader) delta(units []*unit, removed []*UnitRecord) ([]symbol.Identity,
 			}
 			for _, d := range declarationsOf(old.Packages) {
 				before[d.id] = true
+			}
+			for _, p := range packages {
+				if was := partName(old, p.ID); was != p.Name {
+					renamed[p.ID] = true
+				}
 			}
 		}
 	}
@@ -360,7 +369,9 @@ func (l *loader) delta(units []*unit, removed []*UnitRecord) ([]symbol.Identity,
 	}
 	var out []symbol.Identity
 	for id := range now {
-		if !before[id] && targetable(id.Kind) {
+		moved := !before[id] || renamed[id.PackageIdentity()]
+		//dokimi:mutate-skip lcr-left: a declaration that no type position can name is the candidate of no reference, so it selects no kept reference again
+		if moved && targetable(id.Kind) {
 			out = append(out, bareOf(id))
 		}
 	}

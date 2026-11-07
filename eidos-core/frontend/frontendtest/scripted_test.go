@@ -5,6 +5,7 @@ package frontendtest_test
 
 import (
 	"io/fs"
+	"path"
 	"testing"
 	"testing/fstest"
 
@@ -177,6 +178,27 @@ func TestScripted(t *testing.T) {
 			assert.NoError(t, f.Parse(t.Context(), u), "the unit parses")
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, u.Uses(), []symbol.Identity{usedID}, "the statement names the package and the declaration")
+		})
+
+		t.Run("names a package after the last element of its path", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsed(t, "package "+extPath+"\ntype A int\n")
+			assert.Equal(t, gb.Packages()[0].Name, path.Base(extPath), "the package declares the last element")
+		})
+
+		t.Run("names a package after a name statement", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsed(t, "package "+extPath+"\nname "+aliasName+"\ntype A int\n")
+			assert.Equal(t, gb.Packages()[0].Name, aliasName, "the package declares the stated name")
+		})
+
+		t.Run("ignores a name statement with two names", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsed(t, "package "+extPath+"\nname "+aliasName+" "+depPackage+"\ntype A int\n")
+			assert.Equal(t, gb.Packages()[0].Name, path.Base(extPath), "the package declares the last element")
 		})
 
 		t.Run("lowers a type parameter onto the last type", func(t *testing.T) {
@@ -585,6 +607,71 @@ func TestScripted(t *testing.T) {
 			scope := plugin.ImportScope{Bindings: map[string][]string{aliasName: {depPackage}}}
 			assert.Empty(t, f.Exports(scope, ownSpelling), "an import publishes nothing")
 		})
+	})
+
+	t.Run("ScriptedQualifier", func(t *testing.T) {
+		t.Parallel()
+
+		f := frontendtest.NewScriptedQualifier()
+		scope := plugin.ImportScope{
+			File:     symbol.Identity{Lang: frontendtest.ScriptedLang, Package: svcPath},
+			Bindings: map[string][]string{aliasName: {depPackage, extPath}},
+		}
+
+		t.Run("returns the name in each package of a bound alias in the second tier", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, f.Resolve(scope, boundName), plugin.Candidates{nil, {
+				{Lang: frontendtest.ScriptedLang, Package: depPackage, Name: "B"},
+				{Lang: frontendtest.ScriptedLang, Package: extPath, Name: "B"},
+			}}, "the first tier is empty, and the second has the packages of the alias")
+		})
+
+		t.Run("returns a bare capital in the first tier", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, f.Resolve(scope, ownSpelling), plugin.Candidates{{
+				{Lang: frontendtest.ScriptedLang, Package: svcPath, Name: ownSpelling},
+			}}, "the candidate is in the package of the file")
+		})
+
+		t.Run("returns nothing for an alias that the file never bound", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, f.Resolve(scope, unboundName), "the probe is empty")
+		})
+
+		tests := []struct {
+			name     string
+			giveTier int
+			giveName string
+			want     bool
+		}{
+			{
+				name:     "admits a declaration of the first tier whatever its package declares",
+				giveName: depPackage, want: true,
+			},
+			{
+				name:     "admits a declaration of the second tier whose package declares the alias",
+				giveTier: 1, giveName: aliasName, want: true,
+			},
+			{
+				name:     "refuses a declaration of the second tier whose package declares another name",
+				giveTier: 1, giveName: depPackage,
+			},
+			{
+				name:     "admits a declaration of the second tier whose package declares no name",
+				giveTier: 1, want: true,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, f.Qualifies(boundName, tt.giveTier, tt.giveName), tt.want,
+					"the qualifier admits the declared name of the alias")
+			})
+		}
 	})
 }
 

@@ -66,6 +66,8 @@ type ScriptedOptions struct {
 // signature-sensitive declaration. One statement per line:
 //
 //	package PATH          the file's package path
+//	name NAME             the name that the package declares, which is
+//	                      the last element of its path otherwise
 //	import ALIAS PATH...  bind an alias to one or more packages, one
 //	                      import record per path
 //	use PATH NAME         a use of the declaration NAME of the package
@@ -282,6 +284,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string, types
 		case file == nil:
 			u.Errorf(ScriptedBadFile, at, "%s opens with %q, not a package line", filePath, fields[0])
 			return
+		case fields[0] == "name" && len(fields) == 2:
+			gb.Package(pkgPath).Name = fields[1]
 		case fields[0] == "import" && len(fields) >= 3:
 			bindings[fields[1]] = append(bindings[fields[1]], fields[2:]...)
 			for _, imported := range fields[2:] {
@@ -486,4 +490,38 @@ func (*ScriptedExporter) Exports(scope plugin.ImportScope, name string) plugin.C
 		return nil
 	}
 	return plugin.Candidates{tier}
+}
+
+// ScriptedQualifier is the scripted language in the [plugin.Qualifier] role,
+// the shape of a Go import without an alias. Its Resolve returns a bare
+// capital in the first tier, and the name in each package that the alias of a
+// qualified spelling binds in the second tier. Qualifies admits a declaration
+// of the second tier only where its package declares the alias as its name,
+// which a name statement states.
+type ScriptedQualifier struct {
+	*Scripted
+}
+
+// NewScriptedQualifier returns the scripted language in the qualifier role,
+// under its usual claim.
+func NewScriptedQualifier() *ScriptedQualifier {
+	return &ScriptedQualifier{Scripted: NewScripted()}
+}
+
+// Resolve returns the tiers of [Scripted.Resolve], with the candidates of a
+// qualified spelling moved to the second tier.
+func (f *ScriptedQualifier) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
+	tiers := f.Scripted.Resolve(scope, spelling)
+	if len(tiers) == 0 || !strings.Contains(spelling, ".") {
+		return tiers
+	}
+	return plugin.Candidates{nil, tiers[0]}
+}
+
+// Qualifies admits each declaration of the first tier, and a declaration of
+// a later tier whose package declares the alias of the spelling or declares
+// no name.
+func (*ScriptedQualifier) Qualifies(spelling string, tier int, name string) bool {
+	alias, _, _ := strings.Cut(spelling, ".")
+	return tier == 0 || name == "" || name == alias
 }

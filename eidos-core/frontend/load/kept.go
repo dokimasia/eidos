@@ -36,10 +36,12 @@ type keptIndex struct {
 
 // keptPackage is one package's declarations in the kept and restored
 // units: the ones a type position can name, by bare identity in
-// identity order, and the file that declares each.
+// identity order, the file that declares each, and the first name that
+// the units declare for the package, in splice order.
 type keptPackage struct {
 	byBare map[symbol.Identity][]symbol.Identity
 	files  map[symbol.Identity]string
+	name   string
 }
 
 // newKeptIndex returns the index of the units the load keeps or
@@ -82,6 +84,16 @@ func (k *keptIndex) file(id symbol.Identity) string {
 	return ""
 }
 
+// name returns the first name that the kept and restored units of a
+// package declare for it, in splice order, and the empty string for a
+// package that no such unit names.
+func (k *keptIndex) name(pkg symbol.Identity) string {
+	if p := k.pkg(pkg); p != nil {
+		return p.name
+	}
+	return ""
+}
+
 // pkg returns a package's kept declarations, built from the regions of
 // its kept and restored units the first time, and nil for a package no
 // such unit contributes to.
@@ -100,6 +112,9 @@ func (k *keptIndex) pkg(id symbol.Identity) *keptPackage {
 		if err != nil {
 			k.fail(err)
 			continue
+		}
+		if p.name == "" {
+			p.name = partName(r, id)
 		}
 		for _, d := range declarationsOf(r.Packages) {
 			if d.id.PackageIdentity() != id || !targetable(d.id.Kind) {

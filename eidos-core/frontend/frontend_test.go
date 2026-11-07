@@ -90,6 +90,7 @@ func setters(inner *frontendtest.Scripted) []setter {
 	partition, parse, resolve, opts := inner.Partition, inner.Parse, inner.Resolve, inner.Opts
 	dependencies := frontendtest.NewScriptedDependent().Dependencies
 	exports := frontendtest.NewScriptedExporter().Exports
+	qualifies := frontendtest.NewScriptedQualifier().Qualifies
 	return []setter{
 		{name: "Stores", set: func(b *frontend.Builder) *frontend.Builder { return b.Stores(locate) }},
 		{name: "Version", set: func(b *frontend.Builder) *frontend.Builder { return b.Version("1") }},
@@ -103,6 +104,7 @@ func setters(inner *frontendtest.Scripted) []setter {
 		}},
 		{name: "Exports", set: func(b *frontend.Builder) *frontend.Builder { return b.Exports(exports) }},
 		{name: "Imports", set: func(b *frontend.Builder) *frontend.Builder { return b.Imports(importOf) }},
+		{name: "Qualifies", set: func(b *frontend.Builder) *frontend.Builder { return b.Qualifies(qualifies) }},
 	}
 }
 
@@ -228,11 +230,13 @@ func TestFrontend(t *testing.T) {
 					_, exports := built.(plugin.Exporter)
 					_, locates := built.(plugin.StoreLocator)
 					_, importing := built.(plugin.Importer)
+					_, qualifying := built.(plugin.Qualifier)
 					expect.Equal(t, optioned, tt.set.options, "the frontend is in the options role as declared")
 					expect.Equal(t, depends, tt.set.dependencies, "the frontend is in the dependent role as declared")
 					expect.Equal(t, exports, tt.set.exports, "the frontend is in the exporter role as declared")
 					expect.Equal(t, locates, tt.set.stores, "the frontend is in the store role as declared")
 					expect.Equal(t, importing, imports, "the frontend is in the importer role as declared")
+					expect.True(t, qualifying, "every built frontend is in the qualifier role")
 				})
 			}
 		}
@@ -408,6 +412,48 @@ func TestFrontend(t *testing.T) {
 			assert.Equal(t, importer.ImportOf(plugin.ImportScope{}, storeTestFile), importedAs+storeTestFile,
 				"the resolution step reads the import through the declared function")
 		})
+	})
+
+	t.Run("Qualifies", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("admits every declaration for a declaration without Qualifies", func(t *testing.T) {
+			t.Parallel()
+
+			qualifier, is := kitFake().(plugin.Qualifier)
+			assert.True(t, is, "every built frontend is in the qualifier role")
+			assert.True(t, qualifier.Qualifies(kitName, 1, depPath),
+				"the frontend admits as a frontend outside the role")
+		})
+
+		tests := []struct {
+			name string
+			give bool
+		}{
+			{name: "returns the true that the declared function returns", give: true},
+			{name: "returns the false that the declared function returns"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var got []any
+				inner := frontendtest.NewScripted()
+				f := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+					Version("1").Match(anyScripted).
+					Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+					Qualifies(func(spelling string, tier int, name string) bool {
+						got = []any{spelling, tier, name}
+						return tt.give
+					}).
+					Build()
+				qualifier, is := f.(plugin.Qualifier)
+				assert.True(t, is, "the declaration states the role")
+				assert.Equal(t, qualifier.Qualifies(kitName, 1, depPath), tt.give,
+					"the resolution step admits through the declared function")
+				assert.Equal(t, got, []any{kitName, 1, depPath}, "the function receives the arguments of the call")
+			})
+		}
 	})
 
 	t.Run("TestFiles", func(t *testing.T) {

@@ -146,6 +146,25 @@ type Exporter interface {
 	Exports(scope ImportScope, name string) Candidates
 }
 
+// Qualifier is the optional frontend role of a language whose import binds
+// the name that the imported package declares, as a Go import without an
+// alias binds the name in the package clause of the imported package. The
+// resolution step passes each declaration that a candidate of a reference
+// names to Qualifies, with the name that the package of the declaration
+// declares. It keeps the declaration among the hits of its tier only where
+// Qualifies reports true, so two hits that Qualifies admits report as an
+// ambiguity, and a hit that it refuses does not.
+type Qualifier interface {
+	// Qualifies reports whether a declaration of a package that declares
+	// name is a target of spelling, where the candidate that names the
+	// declaration is in the tier of that index among the tiers that Resolve
+	// returned. The resolution step calls it after every unit parsed, and the
+	// selection of a kept or restored unit calls it for the recorded tiers of
+	// the unit, so it reads no bindings. name is empty for a package whose
+	// units declare no name.
+	Qualifies(spelling string, tier int, name string) bool
+}
+
 // Candidates is what one spelling could mean, in tiers: each tier is
 // the candidate identities one scope offers, in probe order, and an
 // earlier tier shadows every later one. A language whose scopes

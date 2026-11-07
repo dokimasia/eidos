@@ -72,6 +72,7 @@ type Builder struct {
 	exports      func(plugin.ImportScope, string) plugin.Candidates
 	stores       func(getenv func(key string) string) (map[string]fs.FS, error)
 	importOf     func(plugin.ImportScope, string) string
+	qualifies    func(spelling string, tier int, name string) bool
 	keys         []func(r *meta.Registry) error
 }
 
@@ -206,6 +207,17 @@ func (b *Builder) Imports(importOf func(scope plugin.ImportScope, file string) s
 	return b
 }
 
+// Qualifies declares how a language whose import binds the name that the
+// imported package declares, such as Go, admits a declaration. qualifies
+// reports whether a declaration of a package that declares name is a target
+// of a spelling, where the candidate that names it is in the tier of that
+// index. The built frontend implements [plugin.Qualifier] through the
+// function.
+func (b *Builder) Qualifies(qualifies func(spelling string, tier int, name string) bool) *Builder {
+	b.qualifies = qualifies
+	return b
+}
+
 // Keys declares the key registrations of the language: the keys that the
 // frontend and its classifiers stamp, and the keys of the language that
 // its other parts stamp. The built frontend runs them as
@@ -217,13 +229,16 @@ func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder {
 	return b
 }
 
-// Build freezes the declaration and returns the lowered frontend,
-// which implements [plugin.Frontend] and [plugin.KeyProvider]. The
-// conformance suite runs the same checks over it that a hand-rolled
-// frontend meets, because the lowering adds nothing the role does not
-// state. Its [plugin.KeyProvider] role registers the declared
-// registrations, and none for a declaration without them. The frontend
-// implements another optional role exactly when the declaration has it:
+// Build freezes the declaration and returns the lowered frontend, which
+// implements [plugin.Frontend], [plugin.KeyProvider] and
+// [plugin.Qualifier]. The conformance suite runs the same checks over it
+// that a hand-rolled frontend meets, because the lowering adds nothing the
+// role does not state. Its [plugin.KeyProvider] role registers the declared
+// registrations, and none for a declaration without them. Its
+// [plugin.Qualifier] role admits through the function of
+// [Builder.Qualifies], and admits every declaration for a declaration
+// without it, as a frontend outside the role does. The frontend implements
+// another optional role exactly when the declaration has it:
 // [plugin.OptionsProvider] for [Builder.Options], [plugin.Dependent]
 // for [Builder.Dependencies], [plugin.Exporter] for [Builder.Exports],
 // [plugin.StoreLocator] for [Builder.Stores] and [plugin.Importer] for
@@ -270,7 +285,7 @@ func (b *Builder) Build() plugin.Frontend {
 	base := &builtFrontend{
 		name: b.name, lang: b.lang, syntax: b.syntax, overloads: b.overloads, version: b.version,
 		selection: b.selection, partition: b.partition, parse: b.parse,
-		resolve: b.resolve, classifiers: b.classifiers, keys: b.keys,
+		resolve: b.resolve, qualifies: b.qualifies, classifiers: b.classifiers, keys: b.keys,
 	}
 	var roles role
 	if b.hasOptions {
@@ -392,6 +407,7 @@ type builtFrontend struct {
 	partition   func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
 	parse       func(context.Context, *plugin.SourceUnit) error
 	resolve     func(plugin.ImportScope, string) plugin.Candidates
+	qualifies   func(spelling string, tier int, name string) bool
 	classifiers []Classifier
 	keys        []func(r *meta.Registry) error
 }
@@ -437,6 +453,13 @@ func (f *builtFrontend) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 		}
 	}
 	return nil
+}
+
+// Qualifies implements [plugin.Qualifier] through the declared function. A
+// declaration without the function admits every declaration, as a frontend
+// outside the role does.
+func (f *builtFrontend) Qualifies(spelling string, tier int, name string) bool {
+	return f.qualifies == nil || f.qualifies(spelling, tier, name)
 }
 
 // Resolve returns the candidates that the declared function returns.

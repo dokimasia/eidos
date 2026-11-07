@@ -119,6 +119,7 @@ func (w *linker) reselect(u *unit, r *store.Region) (bool, error) {
 	}
 	refs := refsOf(r.Packages)
 	_, imports := u.frontend.(plugin.Importer)
+	qualifier, _ := u.frontend.(plugin.Qualifier)
 	changed := false
 	for i := range r.Links {
 		link := &r.Links[i]
@@ -128,7 +129,7 @@ func (w *linker) reselect(u *unit, r *store.Region) (bool, error) {
 		}
 		ref := refs[link.Ref]
 		w.followed, w.reached = nil, nil
-		hits := w.selected(plugin.Candidates(link.Tiers))
+		hits := w.selected(plugin.Candidates(link.Tiers), qualifier, ref.Spelling)
 		var target symbol.Identity
 		if len(hits) > 0 {
 			target = hits[0]

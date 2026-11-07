@@ -59,6 +59,12 @@ import (
 // tier. A package and name already on the following path find
 // nothing, which stops a cycle of re-exports.
 //
+// A tier of a frontend that is a [plugin.Qualifier] keeps a declaration that
+// a candidate names only where Qualifies admits the name that the package of
+// the declaration declares, with the index of the tier. A refused
+// declaration is no hit, so it neither decides the tier nor joins an
+// ambiguity.
+//
 // Every reference resolved through its frontend leaves a record on the
 // unit whose file contains it: the tiers the frontend returned, the
 // candidates whose re-exports the selection followed, the candidates
@@ -72,7 +78,9 @@ func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) 
 	byPath := make(map[fileKey]scopeEntry, len(scopes))
 	byName := make(map[string]scopeEntry, len(scopes))
 	exporters := map[pkgKey][]exporterEntry{}
+	names := make(map[pkgKey]string, len(packages))
 	for _, sp := range packages {
+		names[pkgKey{lang: sp.lang, path: sp.pkg.ID.Package}] = sp.pkg.Name
 		for _, f := range sp.pkg.Files {
 			entry, held := byFile[f]
 			if !held {
@@ -92,7 +100,7 @@ func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) 
 		slices.SortFunc(files, byExporterPath)
 	}
 	w := &linker{
-		byPath: byPath, byName: byName, exporters: exporters, merged: map[pkgKey]bool{},
+		byPath: byPath, byName: byName, exporters: exporters, names: names, merged: map[pkgKey]bool{},
 		following: map[followKey]bool{}, ix: ix, sink: sink,
 	}
 	for _, sp := range packages {
@@ -142,7 +150,8 @@ type exporterEntry struct {
 // resolves their references. pkg is the package under the walk and unit
 // the unit of the file under the walk, byName maps a path onto the
 // first file of that path the splice recorded a scope for, exporters
-// maps a package to its exporting files, merged marks a package whose
+// maps a package to its exporting files, names maps each package of the
+// parsed units to the name that it declares, merged marks a package whose
 // exporting files of kept units joined the parsed ones, following is the
 // package-and-name path of the re-exports it follows. followed contains
 // the candidates whose re-exports the reference under selection
@@ -153,6 +162,7 @@ type linker struct {
 	byPath    map[fileKey]scopeEntry
 	byName    map[string]scopeEntry
 	exporters map[pkgKey][]exporterEntry
+	names     map[pkgKey]string
 	merged    map[pkgKey]bool
 	following map[followKey]bool
 	followed  []symbol.Identity
@@ -246,7 +256,8 @@ func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.Impo
 		return
 	}
 	w.followed, w.reached = nil, nil
-	hits := w.selected(tiers)
+	qualifier, _ := f.(plugin.Qualifier)
+	hits := w.selected(tiers, qualifier, ref.Spelling)
 	record := store.Link{Tiers: tiers, Followed: w.followed, Reached: w.reached}
 	if len(hits) > 0 {
 		ref.Target = hits[0]
@@ -266,27 +277,34 @@ func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.Impo
 	w.unit.resolved[ref] = record
 }
 
-// selected returns the declarations of the first tier that names any,
-// collected in the linker's buffer, which the next selection overwrites.
-// It allocates only where the buffer lacks the room for them, and keeps
-// the grown buffer.
-func (w *linker) selected(tiers plugin.Candidates) []symbol.Identity {
-	hits := w.firstTier(w.hits[:0], tiers)
+// selected returns the declarations of the first tier that names any that
+// the qualifier admits for spelling, collected in the linker's buffer, which
+// the next selection overwrites. A nil qualifier admits every declaration.
+// It allocates only where the buffer lacks the room for them, and keeps the
+// grown buffer.
+func (w *linker) selected(tiers plugin.Candidates, qualifier plugin.Qualifier, spelling string) []symbol.Identity {
+	hits := w.firstTier(w.hits[:0], tiers, qualifier, spelling)
 	if cap(hits) > cap(w.hits) {
 		w.hits = hits[:0]
 	}
 	return hits
 }
 
-// firstTier returns the declarations of the first tier that names
-// any, in candidate order and without repeats, and nothing when no
-// tier does. It collects them in dst, which is empty, and allocates
-// only where dst lacks the room for them.
-func (w *linker) firstTier(dst []symbol.Identity, tiers plugin.Candidates) []symbol.Identity {
-	for _, tier := range tiers {
+// firstTier returns the declarations of the first tier that names any
+// that the qualifier admits for spelling, in candidate order and without
+// repeats, and nothing when no tier does. A nil qualifier admits every
+// declaration. It collects them in dst, which is empty, and allocates only
+// where dst lacks the room for them.
+func (w *linker) firstTier(
+	dst []symbol.Identity, tiers plugin.Candidates, qualifier plugin.Qualifier, spelling string,
+) []symbol.Identity {
+	for i, tier := range tiers {
 		hits := dst
 		for _, c := range tier {
 			for _, full := range w.hitsOf(c) {
+				if qualifier != nil && !qualifier.Qualifies(spelling, i, w.declared(full)) {
+					continue
+				}
 				if !slices.Contains(hits, full) {
 					hits = append(hits, full)
 				}
@@ -297,6 +315,19 @@ func (w *linker) firstTier(dst []symbol.Identity, tiers plugin.Candidates) []sym
 		}
 	}
 	return nil
+}
+
+// declared returns the name that the package of a declaration declares:
+// the name of the parsed units of the package, or of its kept and restored
+// units where the parsed units declare none. The load parses every unit of
+// a package whose units declare two names, so a parsed and a kept unit of
+// one package declare one name. It returns the empty string for a package
+// that no unit declares a name for.
+func (w *linker) declared(id symbol.Identity) string {
+	if name := w.names[pkgKey{lang: id.Lang, path: id.Package}]; name != "" || w.ix.kept == nil {
+		return name
+	}
+	return w.ix.kept.name(id.PackageIdentity())
 }
 
 // hitsOf returns the declarations one candidate names: the ones the
@@ -323,7 +354,7 @@ func (w *linker) hitsOf(c symbol.Identity) []symbol.Identity {
 	w.followed = append(w.followed, bareOf(c))
 	for _, e := range files {
 		scope := plugin.ImportScope{File: e.scope.file.ID, Bindings: e.scope.bindings}
-		if hits := w.firstTier(nil, e.exporter.Exports(scope, c.Name)); len(hits) > 0 {
+		if hits := w.firstTier(nil, e.exporter.Exports(scope, c.Name), nil, ""); len(hits) > 0 {
 			return hits
 		}
 	}
