@@ -421,7 +421,9 @@ of the emit phase runs on an emit value whose origin is a dependency.
 A run reports no finding at a carrier of a dependency unit and no
 finding of the validation of the directives of a dependency. The
 directives that pass validation attach, and a directive that fails
-does not give a fact.
+does not give a fact. A reference of a dependency unit resolves to
+the first declaration of its first tier with a match, and the run
+does not report it as ambiguous.
 
 Each run binds a plan's sources to the frozen graph before the plan
 generates, and the composition's fingerprint folds them. When a change
