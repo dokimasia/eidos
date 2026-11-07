@@ -6,6 +6,7 @@ package catalog
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -21,12 +22,18 @@ func TestCatalogErrors(t *testing.T) {
 	all := []sentinel{
 		{"ErrNotFound", ErrNotFound},
 		{"ErrConflict", ErrConflict},
+		{"ErrDiscontinued", ErrDiscontinued},
 	}
 	var assigned []sentinel
 	for _, e := range all {
 		if e.err != nil {
 			assigned = append(assigned, e)
 		}
+	}
+
+	// ancestors are the sentinels that each child wraps, nearest first.
+	ancestors := map[string][]string{
+		"ErrDiscontinued": {"ErrNotFound"},
 	}
 
 	t.Run("each sentinel is assigned", func(t *testing.T) {
@@ -81,7 +88,8 @@ func TestCatalogErrors(t *testing.T) {
 
 		for _, a := range assigned {
 			for _, b := range assigned {
-				if a.name != b.name && strings.HasPrefix(a.err.Error(), b.err.Error()) {
+				if a.name != b.name && !slices.Contains(ancestors[a.name], b.name) &&
+					strings.HasPrefix(a.err.Error(), b.err.Error()) {
 					t.Errorf("the message of %s starts with the message of %s", a.name, b.name)
 				}
 			}
@@ -93,9 +101,42 @@ func TestCatalogErrors(t *testing.T) {
 
 		for _, a := range assigned {
 			for _, b := range assigned {
-				if a.name != b.name && errors.Is(a.err, b.err) {
+				if a.name != b.name && !slices.Contains(ancestors[a.name], b.name) &&
+					errors.Is(a.err, b.err) {
 					t.Errorf("%s matches %s", a.name, b.name)
 				}
+			}
+		}
+	})
+
+	children := []struct {
+		name, parent string
+		err, wrapped error
+	}{
+		{"ErrDiscontinued", "ErrNotFound", ErrDiscontinued, ErrNotFound},
+	}
+
+	t.Run("each child matches its parent under errors.Is", func(t *testing.T) {
+		t.Parallel()
+
+		for _, c := range children {
+			if !errors.Is(c.err, c.wrapped) {
+				t.Errorf("%s does not match %s", c.name, c.parent)
+			}
+		}
+	})
+
+	t.Run("the message of each child starts with the message of its parent", func(t *testing.T) {
+		t.Parallel()
+
+		for _, c := range children {
+			if c.err != nil && c.wrapped != nil &&
+				!strings.HasPrefix(c.err.Error(), c.wrapped.Error()) {
+				t.Errorf(
+					"the message of %s does not start with the message of %s",
+					c.name,
+					c.parent,
+				)
 			}
 		}
 	})
@@ -120,4 +161,4 @@ func TestCatalogErrors(t *testing.T) {
 	})
 }
 
-// reference:provenance sha256:176a1409f8db7896370097da4ed31af01e41ae51dacaaa84f1c7dbb049012d28
+// reference:provenance sha256:ccd1b28a256320f60b09f94697a954f356b0ad58e5543e340dfbe8825a749f6f

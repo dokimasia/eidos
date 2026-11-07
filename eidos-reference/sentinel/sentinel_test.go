@@ -53,6 +53,17 @@ const (
 	webPackage = "web/errors"
 )
 
+// The child of the package catalog, and the tree of the families that no
+// module builds, with its package of a cycle of wraps and its package that
+// wraps a sentinel of the package base.
+const (
+	errDiscontinued = "ErrDiscontinued"
+	familiesTree    = "testdata/families"
+	cyclePackage    = "cycle"
+	basePackage     = "base"
+	foreignPackage  = "foreign"
+)
+
 // The prefix that a config sets, the template of the family, and the
 // registrant that claims the namespace of sentinel first.
 const (
@@ -131,6 +142,45 @@ func TestSentinel(t *testing.T) {
 			}
 		})
 
+		ancestors := []struct {
+			name string
+			dir  string
+			pkg  string
+			also []string
+			want map[string][]string
+		}{
+			{
+				name: "records the parent of a child of the package as its ancestor",
+				dir:  referencetest.Tree, pkg: catalogPackage,
+				want: map[string][]string{errNotFound: nil, errConflict: nil, errDiscontinued: {errNotFound}},
+			},
+			{
+				name: "records each ancestor of a cycle of wraps once",
+				dir:  familiesTree, pkg: cyclePackage,
+				want: map[string][]string{
+					"ErrFirst": {"ErrSecond"}, "ErrSecond": {"ErrFirst"}, "ErrStart": {"ErrFirst", "ErrSecond"},
+				},
+			},
+			{
+				name: "records no ancestor for a wrap of a sentinel of another package",
+				dir:  familiesTree, pkg: foreignPackage, also: []string{basePackage},
+				want: map[string][]string{"ErrMissing": nil, errNotFound: nil},
+			},
+		}
+		for _, tt := range ancestors {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got := map[string][]string{}
+				for name, s := range record(t, tt.dir, tt.pkg, nil, tt.also...) {
+					if !s.Type {
+						got[name] = s.Ancestors
+					}
+				}
+				expect.Equal(t, got, tt.want, "each sentinel has the sentinels that it wraps, nearest first")
+			})
+		}
+
 		t.Run("records no generic error type", func(t *testing.T) {
 			t.Parallel()
 
@@ -182,15 +232,16 @@ func TestSentinel(t *testing.T) {
 	})
 }
 
-// fixture returns a fixture over the Go package pkg of the tree dir, loaded
-// under the context of tb and stamped by the annotator of the Go
-// satellite, with the target golang and the plugin sentinel p.
-func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin) *referencetest.Fixture {
+// fixture returns a fixture over the Go package pkg of the tree dir and the
+// packages also, loaded under the context of tb and stamped by the
+// annotator of the Go satellite, with the target golang and the plugin
+// sentinel p.
+func fixture(tb assert.TB, dir, pkg string, p plugin.Plugin, also ...string) *referencetest.Fixture {
 	tb.Helper()
 
 	return referencetest.New(tb, referencetest.Spec{
 		Dir:        dir,
-		Packages:   []string{pkg},
+		Packages:   append([]string{pkg}, also...),
 		Target:     golang.Target,
 		Plugins:    []plugin.Plugin{p},
 		Annotators: []plugin.Annotator{goannotate.New()},
@@ -213,18 +264,18 @@ func stamped(t *testing.T, dir, pkg string, target plugin.Target, name string) b
 	return value
 }
 
-// record runs sentinel over the package pkg of the tree dir, with the
-// options o where o is not nil, and returns the data of each record by the
-// name of its declaration. It checks that the family claims its file
-// through the template, one file for the package.
-func record(t *testing.T, dir, pkg string, o *sentinel.Options) map[string]sentinel.Subject {
+// record runs sentinel over the package pkg of the tree dir and the packages
+// also, with the options o where o is not nil, and returns the data of each
+// record of pkg by the name of its declaration. It checks that the family
+// claims its file through the template, one file for each package.
+func record(t *testing.T, dir, pkg string, o *sentinel.Options, also ...string) map[string]sentinel.Subject {
 	t.Helper()
 
 	p := sentinel.New()
 	if o != nil {
 		*p.(plugin.OptionsProvider).Options().(*sentinel.Options) = *o
 	}
-	f := fixture(t, dir, pkg, p)
+	f := fixture(t, dir, pkg, p, also...)
 	assert.NoError(t, f.Annotate(t, p).Err, "the annotator runs whole")
 	res := f.Generate(t, p)
 	assert.NoError(t, res.Err, "the generator runs whole")
@@ -233,8 +284,9 @@ func record(t *testing.T, dir, pkg string, o *sentinel.Options) map[string]senti
 		expect.That(t, u.Template).Equal(fileTemplate, "the family claims its file through the template")
 		expect.That(t, u.Per).Equal(plugin.PerPackage, "the package has one file")
 		for _, d := range u.Decls {
-			origin, _ := emit.OriginOf(d)
-			got[origin.Name] = u.Data[d].(sentinel.Subject)
+			if origin, _ := emit.OriginOf(d); origin.Package == pkg {
+				got[origin.Name] = u.Data[d].(sentinel.Subject)
+			}
 		}
 	}
 	return got

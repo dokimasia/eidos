@@ -151,13 +151,20 @@ const (
 	errorsFile       = "catalog/errors.go"
 	unassignedErrors = `package catalog
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // ErrNotFound reports a product that the catalog does not contain.
 var ErrNotFound = errors.New("catalog: product not found")
 
 // ErrConflict reports a product that the catalog contains already.
 var ErrConflict error
+
+// ErrDiscontinued reports a product that the catalog no longer offers. It
+// wraps ErrNotFound, so a caller that handles a missing product handles it.
+var ErrDiscontinued = fmt.Errorf("%w: discontinued", ErrNotFound)
 
 // NotFoundError reports the product that a lookup of the catalog did not
 // find.

@@ -2,6 +2,7 @@
 {{- $d := (index .Records 0).Data}}
 {{- $prefix := printf "%s: " (or $d.Prefix $.Pkg.Name)}}
 {{- $sentinels := false}}{{range .Records}}{{if not .Data.Type}}{{$sentinels = true}}{{end}}{{end}}
+{{- $family := false}}{{range .Records}}{{if .Data.Ancestors}}{{$family = true}}{{end}}{{end}}
 
 // {{$d.Test}} checks the sentinels and the error types of the package.
 func {{$d.Test}}(t *testing.T) {
@@ -23,6 +24,15 @@ func {{$d.Test}}(t *testing.T) {
 			assigned = append(assigned, e)
 		}
 	}
+{{- if $family}}{{use "slices"}}
+
+	// ancestors are the sentinels that each child wraps, nearest first.
+	ancestors := map[string][]string{
+{{- range .Records}}{{if .Data.Ancestors}}
+		"{{.Decl.Name}}": { {{- range $i, $a := .Data.Ancestors}}{{if $i}}, {{end}}"{{$a}}"{{end}}},
+{{- end}}{{end}}
+	}
+{{- end}}
 
 	t.Run("each sentinel is assigned", func(t *testing.T) {
 		t.Parallel()
@@ -73,7 +83,7 @@ func {{$d.Test}}(t *testing.T) {
 
 		for _, a := range assigned {
 			for _, b := range assigned {
-				if a.name != b.name && strings.HasPrefix(a.err.Error(), b.err.Error()) {
+				if a.name != b.name {{- if $family}} && !slices.Contains(ancestors[a.name], b.name){{end}} && strings.HasPrefix(a.err.Error(), b.err.Error()) {
 					t.Errorf("the message of %s starts with the message of %s", a.name, b.name)
 				}
 			}
@@ -85,12 +95,43 @@ func {{$d.Test}}(t *testing.T) {
 
 		for _, a := range assigned {
 			for _, b := range assigned {
-				if a.name != b.name && errors.Is(a.err, b.err) {
+				if a.name != b.name {{- if $family}} && !slices.Contains(ancestors[a.name], b.name){{end}} && errors.Is(a.err, b.err) {
 					t.Errorf("%s matches %s", a.name, b.name)
 				}
 			}
 		}
 	})
+{{- if $family}}
+
+	children := []struct {
+		name, parent string
+		err, wrapped error
+	}{
+{{- range $r := .Records}}{{if $r.Data.Ancestors}}{{$parent := index $r.Data.Ancestors 0}}
+		{"{{$r.Decl.Name}}", "{{$parent}}", {{$r.Decl.Name}}, {{$parent}}},
+{{- end}}{{end}}
+	}
+
+	t.Run("each child matches its parent under errors.Is", func(t *testing.T) {
+		t.Parallel()
+
+		for _, c := range children {
+			if !errors.Is(c.err, c.wrapped) {
+				t.Errorf("%s does not match %s", c.name, c.parent)
+			}
+		}
+	})
+
+	t.Run("the message of each child starts with the message of its parent", func(t *testing.T) {
+		t.Parallel()
+
+		for _, c := range children {
+			if c.err != nil && c.wrapped != nil && !strings.HasPrefix(c.err.Error(), c.wrapped.Error()) {
+				t.Errorf("the message of %s does not start with the message of %s", c.name, c.parent)
+			}
+		}
+	})
+{{- end}}
 {{- end}}
 {{- range .Records}}{{if .Data.Type}}
 

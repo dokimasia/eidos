@@ -10,6 +10,7 @@ import (
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/meta"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -63,12 +64,19 @@ type Options struct {
 // Type reports that the record is an error type, and a sentinel otherwise.
 // Cause is the field of an error type that its method Unwrap returns, and
 // empty for an error type without one.
+//
+// Ancestors are the names of the sentinels of the package that a sentinel
+// wraps at the opening of its message, as the rules of its language state
+// each wrap: the sentinel that it wraps, the sentinel that one wraps, and so
+// on, nearest first. A wrap of a variable that is no sentinel counts through
+// that variable. The first of the ancestors is the parent of the sentinel.
 type Subject struct {
-	Test    string
-	Prefix  string
-	Checked bool
-	Type    bool
-	Cause   string
+	Test      string
+	Prefix    string
+	Cause     string
+	Ancestors []string
+	Checked   bool
+	Type      bool
 }
 
 // conclusion is the state of one instance of sentinel: its options, and the
@@ -96,7 +104,11 @@ type conclusion struct {
 // The file checks that each sentinel has a message that starts with the
 // prefix of the package, that each message differs from every other and
 // does not start with another, and that no sentinel matches another under
-// errors.Is. It checks that each error type reports a message for its zero
+// errors.Is. A child wraps another sentinel of the package at the opening
+// of its message. The file checks that each child matches its parent and
+// that its message starts with the message of its parent, and the checks
+// of a child against another sentinel leave out its ancestors. It checks
+// that each error type reports a message for its zero
 // value, and that an error type with a cause exposes the cause that it was
 // given. The prefix is the name of the package and a colon, or the option
 // prefix in place of the name. A generic error type has no checks.
@@ -147,12 +159,31 @@ func (c *conclusion) stamp(m *sdk.VariableMatch, st *sdk.Stamper) error {
 }
 
 // sentinel records a variable with the fact into the test file of its
-// package.
+// package, with its ancestors.
 func (c *conclusion) sentinel(m *sdk.VariableMatch, e *sdk.Emitter) error {
 	v := m.Variable
-	e.PackageFile(TestTag).
-		Record(c.subject(e, v.ID), &emit.Variable{Origin: v.ID, Name: v.Name, Visibility: v.Visibility})
+	data := c.subject(e, v.ID)
+	data.Ancestors = ancestorsOf(m, v)
+	e.PackageFile(TestTag).Record(data, &emit.Variable{Origin: v.ID, Name: v.Name, Visibility: v.Visibility})
 	return nil
+}
+
+// ancestorsOf returns the names of the sentinels of the package of v that v
+// wraps, nearest first. The walk follows the wrap of each variable of the
+// package that the rules state, records each variable whose name the rules
+// accept for a sentinel, and stops at a variable that it met, so a cycle of
+// wraps ends.
+func ancestorsOf(m *sdk.VariableMatch, v *node.Variable) []string {
+	b := m.Rules()
+	var out []string
+	met := map[symbol.Identity]bool{v.ID: true}
+	for w, wraps := b.Wrapped(v); wraps && w.ID.Package == v.ID.Package && !met[w.ID]; w, wraps = b.Wrapped(w) {
+		met[w.ID] = true
+		if _, named := b.SentinelBase(w.Name); named {
+			out = append(out, w.Name)
+		}
+	}
+	return out
 }
 
 // errorType records a struct that the Go satellite stamps as an error into

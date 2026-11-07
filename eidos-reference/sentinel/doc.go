@@ -23,6 +23,10 @@
 //   - Each message differs from every other and does not start with
 //     another.
 //   - A sentinel does not match another under errors.Is.
+//   - A child, which wraps another sentinel of the package at the opening
+//     of its message, matches its parent, and its message starts with the
+//     message of its parent. The checks of a child against another
+//     sentinel leave out its ancestors.
 //   - Each error type reports a message for its zero value, and exposes the
 //     cause that it was given.
 //
