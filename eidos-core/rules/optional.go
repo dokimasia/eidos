@@ -103,6 +103,19 @@ type ErrorContract struct {
 	Pointer bool
 }
 
+// WrapRules is the optional capability of a language whose error value can
+// wrap another error value in its initializer, as the Go error value
+// fmt.Errorf("%w: no exposure", ErrPolicy) wraps ErrPolicy. [Bound.Wrapped]
+// calls it.
+type WrapRules interface {
+	// Wrapped returns the error value that the initializer of the error
+	// value v wraps at the opening of its message, and reports false where
+	// the initializer wraps none. The error functions of the language match
+	// v with that error value, and the message of v opens with its message.
+	// Wrapped resolves the error value in the scope of v through view.
+	Wrapped(v *node.Variable, view View) (*node.Variable, bool)
+}
+
 // ResultRules is the optional capability of a language whose callable
 // reports a failure in the type of its return, as a Rust function returns
 // Result<T, E>. [Bound.CallableOf] asks it for each return of a callable

@@ -258,6 +258,22 @@ func (b Bound) ErrorContract(decl symbol.Symbol) (ErrorContract, bool) {
 	return errs.ErrorContract(decl, b.view)
 }
 
+// Wrapped returns the error value that the initializer of the error value v
+// wraps at the opening of its message, through the rules of the language of
+// v. It reports false for a nil v, for an initializer that wraps no error
+// value, and where those rules do not implement [WrapRules]. It allocates
+// what the Wrapped of the language allocates.
+func (b Bound) Wrapped(v *node.Variable) (*node.Variable, bool) {
+	if v == nil {
+		return nil, false
+	}
+	wraps, declared := b.rulesOf(v.ID.Lang).(WrapRules)
+	if !declared {
+		return nil, false
+	}
+	return wraps.Wrapped(v, b.view)
+}
+
 // ZeroValue returns the type's zero value, and reports false where the
 // language has none, for a nil reference, and on the zero view. It
 // allocates what the language's ZeroValue allocates.

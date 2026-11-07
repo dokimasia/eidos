@@ -591,6 +591,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("WrapRules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("is the kernel's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeFor[rules.WrapRules](), reflect.TypeFor[core.WrapRules](), "the facade aliases the kernel's type")
+		})
+	})
+
 	t.Run("ResultRules", func(t *testing.T) {
 		t.Parallel()
 

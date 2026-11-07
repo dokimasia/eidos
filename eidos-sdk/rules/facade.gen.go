@@ -353,6 +353,12 @@ type ErrorTypeRules = core.ErrorTypeRules
 // that declares no cause and no hooks.
 type ErrorContract = core.ErrorContract
 
+// WrapRules is the optional capability of a language whose error value can
+// wrap another error value in its initializer, as the Go error value
+// fmt.Errorf("%w: no exposure", ErrPolicy) wraps ErrPolicy. [Bound.Wrapped]
+// calls it.
+type WrapRules = core.WrapRules
+
 // ResultRules is the optional capability of a language whose callable
 // reports a failure in the type of its return, as a Rust function returns
 // Result<T, E>. [Bound.CallableOf] asks it for each return of a callable

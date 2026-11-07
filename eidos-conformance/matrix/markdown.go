@@ -103,6 +103,7 @@ var capabilities = []capability{
 	capabilityOf[rules.EnumRules](),
 	capabilityOf[rules.ErrorValueRules](),
 	capabilityOf[rules.ErrorTypeRules](),
+	capabilityOf[rules.WrapRules](),
 	capabilityOf[rules.ResultRules](),
 	capabilityOf[rules.TextRules](),
 	capabilityOf[rules.ContextRules](),

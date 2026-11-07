@@ -60,10 +60,13 @@ const (
 )
 
 // tagKey is the key of the tag cases, and sentinelPrefix the prefix of
-// the error values of [capable].
+// the error values of [capable]. parentName and childName are the error
+// values of [family].
 const (
 	tagKey         = "json"
 	sentinelPrefix = "Err"
+	parentName     = "ErrParent"
+	childName      = "ErrChild"
 )
 
 // taggedField is a field with a tag, which [capable] reads under every
@@ -147,7 +150,8 @@ func (f fixedSamples) DeriveSamples(*node.TypeRef, string, rules.View) (rules.Sa
 // capable is the scripted rules with tags, error values and error types.
 // Its tag is the whole text of the tag of a field under every key, the
 // name of its error values has the prefix [sentinelPrefix], and Row is its
-// one error type.
+// one error type. An error value wraps the variable of its package that its
+// initializer names.
 type capable struct {
 	rules.SourceRules
 }
@@ -174,6 +178,14 @@ func (capable) ErrorContract(decl symbol.Symbol, _ rules.View) (rules.ErrorContr
 		return rules.ErrorContract{}, false
 	}
 	return rules.ErrorContract{Cause: s.Fields[0], Pointer: true}, true
+}
+
+// Wrapped returns the variable of the package of v that the initializer of
+// v names, and reports false for an initializer that names no variable.
+func (capable) Wrapped(v *node.Variable, view rules.View) (*node.Variable, bool) {
+	sym, _ := view.Lookup(coretest.ID(v.ID.Package, v.Value, symbol.KindVariable))
+	wrapped, isVariable := sym.(*node.Variable)
+	return wrapped, isVariable
 }
 
 // errClosed is the reason of the import rule of [capable].
@@ -650,6 +662,38 @@ func TestBound(t *testing.T) {
 			v, _, _ := viewOver(t, g)
 			_, isError := rules.NewBound(scripted(), v, nil).ErrorContract(row)
 			assert.False(t, isError, "the scripted language does not implement ErrorTypeRules")
+		})
+	})
+
+	t.Run("Wrapped", func(t *testing.T) {
+		t.Parallel()
+
+		g := coretest.Frozen(t, family())
+		child, _ := g.Lookup(coretest.ID(svcPath, childName, symbol.KindVariable))
+		variable, _ := child.(*node.Variable)
+
+		t.Run("returns the error value that the language of the error value states", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, g)
+			wrapped, wraps := rules.NewBound(capable{scripted()}, v, nil).Wrapped(variable)
+			assert.True(t, wraps, "the language takes ErrChild as a wrap")
+			assert.Equal(t, wrapped.Name, parentName, "ErrChild wraps ErrParent")
+		})
+
+		t.Run("reports false for a nil error value", func(t *testing.T) {
+			t.Parallel()
+
+			_, wraps := rules.NewBound(capable{scripted()}, viewOnly(t), nil).Wrapped(nil)
+			assert.False(t, wraps, "a nil variable wraps nothing")
+		})
+
+		t.Run("reports false for a language without wrapped error values", func(t *testing.T) {
+			t.Parallel()
+
+			v, _, _ := viewOver(t, g)
+			_, wraps := rules.NewBound(scripted(), v, nil).Wrapped(variable)
+			assert.False(t, wraps, "the scripted language does not implement WrapRules")
 		})
 	})
 }
@@ -1149,6 +1193,14 @@ func hierarchy() *node.Package {
 	iface := coretest.Interface(svcPath, storeName)
 	iface.Methods = []*node.Method{method(svcPath, storeName, "Get")}
 	return coretest.Package(svcPath, base, derived, row, iface)
+}
+
+// family returns a package of two error values: ErrParent, and ErrChild,
+// whose initializer names ErrParent.
+func family() *node.Package {
+	child := coretest.Variable(svcPath, childName)
+	child.Value = parentName
+	return coretest.Package(svcPath, coretest.Variable(svcPath, parentName), child)
 }
 
 // rowField returns the identity of a field of Row.
