@@ -88,11 +88,15 @@
 // methods of the type fold in from every file of the package, as a
 // struct's do.
 //
-// Resolve returns, as one tier, the candidates of the [golang.Bindings]
-// of the file, which the parse derives from the import records of the
-// file. The rules resolve the spelling of a directive through the same
-// bindings. The package of a qualified reference is the import path that
-// its qualifier binds there. A predeclared type and a structural form,
+// Resolve returns the candidates of the [golang.Bindings] of the file in the
+// tiers of [golang.Bindings.Tiers], and the parse derives the bindings from
+// the import records of the file. The frontend is a [plugin.Qualifier]
+// through [golang.Qualifies], so the resolution step admits a declaration
+// through an import without an alias only where its package declares the
+// qualifier, as the package clause decides in Go. The rules resolve the
+// spelling of a directive through the same bindings. The package of a
+// qualified reference is the import path that its qualifier binds by the
+// name that its path assumes. A predeclared type and a structural form,
 // such as a map, a func, a channel, a union or an inline body, return no
 // candidate. The resolution step resolves each child of a structural form
 // that refers to a declaration. The constraint elements of an interface

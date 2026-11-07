@@ -42,7 +42,9 @@ const (
 	volPath      = "wide/vol"
 	onePath      = "wide/one"
 	twoPath      = "wide/two"
+	nodePath     = "wide/v3"
 	wideFile     = "wide/a.go"
+	importsFile  = "wide/b.go"
 	boundFile    = "wide/e.go"
 	wideTestFile = "wide/g_test.go"
 	volFile      = "wide/vol/v.go"
@@ -73,27 +75,28 @@ const refusalPrefix = string(golang.Lang) + ": "
 // The allocations of a resolution.
 const (
 	// probeAllocs is a resolution through the probe of the subject's
-	// file, whose four imports bind no dot import: the file's scope,
-	// three allocations, and the list of candidates.
-	probeAllocs = 3 + 1
+	// file, whose four imports bind no dot import and no alias: the file's
+	// scope, three allocations, and the list of tiers with its one tier.
+	probeAllocs = 3 + 2
 	// memberAllocs is a resolution among the members of the subject's
 	// type: the list of the types that it searches and the member list of
 	// the walk.
 	memberAllocs = 2
 	// wideAllocs is a resolution through the import of another file of the
 	// package: the map of the scope of the subject's file, which imports
-	// nothing, and the list of the one candidate in the imports of the
-	// package.
-	wideAllocs = 1 + 1
+	// nothing, the function that reads the names of the packages of the
+	// view, and the list of the one candidate in the imports of the package.
+	wideAllocs = 1 + 1 + 1
 	// routedAllocs is a resolution in the external test package of a route:
 	// the map of the scope of the subject's file, which imports nothing, the
-	// list of candidates, and the path of the package.
-	routedAllocs = 1 + 1 + 3
+	// list of tiers with its one tier, and the path of the package.
+	routedAllocs = 1 + 2 + 3
 	// methodRefAllocs is a resolution of a method reference to a method of
 	// a type of another package: the scope of the subject's file, whose one
-	// import binds no dot import, three allocations, the list of the
-	// candidates of the type, and the member list of the walk.
-	methodRefAllocs = 3 + 1 + 1
+	// import binds no dot import, three allocations, the list of tiers with
+	// the tier of the candidates of the type, and the member list of the
+	// walk.
+	methodRefAllocs = 3 + 2 + 1
 )
 
 // A directive names a declaration by a spelling, and the Go rules
@@ -158,10 +161,6 @@ func TestResolve(t *testing.T) {
 			{
 				name: "returns the type the package a qualifier binds declares",
 				give: "dep.Target", kind: directive.ResolveTypeInScope, want: target,
-			},
-			{
-				name: "returns the type an unaliased import declares for an unbound qualifier",
-				give: "ghost.Target", kind: directive.ResolveTypeInScope, want: target,
 			},
 			{
 				name:    "returns the type a dot import declares for a bare name",
@@ -235,6 +234,10 @@ func TestResolve(t *testing.T) {
 			{
 				name: "returns an error for an unbound qualifier no unaliased import resolves",
 				give: "ghost.Ghost", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a qualifier that the package of no unaliased import declares",
+				give: "ghost.Target", kind: directive.ResolveTypeInScope,
 			},
 			{
 				name:    "returns an error for the assumed name of a dot import",
@@ -390,6 +393,16 @@ func TestResolve(t *testing.T) {
 				want: symbol.Identity{Lang: golang.Lang, Package: yamlPath, Name: "Node", Kind: symbol.KindAlias},
 			},
 			{
+				name:    "returns the type of the unaliased import whose package clause declares the qualifier",
+				subject: subject, file: importsFile, give: "node.Leaf", kind: directive.ResolveTypeInScope,
+				want: id(nodePath, "Leaf", symbol.KindStruct),
+			},
+			{
+				name:    "returns the type that the package clause of an import of another file names",
+				subject: subject, file: wideFile, give: "node.Leaf", kind: directive.ResolveTypeInScope,
+				want: id(nodePath, "Leaf", symbol.KindStruct),
+			},
+			{
 				name:    "returns the function that a bare name declares in the external test package",
 				subject: subject, file: wideFile, give: "newSubject", kind: directive.ResolveCallableInScope,
 				want: id(wideTestPath, "newSubject", symbol.KindFunction),
@@ -428,11 +441,12 @@ func TestResolve(t *testing.T) {
 				subject: bound, file: boundFile, give: "w.ErrTooLarge", kind: directive.ResolvePackageVar,
 			},
 			{
-				name:    "returns an error for a qualifier that only the package clause of an import of another file names",
-				subject: subject,
-				file:    wideFile,
-				give:    "node.Leaf",
-				kind:    directive.ResolveTypeInScope,
+				name:    "returns an error for the assumed name of an import whose package clause differs",
+				subject: subject, file: importsFile, give: "wide.Leaf", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name:    "returns an error for the assumed name of an import of another file whose clause differs",
+				subject: subject, file: wideFile, give: "wide.Leaf", kind: directive.ResolveTypeInScope,
 			},
 			{
 				name:    "returns an error for a qualified name that no import of the package declares",
@@ -948,7 +962,7 @@ func wideTree() fstest.MapFS {
 // Subject names the declarations that other files of its package import.
 type Subject struct{}
 `)},
-		"wide/b.go": {Data: []byte(`package wide
+		importsFile: {Data: []byte(`package wide
 
 import (
 	"wide/v3"
@@ -1017,7 +1031,7 @@ var Err error
 
 type Thing struct{}
 `)},
-		"wide/v3/n.go": {Data: []byte(`package node
+		nodePath + "/n.go": {Data: []byte(`package node
 
 type Leaf struct{}
 `)},

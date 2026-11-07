@@ -230,14 +230,36 @@ func Unqualified(spelling string) string {
 // import and a dot import bind no qualifier and report false, as
 // does a nil import. It allocates nothing.
 func ImportName(imp *node.Import) (string, bool) {
+	return ImportNameIn(imp, nil)
+}
+
+// ImportNameIn returns the qualifier an import binds in its file, where
+// names returns the name that the package at an import path declares: the
+// alias the import states, or the name that names returns for its path. A
+// path that names does not know binds the name it assumes, and so does
+// every path for a nil names. A blank import and a dot import bind no
+// qualifier and report false, as does a nil import. It allocates nothing.
+func ImportNameIn(imp *node.Import, names func(path string) (string, bool)) (string, bool) {
 	switch {
 	case imp == nil, imp.Wildcard, imp.Alias == BlankAlias, imp.Alias == DotAlias:
 		return "", false
 	case imp.Alias != "":
 		return imp.Alias, true
 	default:
-		return AssumedName(imp.Path), true
+		return declaredName(imp.Path, names), true
 	}
+}
+
+// declaredName returns the name that names returns for the package at an
+// import path, and the name that the path assumes where names is nil, does
+// not know the path or knows no name for it.
+func declaredName(importPath string, names func(path string) (string, bool)) string {
+	if names != nil {
+		if name, known := names(importPath); known && name != "" {
+			return name
+		}
+	}
+	return AssumedName(importPath)
 }
 
 // majorVersion reports whether a path element is a major-version

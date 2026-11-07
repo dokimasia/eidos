@@ -111,7 +111,7 @@ func recordUses(
 // of another file bind, the uses that [plugin.SourceUnit.Use] records, and
 // the entries of the used packages.
 func recordPackageUses(u *plugin.SourceUnit, pkgPath string, files []*node.File, pending []fileUses) {
-	shared := golang.PackageBindings(files)
+	shared := golang.PackageBindings{Files: files}
 	resolve := func(p fileUses, spelling string) {
 		candidates, _ := shared.Candidates(p.bindings, spelling)
 		for _, id := range candidates {

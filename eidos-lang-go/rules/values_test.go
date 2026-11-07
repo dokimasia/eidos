@@ -160,8 +160,8 @@ const (
 	literalAllocs = 6
 	// nameLiteralAllocs is the name of a constant of the package: the
 	// bindings of the four imports of the file, three allocations, and the
-	// list of candidates of the resolution.
-	nameLiteralAllocs = 3 + 1
+	// list of tiers of the resolution with its one tier.
+	nameLiteralAllocs = 3 + 2
 	// callLiteralAllocs is the call of a function of a package outside
 	// the view: the bindings of the imports of the file.
 	callLiteralAllocs = 3

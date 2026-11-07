@@ -40,14 +40,26 @@ const shapeMarks = "[({ \t~|"
 // spelling that equals one of them refers to no single declaration.
 var shapeKeywords = []string{"map", "func", "chan", "struct", "interface"}
 
+// The tiers in which [Bindings.Tiers] returns the candidates of a spelling.
+const (
+	// AliasTier contains the candidate of the import whose alias is the
+	// qualifier of a spelling, and the candidates of a bare name.
+	AliasTier = 0
+	// ImportTier contains a candidate in each import without an alias, in
+	// source order. Such an import binds the name in the package clause of
+	// the imported package, so [Qualifies] admits a candidate of the tier by
+	// that name.
+	ImportTier = 1
+)
+
 // Bindings contains what the imports of one Go file bind. It has the
-// import path that each qualifier binds, the dot-imported paths whose
-// exported names enter the scope of the file, and every unaliased
-// import in source order. A qualifier that no import binds probes the
-// unaliased imports. [NewBindings] derives the bindings from the import
-// records of a file. The resolution step of the load, the rules and the
-// reference lowering of the frontend resolve a spelling through them.
-// The zero Bindings binds nothing.
+// import path that each qualifier binds, the import path that each alias
+// binds, the dot-imported paths whose exported names enter the scope of
+// the file, and every unaliased import in source order. A qualifier that
+// no import binds probes the unaliased imports. [NewBindings] derives the
+// bindings from the import records of a file. The resolution step of the
+// load, the rules and the reference lowering of the frontend resolve a
+// spelling through them. The zero Bindings binds nothing.
 //
 // # Concurrency
 //
@@ -56,12 +68,20 @@ var shapeKeywords = []string{"map", "func", "chan", "struct", "interface"}
 //
 // # Allocation contract
 //
-// [Bindings.Import] allocates nothing, and [Bindings.Candidates]
-// allocates the list that it returns.
+// [Bindings.Import] and [Bindings.ImportIn] allocate nothing, and
+// [Bindings.Candidates] and [Bindings.Tiers] allocate the lists that they
+// return.
 type Bindings struct {
-	named map[string]string
-	dots  []string
-	all   []string
+	named   map[string]string
+	aliases []alias
+	dots    []string
+	all     []string
+}
+
+// alias is the qualifier that an aliased import states and the path that
+// it binds the qualifier to.
+type alias struct {
+	qualifier, path string
 }
 
 // NewBindings derives the bindings of a file from its import records.
@@ -76,9 +96,11 @@ type Bindings struct {
 // # Allocation contract
 //
 // NewBindings sizes the map of qualifiers and the list of unaliased
-// imports to the imports of the file, and grows the list of dot imports
-// as it meets them. A file without a dot import costs two allocations
-// for the map up to eight imports, and one for the list.
+// imports to the imports of the file, and grows the lists of dot imports
+// and of aliases as it meets them. A file without a dot import costs two
+// allocations for the map up to eight imports, one for the list of
+// unaliased imports, and one for the list of aliases where it has one
+// aliased import.
 func NewBindings(imports []*node.Import) Bindings {
 	b := Bindings{named: make(map[string]string, len(imports)), all: make([]string, 0, len(imports))}
 	for _, imp := range imports {
@@ -96,7 +118,9 @@ func NewBindings(imports []*node.Import) Bindings {
 		b.named[name] = imp.Path
 		if imp.Alias == "" {
 			b.all = append(b.all, imp.Path)
+			continue
 		}
+		b.aliases = append(b.aliases, alias{qualifier: imp.Alias, path: imp.Path})
 	}
 	return b
 }
@@ -106,6 +130,27 @@ func NewBindings(imports []*node.Import) Bindings {
 func (b Bindings) Import(qualifier string) (string, bool) {
 	path, bound := b.named[qualifier]
 	return path, bound
+}
+
+// ImportIn returns the import path that a qualifier binds where names
+// returns the name that the package at an import path declares, and false
+// for a qualifier that no import binds. An alias binds the qualifier that
+// it states. An import without an alias binds the name that names returns
+// for its path, and the name that [AssumedName] returns for a path that
+// names does not know. Where two imports without an alias bind the
+// qualifier, the later one binds it. A nil names knows no path. ImportIn
+// allocates nothing.
+func (b Bindings) ImportIn(qualifier string, names func(path string) (string, bool)) (string, bool) {
+	if path, aliased := b.aliased(qualifier); aliased {
+		return path, true
+	}
+	var found string
+	for _, path := range b.all {
+		if declaredName(path, names) == qualifier {
+			found = path
+		}
+	}
+	return found, found != ""
 }
 
 // Candidates returns the declarations that a spelling can refer to, in
@@ -148,33 +193,109 @@ func (b Bindings) Candidates(pkg, spelling string) []symbol.Identity {
 		}
 		return out
 	}
+	return b.bare(pkg, core)
+}
+
+// Tiers returns the candidates of a spelling in the tiers of the
+// resolution step, as identities in [Lang] with a package and a name and no
+// kind. It strips the decoration of the spelling as [Bindings.Candidates]
+// does. A bare name has the candidates of Candidates in [AliasTier]. A
+// qualified spelling whose qualifier an alias binds has the name in the
+// package of that alias in AliasTier, and no other tier. Any other qualified
+// spelling has an empty AliasTier and the name in each import without an
+// alias in [ImportTier], in source order, because the package clause of
+// such an import decides the qualifier that it binds. A file without such an
+// import gives it no candidate. A predeclared type, a composite and a
+// constraint term have no candidate.
+//
+// The tiers do not depend on another package, so a record of them stays
+// valid while the file is unchanged. [Qualifies] admits each declaration of
+// a tier by the name that its package declares.
+//
+// # Allocation contract
+//
+// Tiers allocates the list of tiers and the one tier with candidates, two
+// allocations, and nothing for a spelling without a candidate.
+func (b Bindings) Tiers(pkg, spelling string) [][]symbol.Identity {
+	core := stripped(spelling)
+	if core == "" || Predeclared(core) {
+		return nil
+	}
+	qualifier, name, qualified := strings.Cut(core, qualifierMark)
+	if !qualified {
+		return [][]symbol.Identity{b.bare(pkg, core)}
+	}
+	if path, aliased := b.aliased(qualifier); aliased {
+		return [][]symbol.Identity{{{Lang: Lang, Package: path, Name: name}}}
+	}
+	if len(b.all) == 0 {
+		return nil
+	}
+	tier := make([]symbol.Identity, 0, len(b.all))
+	for _, path := range b.all {
+		tier = append(tier, symbol.Identity{Lang: Lang, Package: path, Name: name})
+	}
+	return [][]symbol.Identity{AliasTier: nil, ImportTier: tier}
+}
+
+// aliased returns the path that the later aliased import with the
+// qualifier binds, and false for a qualifier that no alias states.
+func (b Bindings) aliased(qualifier string) (string, bool) {
+	for _, a := range slices.Backward(b.aliases) {
+		if a.qualifier == qualifier {
+			return a.path, true
+		}
+	}
+	return "", false
+}
+
+// bare returns the candidates of a bare name: the name in pkg, and an
+// exported name in each dot import in source order.
+func (b Bindings) bare(pkg, name string) []symbol.Identity {
 	dots := 0
-	if token.IsExported(core) {
+	if token.IsExported(name) {
 		dots = len(b.dots)
 	}
 	out := make([]symbol.Identity, 0, 1+dots)
-	out = append(out, symbol.Identity{Lang: Lang, Package: pkg, Name: core})
+	out = append(out, symbol.Identity{Lang: Lang, Package: pkg, Name: name})
 	for _, path := range b.dots[:dots] {
-		out = append(out, symbol.Identity{Lang: Lang, Package: path, Name: core})
+		out = append(out, symbol.Identity{Lang: Lang, Package: path, Name: name})
 	}
 	return out
+}
+
+// Qualifies reports whether a declaration of a package that declares name
+// is a target of spelling, where the candidate that names the declaration
+// is in the tier of that index among the tiers that [Bindings.Tiers]
+// returns. A candidate of [AliasTier] is a target whatever its package
+// declares. A candidate of [ImportTier] is a target where its package
+// declares the qualifier of the spelling, because a Go import without an
+// alias binds the name in the package clause of the imported package. An
+// empty name admits the candidate, because no clause of its package was
+// read. Qualifies allocates nothing.
+func Qualifies(spelling string, tier int, name string) bool {
+	if tier != ImportTier || name == "" {
+		return true
+	}
+	qualifier, _, _ := strings.Cut(stripped(spelling), qualifierMark)
+	return qualifier == name
 }
 
 // PackageBindings is the scope of the imports of the files of one Go
 // package, in file order. A file of the package resolves a qualifier
 // through them where its own imports do not bind the qualifier, so a
 // directive in one file can name a package that another file of the
-// package imports. An import binds the qualifier that [ImportName]
-// returns. A dot import and a blank import bind no qualifier, because a
-// dot import brings its names into its own file alone. A qualifier that
-// two files bind to different import paths binds each of those paths. A
-// nil file and a nil import record bind nothing, and a nil
-// PackageBindings binds nothing.
+// package imports. An import binds the qualifier that [ImportNameIn]
+// returns for Names. A dot import and a blank import bind no qualifier,
+// because a dot import brings its names into its own file alone. A
+// qualifier that two files bind to different import paths binds each of
+// those paths. A nil file and a nil import record bind nothing, and the
+// zero PackageBindings binds nothing.
 //
 // # Concurrency
 //
 // A PackageBindings value is safe for concurrent use while no caller
-// changes its files.
+// changes its files, and while Names is safe for concurrent use.
 //
 // # Allocation contract
 //
@@ -182,7 +303,15 @@ func (b Bindings) Candidates(pkg, spelling string) []symbol.Identity {
 // cost grows with the imports of the package. [PackageBindings.Import]
 // allocates nothing, and [PackageBindings.Candidates] allocates the list
 // that it returns.
-type PackageBindings []*node.File
+type PackageBindings struct {
+	// Files are the files of the package, in file order.
+	Files []*node.File
+	// Names returns the name that the package at an import path declares,
+	// and false for a package whose clause the caller has not read. A nil
+	// Names knows no package, so an import without an alias binds the name
+	// that its path assumes.
+	Names func(path string) (string, bool)
+}
 
 // Import returns the import path that the files bind to a qualifier. It
 // reports false for a qualifier that no file binds, and for a qualifier
@@ -218,7 +347,7 @@ func (b PackageBindings) Candidates(file Bindings, spelling string) (candidates 
 	if !qualified {
 		return nil, false
 	}
-	if _, bound := file.Import(qualifier); bound {
+	if _, bound := file.ImportIn(qualifier, b.Names); bound {
 		return nil, false
 	}
 	path, n, conflict := b.bound(qualifier)
@@ -229,12 +358,12 @@ func (b PackageBindings) Candidates(file Bindings, spelling string) (candidates 
 		return []symbol.Identity{{Lang: Lang, Package: path, Name: name}}, false
 	}
 	out := make([]symbol.Identity, 0, n)
-	for _, f := range b {
+	for _, f := range b.Files {
 		if f == nil {
 			continue
 		}
 		for _, imp := range f.Imports {
-			if q, binds := ImportName(imp); !binds || q != qualifier {
+			if !b.binds(imp, qualifier) {
 				continue
 			}
 			if id := (symbol.Identity{Lang: Lang, Package: imp.Path, Name: name}); !slices.Contains(out, id) {
@@ -249,12 +378,12 @@ func (b PackageBindings) Candidates(file Bindings, spelling string) (candidates 
 // binds qualifier, the number of the imports that bind it, and whether two
 // of them bind different paths. It allocates nothing.
 func (b PackageBindings) bound(qualifier string) (first string, n int, conflict bool) {
-	for _, f := range b {
+	for _, f := range b.Files {
 		if f == nil {
 			continue
 		}
 		for _, imp := range f.Imports {
-			if name, binds := ImportName(imp); !binds || name != qualifier {
+			if !b.binds(imp, qualifier) {
 				continue
 			}
 			if n == 0 {
@@ -265,6 +394,14 @@ func (b PackageBindings) bound(qualifier string) (first string, n int, conflict 
 		}
 	}
 	return first, n, conflict
+}
+
+// binds reports whether an import binds qualifier: its alias, or the name
+// that Names returns for its path, as [ImportNameIn] returns it. A blank and
+// a dot import bind no qualifier. It allocates nothing.
+func (b PackageBindings) binds(imp *node.Import, qualifier string) bool {
+	name, binds := ImportNameIn(imp, b.Names)
+	return binds && name == qualifier
 }
 
 // stripped returns the name inside the decoration of a type expression.

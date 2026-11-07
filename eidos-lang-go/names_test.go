@@ -346,6 +346,73 @@ func TestNames(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("ImportNameIn", func(t *testing.T) {
+		t.Parallel()
+
+		names := func(path string) (string, bool) {
+			switch path {
+			case "github.com/aws/aws-sdk-go-v2/aws/signer/v4":
+				return "v4", true
+			case "example.com/unnamed":
+				return "", true
+			case "example.com/unread":
+				return "stale", false
+			default:
+				return "", false
+			}
+		}
+		tests := []struct {
+			name string
+			give *node.Import
+			want string
+		}{
+			{
+				name: "returns the name that the package of an unaliased import declares",
+				give: &node.Import{Path: "github.com/aws/aws-sdk-go-v2/aws/signer/v4"}, want: "v4",
+			},
+			{
+				name: "returns the assumed name of an unaliased import whose package names does not know",
+				give: &node.Import{Path: "gopkg.in/yaml.v3"}, want: "yaml",
+			},
+			{
+				name: "returns the assumed name of an unaliased import whose package declares no name",
+				give: &node.Import{Path: "example.com/unnamed"}, want: "unnamed",
+			},
+			{
+				name: "returns the assumed name of an unaliased import whose package names reports unread",
+				give: &node.Import{Path: "example.com/unread"}, want: "unread",
+			},
+			{
+				name: "returns the alias of an aliased import",
+				give: &node.Import{Path: "github.com/aws/aws-sdk-go-v2/aws/signer/v4", Alias: "signer"}, want: "signer",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				name, binds := golang.ImportNameIn(tt.give, names)
+				assert.True(t, binds, "the import binds a name")
+				assert.Equal(t, name, tt.want, "the name that the import binds")
+			})
+		}
+
+		t.Run("returns the assumed name of an unaliased import for a nil names", func(t *testing.T) {
+			t.Parallel()
+
+			name, binds := golang.ImportNameIn(&node.Import{Path: "github.com/aws/aws-sdk-go-v2/aws/signer/v4"}, nil)
+			assert.True(t, binds, "the import binds a name")
+			assert.Equal(t, name, "signer", "the path assumes signer, because v4 is a major version")
+		})
+
+		t.Run("reports false for a blank import", func(t *testing.T) {
+			t.Parallel()
+
+			_, binds := golang.ImportNameIn(&node.Import{Path: "embed", Alias: golang.BlankAlias}, names)
+			assert.False(t, binds, "the import binds no qualifier")
+		})
+	})
 }
 
 // Every name rule reads the universe scope or slices its input, and
@@ -440,5 +507,17 @@ func nameCalls() []nameCall {
 				assert.Equal(tb, name, "yaml", "ImportName returns yaml")
 			},
 		},
+		{
+			name: "ImportNameIn",
+			call: func() { name, is = golang.ImportNameIn(imp, declaredYAML) },
+			check: func(tb assert.TB) {
+				assert.True(tb, is, "ImportNameIn binds the import")
+				assert.Equal(tb, name, "yml", "ImportNameIn returns the name that the package declares")
+			},
+		},
 	}
 }
+
+// declaredYAML returns yml, the name that the package of yaml declares in
+// the allocation cases, for every path.
+func declaredYAML(string) (string, bool) { return "yml", true }

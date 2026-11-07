@@ -181,6 +181,31 @@ func TestFrontend(t *testing.T) {
 			}, "owner.go imports api, and row.go, where the struct is declared, does not")
 		})
 
+		t.Run("returns a frontend that binds an unaliased import by its package clause", func(t *testing.T) {
+			t.Parallel()
+
+			fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
+				"go.mod":          {Data: []byte("module example.test/repro\n")},
+				"signer/v4/v4.go": {Data: []byte("package v4\n\ntype Options struct{ Region string }\n")},
+				"v4a/v4a.go":      {Data: []byte("package v4a\n\ntype Options struct{ Regions []string }\n")},
+				"c/c.go": {Data: []byte("package c\n\nimport (\n\t\"example.test/repro/signer/v4\"\n" +
+					"\t\"example.test/repro/v4a\"\n)\n\ntype Signer interface {\n\tSign(opts v4.Options) error\n" +
+					"\tSignSet(opts v4a.Options) error\n}\n")},
+			})
+			assert.Empty(t, fx.Findings, "the clause of signer/v4 declares v4, so no reference is ambiguous")
+			signer, found := fx.Graph.Lookup(symbol.Identity{
+				Lang: frontend.Lang, Package: "example.test/repro/c", Name: "Signer", Kind: symbol.KindInterface,
+			})
+			assert.True(t, found, "the interface is indexed")
+			methods := signer.(*node.Interface).Methods
+			targets := make([]string, 0, len(methods))
+			for _, m := range methods {
+				targets = append(targets, m.Params[0].Type.Target.Package)
+			}
+			assert.Equal(t, targets, []string{"example.test/repro/signer/v4", "example.test/repro/v4a"},
+				"each qualifier binds the package whose clause declares it")
+		})
+
 		t.Run("returns a frontend that claims no vendor tree", func(t *testing.T) {
 			t.Parallel()
 

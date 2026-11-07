@@ -21,6 +21,7 @@ const (
 	resolveFile    = "p/a.go"
 	resolvePackage = "p"
 	apiPath        = "example.test/fix/api"
+	otherPath      = "example.test/fix/other"
 	floodPath      = "example.test/fix/flood"
 )
 
@@ -41,12 +42,16 @@ func TestResolve(t *testing.T) {
 			want plugin.Candidates
 		}{
 			{
-				name: "returns the import a qualifier binds as one tier",
-				give: "api.User", want: plugin.Candidates{{at(apiPath, "User")}},
+				name: "returns each import without an alias in the second tier for the qualifier of its path",
+				give: "api.User", want: plugin.Candidates{nil, {at(apiPath, "User")}},
 			},
 			{
-				name: "returns the unaliased imports for an unbound qualifier",
-				give: "ghost.X", want: plugin.Candidates{{at(apiPath, "X")}},
+				name: "returns each import without an alias in the second tier for an unbound qualifier",
+				give: "ghost.X", want: plugin.Candidates{nil, {at(apiPath, "X")}},
+			},
+			{
+				name: "returns the import of an alias in the first tier",
+				give: "ren.Thing", want: plugin.Candidates{{at(otherPath, "Thing")}},
 			},
 			{
 				name: "returns the own package then the dot import for an exported bare name",
@@ -83,6 +88,37 @@ func TestResolve(t *testing.T) {
 			scope.Bindings = nil
 			assert.Empty(t, f.Resolve(scope, "api.User"), "no import binds the qualifier")
 		})
+	})
+
+	t.Run("Qualifies", func(t *testing.T) {
+		t.Parallel()
+
+		qualifier, is := frontend.New(nil).(plugin.Qualifier)
+		assert.True(t, is, "the frontend admits a declaration by the name of its package")
+		tests := []struct {
+			name     string
+			giveTier int
+			giveName string
+			want     bool
+		}{
+			{
+				name:     "admits a declaration of an import without an alias whose package declares the qualifier",
+				giveTier: 1, giveName: "v4", want: true,
+			},
+			{
+				name:     "refuses a declaration of an import without an alias whose package declares another name",
+				giveTier: 1, giveName: "v4a",
+			},
+			{name: "admits a declaration of an alias whatever its package declares", giveName: "v4a", want: true},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, qualifier.Qualifies("v4.Options", tt.giveTier, tt.giveName), tt.want,
+					"the package clause decides the name that an import without an alias binds")
+			})
+		}
 	})
 }
 

@@ -87,6 +87,7 @@ func New(opts *Options) plugin.Frontend {
 			return strings.HasSuffix(p, golang.TestSuffix+golang.Extension)
 		})).
 		Resolve(resolve).
+		Qualifies(golang.Qualifies).
 		Options(opts).
 		Dependencies(f.dependencies).
 		Stores(Stores).

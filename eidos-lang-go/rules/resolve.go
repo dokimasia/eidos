@@ -33,15 +33,18 @@ const (
 // that each resolution kind searches, and the resolver of Go decides the
 // rest:
 //
-//   - A name in scope resolves through [golang.Bindings.Candidates] of
-//     the file of the subject. The first candidate that the view
-//     declares at one of the kinds is the declaration. The variant of an
-//     enumeration is a constant, because Go declares it as a constant of
-//     the package.
+//   - A name in scope resolves through [golang.Bindings.Tiers] of the
+//     file of the subject. The first candidate that the view declares at
+//     one of the kinds, and that [golang.Qualifies] admits by the name of
+//     its package in the view, is the declaration. An import without an
+//     alias therefore binds the qualifier that its package declares. The
+//     variant of an enumeration is a constant, because Go declares it as a
+//     constant of the package.
 //   - A qualifier that the imports of the subject's file do not bind
 //     resolves through the imports of every file of its package, with
-//     [golang.PackageBindings.Candidates]. A qualifier that two files bind
-//     to different packages names no declaration.
+//     [golang.PackageBindings.Candidates] and the names of the packages of
+//     the view. A qualifier that two files bind to different packages names
+//     no declaration.
 //   - A bare name that neither the package of the subject nor a dot import
 //     of its file declares resolves in the external test package of the
 //     directory, the package at the path of the subject's package with
@@ -129,9 +132,11 @@ func (resolver) InScope(scope rules.Scope, name string, kinds []symbol.Kind, v r
 		return nil, refuse("%s is not a Go name, so it names no declaration", name)
 	}
 	file := bindingsOf(scope.File)
-	for _, c := range file.Candidates(scope.Subject.Package, name) {
-		if sym := candidateIn(c, kinds, v); sym != nil {
-			return sym, nil
+	for tier, candidates := range file.Tiers(scope.Subject.Package, name) {
+		for _, c := range candidates {
+			if sym := admittedIn(c, name, tier, kinds, v); sym != nil {
+				return sym, nil
+			}
 		}
 	}
 	if !strings.Contains(name, qualifierSep) {
@@ -251,14 +256,29 @@ func routeTests(scope rules.Scope) (string, bool) {
 }
 
 // packageBindings returns the scope of the imports of the files of the
-// package of a subject. For a package that the view does not contain, it
-// returns nil, which binds nothing.
+// package of a subject, which binds an import without an alias by the name
+// that its package declares in the view. For a package that the view does
+// not contain, it returns the zero PackageBindings, which binds nothing.
 func packageBindings(scope rules.Scope, v rules.View) golang.PackageBindings {
 	pkg, held := v.PackageOf(packageIdentity(scope.Subject.Package))
 	if !held {
-		return nil
+		return golang.PackageBindings{}
 	}
-	return golang.PackageBindings(pkg.Files)
+	return golang.PackageBindings{Files: pkg.Files, Names: viewNames{v: v}.name}
+}
+
+// viewNames reads the names that the packages of a view declare.
+type viewNames struct {
+	v rules.View
+}
+
+// name returns the name that the package at an import path declares in the
+// view, and false for a package that the view does not contain.
+func (n viewNames) name(path string) (string, bool) {
+	if pkg, held := n.v.PackageOf(packageIdentity(path)); held {
+		return pkg.Name, true
+	}
+	return "", false
 }
 
 // candidateIn returns the top-level declaration of a candidate with one of
@@ -267,6 +287,19 @@ func packageBindings(scope rules.Scope, v rules.View) golang.PackageBindings {
 func candidateIn(c symbol.Identity, kinds []symbol.Kind, v rules.View) symbol.Symbol {
 	pkg, held := v.PackageOf(packageIdentity(c.Package))
 	if !held {
+		return nil
+	}
+	return declared(pkg, c.Name, kinds)
+}
+
+// admittedIn returns the top-level declaration of a candidate of the tier
+// of spelling with one of the kinds where [golang.Qualifies] admits the name
+// that the package of the candidate declares in the view. It returns nil
+// where the view does not contain the package, the package does not declare
+// the name, or the package declares another qualifier.
+func admittedIn(c symbol.Identity, spelling string, tier int, kinds []symbol.Kind, v rules.View) symbol.Symbol {
+	pkg, held := v.PackageOf(packageIdentity(c.Package))
+	if !held || !golang.Qualifies(spelling, tier, pkg.Name) {
 		return nil
 	}
 	return declared(pkg, c.Name, kinds)
