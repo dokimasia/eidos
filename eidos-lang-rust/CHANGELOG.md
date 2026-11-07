@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang/rust
 
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [ca01b59]
+  - go.dokimi.dev/eidos/core@0.15.0
+  - go.dokimi.dev/eidos/sdk@0.11.0
+  - go.dokimi.dev/eidos/lang@0.4.6
+
 ## 0.3.2
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/core
 
+## 0.15.0
+
+### Minor Changes
+
+- ca01b59: Add `plugin.CommentSyntax.IsZero`.
+- ca01b59: Add `output.Body` to return the body of a stamped file and the number of lines above it.
+- ca01b59: Compare the bodies of the committed and the fresh file of a line set under `run --check`.
+- ca01b59: Add `plugin.Output.Comment` to stamp the file of a data family with the frame of the brand in that comment syntax.
+
 ## 0.14.0
 
 ### Minor Changes
