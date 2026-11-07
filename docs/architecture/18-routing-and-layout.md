@@ -221,12 +221,16 @@ frontend stamped
 A data family is the exception. Its `Name`, such as
 `dokimi.golang.lock`, is the file name of its one file per plan, under
 the directory of the family. Its template writes the whole file, and
-the run writes the bytes without a header, a frame or a format step.
-The file does not declare a package. A sink recognises a data file of the
-brand by the digest that the manifest records for its path, because
-the file has no frame. A data family with `LineSet` is a set of lines,
-and `run --check` passes each line that the committed file has and the
-fresh file lacks to the `LineSetReader` of the generator.
+the run writes the output of the template as the body of the file. The
+file does not declare a package. A data family that states a comment syntax
+in `Comment`, such as `#`, has the frame of the brand in that syntax,
+so a sink classifies its file through the frame, as it classifies a
+source file. The file of a data family without a comment syntax has no
+frame, and a sink recognises it by the digest that the manifest records
+for its path. A data family with `LineSet` is a set of lines, and
+`run --check` passes each line that the body of the committed file has
+and the body of the fresh file lacks to the `LineSetReader` of the
+generator.
 
 ## Package identity
 

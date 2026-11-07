@@ -4,7 +4,7 @@ title: A data family writes one file under a name of its own
 status: Accepted
 date: 2026-10-28
 supersedes: none
-superseded-by: none
+superseded-by: ADR-0125
 rfc: RFC-0087
 ---
 

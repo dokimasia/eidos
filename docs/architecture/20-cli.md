@@ -243,8 +243,9 @@ that path. Staleness
 therefore exits 1 through the ordinary contract, and enforcing
 "committed output is current" needs no JSON parsing. For the file of
 a line-set family, `--check` also reports the finding that the
-generator returns for each line that the committed file has and the
-fresh file lacks ([18-routing-and-layout.md](18-routing-and-layout.md)).
+generator returns for each line that the body of the committed file
+has and the body of the fresh file lacks
+([18-routing-and-layout.md](18-routing-and-layout.md)).
 
 ### plan
 

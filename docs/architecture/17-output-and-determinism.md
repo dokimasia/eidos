@@ -233,6 +233,14 @@ and compares body hashes, and reads no state directory at all.
 The hash comes from the content, so the trailer is as deterministic
 as the body it attests.
 
+A data family states the comment syntax of its file, such as `#`,
+because the syntax belongs to the format of the file and not to the
+target ([18-routing-and-layout.md](18-routing-and-layout.md)). The run
+frames the file in that syntax. The file of a data family without a
+comment syntax does not have a frame, and a sink recognises it by the
+digest that the manifest records. In a fresh clone, the sink classifies
+such a file as foreign, because the clone has no manifest.
+
 ## Dry run
 
 `--dry-run` executes every phase, including Layout, the Close checks

@@ -131,7 +131,7 @@ way.
 | [0110](0110-an-acronym-keeps-the-s-of-its-plural.md) | An acronym keeps the s of its plural | Accepted |
 | [0111](0111-a-run-reports-no-finding-in-a-dependency.md) | A run reports no finding in a dependency | Accepted |
 | [0112](0112-a-unit-warns-about-a-mark-near-its-brand.md) | A unit warns about a mark near its brand | Accepted |
-| [0113](0113-a-data-family-writes-one-file-under-a-name-of-its-own.md) | A data family writes one file under a name of its own | Accepted |
+| [0113](0113-a-data-family-writes-one-file-under-a-name-of-its-own.md) | A data family writes one file under a name of its own | Accepted, superseded in part by [0125](0125-a-data-family-frames-its-file-in-its-comment-syntax.md) |
 | [0114](0114-a-dependency-is-a-declaration-that-a-dependency-round-loaded.md) | A dependency is a declaration that a dependency round loaded | Accepted |
 | [0115](0115-a-protoc-plugin-runs-an-eidos-composition.md) | A protoc plugin runs an eidos composition | Accepted |
 | [0116](0116-a-protoc-plugin-sets-the-layout-of-a-plan-and-generates-every-file-in-one-call.md) | A protoc plugin sets the layout of a plan and generates every file in one call | Accepted |
@@ -143,3 +143,4 @@ way.
 | [0122](0122-a-qualifier-admits-the-declared-name-of-the-package-of-a-hit.md) | A qualifier admits the declared name of the package of a hit | Accepted |
 | [0123](0123-the-rules-state-the-error-value-that-an-error-value-wraps.md) | The rules state the error value that an error value wraps | Accepted |
 | [0124](0124-a-run-does-not-report-ambiguity-in-a-dependency.md) | A run does not report the ambiguous references of a dependency | Accepted |
+| [0125](0125-a-data-family-frames-its-file-in-its-comment-syntax.md) | A data family frames its file in the comment syntax that it states | Accepted |
