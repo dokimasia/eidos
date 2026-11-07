@@ -1672,6 +1672,22 @@ func TestSteps(t *testing.T) {
 			assert.Contains(t, err.Error(), `two plugins return the name "mirror"`, "the error names the plugin")
 		})
 	})
+
+	t.Run("stampable", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns an error naming a data family whose comment syntax has no comment form", func(t *testing.T) {
+			t.Parallel()
+
+			family := framedLock
+			family.Comment = plugin.CommentSyntax{Directives: true}
+			_, err := lockBuilder(t.TempDir(), lockPlan, planDir, family).Build()
+			assert.HasError(t, err, "a syntax without a comment form cannot frame the file")
+			want := `plan "locks": family "" of lister: ` +
+				"output: the comment syntax has neither a line form nor a block form"
+			assert.Contains(t, err.Error(), want, "the error names the plan and the family")
+		})
+	})
 }
 
 // runOrdering composes the annotators and runs them over the fixture of

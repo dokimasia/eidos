@@ -51,7 +51,9 @@ type File struct {
 	Referents []symbol.Identity
 	// Data reports a file of a data family, which [Output.Name] declares.
 	// A backend writes the output of the template of the family as the
-	// whole file, and the run writes it without a frame.
+	// whole file. The run stamps it with the frame of the brand in the
+	// comment syntax of the family, and writes it without a frame for a
+	// family without one.
 	Data bool
 }
 

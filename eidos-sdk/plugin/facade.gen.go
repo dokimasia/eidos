@@ -1429,7 +1429,8 @@ type Subscribed = core.Subscribed
 // CommentSyntax is a language's comment forms, declared once per
 // satellite and shared by the kits: the frontend strips comments
 // with it, and the output contract writes the generated-file
-// header through it.
+// header through it. A data family states the comment forms of the
+// format of its file in [Output.Comment].
 type CommentSyntax = core.CommentSyntax
 
 // CommentBlock is one block-comment form, gutter included, so a

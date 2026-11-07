@@ -298,6 +298,26 @@ func Read(stamped []byte) (Provenance, bool) {
 	return f.record, true
 }
 
+// Body returns the body of a stamped file of any brand and the number of
+// lines above it: the marker, the derivation lines and the blank line
+// after them. The body is the text that [Contract.Stamp] framed. Body
+// returns the bytes whole, 0 and false where no frame is present.
+//
+// Body checks nothing, as [Read] does. It returns the body of a file that
+// a person edited since its stamp as the file has it.
+//
+// # Allocation contract
+//
+// Body allocates what [Read] allocates for the record of the frame, and
+// returns a part of stamped.
+func Body(stamped []byte) (body []byte, above int, framed bool) {
+	f, held := parse(stamped)
+	if !held {
+		return stamped, 0, false
+	}
+	return f.body, f.above, true
+}
+
 // HasTrailerKey reports whether bytes from a file's end contain the
 // key a trailer opens its record with. A file whose last [TailSize]
 // bytes contain no key has no frame [Read] parses, so a caller that
@@ -307,13 +327,15 @@ func HasTrailerKey(tail []byte) bool {
 }
 
 // frame is one parsed stamped file: the record it contains, the body
-// its trailer attests, and the bytes between the frame's blank line and
-// the trailer. The body is those bytes without the blank line that the
-// stamp writes before the trailer, where they end in a blank line.
+// its trailer attests, the bytes between the frame's blank line and the
+// trailer, and the number of lines above those bytes. The body is those
+// bytes without the blank line that the stamp writes before the trailer,
+// where they end in a blank line.
 type frame struct {
 	record Provenance
 	body   []byte
 	region []byte
+	above  int
 }
 
 // intact reports whether the trailer attests the body. Where the last
@@ -417,7 +439,8 @@ func (c *Contract) head(above []byte, hash string) (frame, bool) {
 	if bytes.HasSuffix(region, []byte("\n\n")) {
 		body = region[:len(region)-1]
 	}
-	return frame{record: rec, body: body, region: region}, true
+	lines := bytes.Count(above[:end+2], []byte("\n"))
+	return frame{record: rec, body: body, region: region, above: lines}, true
 }
 
 // marker reports whether a line is the frame's marker under the

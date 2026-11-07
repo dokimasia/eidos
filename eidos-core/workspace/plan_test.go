@@ -151,13 +151,72 @@ func TestPlan(t *testing.T) {
 		t.Run("updates a data file that the previous generation wrote", func(t *testing.T) {
 			t.Parallel()
 
-			root := lockRoot(t, rowLine)
+			root := lockRoot(t, lineSetLock, rowLine)
 			edit(t, root, rowLine, colLine)
-			_, err := built(t, lockBuilder(root, lockPlan, planDir, true)).
+			_, err := built(t, lockBuilder(root, lockPlan, planDir, lineSetLock)).
 				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
 			assert.NoError(t, err, "the run is clean")
 			got := files.Read(t, filepath.Join(root, filepath.FromSlash(lockPath)))
 			assert.Permutation(t, strings.Fields(got), []string{"Row", "Col"}, "the file lists both structs")
+		})
+
+		t.Run("updates a framed data file in a workspace without the state directory", func(t *testing.T) {
+			t.Parallel()
+
+			root := lockRoot(t, framedLock, rowLine)
+			assert.NoError(t, os.RemoveAll(filepath.Join(root, ledger.StateDir(fixtureBrand))),
+				"the state directory is removed, as a fresh clone has none")
+			edit(t, root, rowLine, colLine)
+			_, err := built(t, lockBuilder(root, lockPlan, planDir, framedLock)).
+				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			assert.NoError(t, err, "the frame proves that the brand wrote the file")
+			body, _, framed := output.Body([]byte(files.Read(t, filepath.Join(root, filepath.FromSlash(lockPath)))))
+			assert.True(t, framed, "the file has the frame of the brand")
+			assert.Permutation(t, strings.Fields(string(body)), []string{"Row", "Col"}, "the file lists both structs")
+		})
+
+		t.Run("reports ForeignFile for a data file without a frame in a workspace without the state directory",
+			func(t *testing.T) {
+				t.Parallel()
+
+				root := lockRoot(t, lineSetLock, rowLine)
+				assert.NoError(t, os.RemoveAll(filepath.Join(root, ledger.StateDir(fixtureBrand))),
+					"the state directory is removed, as a fresh clone has none")
+				edit(t, root, rowLine, colLine)
+				report, err := built(t, lockBuilder(root, lockPlan, planDir, lineSetLock)).
+					Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+				assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run cannot prove that the brand wrote the file")
+				assert.Length(t, findings(report.Sink, workspace.ForeignFile), 1, "one finding for the data file")
+				files.HasContent(t, filepath.Join(root, filepath.FromSlash(lockPath)), "Row\n", "the file remains")
+			})
+
+		t.Run("reports DriftedOutput for a framed data file edited since its stamp", func(t *testing.T) {
+			t.Parallel()
+
+			root := lockRoot(t, framedLock, rowLine)
+			at := filepath.Join(root, filepath.FromSlash(lockPath))
+			changed := strings.Replace(files.Read(t, at), "Row\n", "Row\nEdited\n", 1)
+			files.Write(t, root, files.Tree{lockPath: files.Text(changed)})
+			edit(t, root, rowLine, colLine)
+			report, err := built(t, lockBuilder(root, lockPlan, planDir, framedLock)).
+				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
+			assert.Length(t, findings(report.Sink, workspace.DriftedOutput), 1, "one finding for the edited file")
+			files.HasContent(t, at, changed, "the edit remains")
+		})
+
+		t.Run("reports ForeignFile for a hand-written file at the path of a framed data file", func(t *testing.T) {
+			t.Parallel()
+
+			root := files.Workspace(t, files.Tree{
+				lockPath:   files.Text("Row\n"),
+				warmSource: files.Text(string(warmTree(rowLine)[warmSource].Data)),
+			})
+			report, err := built(t, lockBuilder(root, lockPlan, planDir, framedLock)).
+				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the foreign file fails the run")
+			assert.Length(t, findings(report.Sink, workspace.ForeignFile), 1, "one finding for the hand-written file")
+			files.HasContent(t, filepath.Join(root, filepath.FromSlash(lockPath)), "Row\n", "the file remains")
 		})
 
 		t.Run("passes the target, the spoke and the policy of the plan to each generator", func(t *testing.T) {

@@ -222,8 +222,10 @@ func (c Config) AppendBinary(b []byte) ([]byte, error) {
 // checkGenerator validates the declared families of one generator and
 // the routing each resolves to. Each family needs a cardinality, a word
 // and a tag of its own, and a family template must be a slash-separated
-// path inside a tree. A family that writes under a directory has one,
-// and a refinement's directory is read by a family it applies to.
+// path inside a tree. A line set and a comment syntax need a data family,
+// which is per-plan and has a template and a name of one path element. A
+// family that writes under a directory has one, and a refinement's
+// directory is read by a family it applies to.
 func (c Config) checkGenerator(plan string, p plugin.ID, declared []plugin.Output) []error {
 	var faults []error
 	fault := func(format string, a ...any) {
@@ -248,6 +250,9 @@ func (c Config) checkGenerator(plan string, p plugin.ID, declared []plugin.Outpu
 		switch {
 		case o.Name == "" && o.LineSet:
 			fault("family %q of %s is a line set, and a line set is a data family with a name", o.Tag, p)
+		case o.Name == "" && !o.Comment.IsZero():
+			fault("family %q of %s states a comment syntax, and a comment syntax frames the file of a data family "+
+				"with a name", o.Tag, p)
 		case o.Name == "":
 		case o.Per != plugin.PerPlan:
 			fault("family %q of %s has the name %q, and a data family is per-plan", o.Tag, p, o.Name)

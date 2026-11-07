@@ -266,6 +266,26 @@ func TestConfig(t *testing.T) {
 				},
 			},
 			{
+				name: "returns no fault for a data family with a comment syntax",
+				give: layout.Config{Dir: "gen"},
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{
+						Per: plugin.PerPlan, Word: "lock", Name: "stub.lock", Template: "lock.tmpl",
+						Comment: plugin.CommentSyntax{Line: []string{"#"}},
+					},
+				}},
+			},
+			{
+				name: "returns a fault for a family with a comment syntax and without a name",
+				outputs: map[plugin.ID][]plugin.Output{stubgen: {
+					{Per: plugin.PerSource, Word: "stub", Comment: plugin.CommentSyntax{Line: []string{"#"}}},
+				}},
+				want: []string{
+					fault(`family "" of stubgen states a comment syntax, ` +
+						`and a comment syntax frames the file of a data family with a name`),
+				},
+			},
+			{
 				name: "returns a fault for a family template that is no path inside a tree",
 				outputs: map[plugin.ID][]plugin.Output{stubgen: {
 					{Per: plugin.PerSource, Word: "stub", Template: "../stub.tmpl"},

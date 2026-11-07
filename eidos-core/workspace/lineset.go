@@ -8,6 +8,7 @@ import (
 	"io/fs"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 )
@@ -66,13 +67,15 @@ func removedLines(committed, fresh []byte) []plugin.RemovedLine {
 	return removed
 }
 
-// removals reports the finding of each line that the committed file of a
-// line-set file of a plan has and its fresh bytes lack, through the
-// [plugin.LineSetReader] of the generator that declares the family. It
-// reads the committed file from tree, and reports nothing for a nil tree,
-// a plan without such a file and a file that tree does not contain. A
-// finding without a position is at the line, and a finding without an
-// origin has the origin of the generator.
+// removals reports the finding of each line that the body of the
+// committed file of a line-set file of a plan has and the body of its
+// fresh bytes lacks, through the [plugin.LineSetReader] of the generator
+// that declares the family. The body of a file is the file without its
+// frame, as [output.Body] returns it, and a removed line has its line in
+// the committed file. It reads the committed file from tree, and reports
+// nothing for a nil tree, a plan without such a file and a file that tree
+// does not contain. A finding without a position is at the line, and a
+// finding without an origin has the origin of the generator.
 func removals(p *planRun, tree fs.FS, sink *diag.Sink) {
 	if tree == nil {
 		return
@@ -86,8 +89,10 @@ func removals(p *planRun, tree fs.FS, sink *diag.Sink) {
 		if err != nil {
 			continue
 		}
-		for _, r := range removedLines(committed, f.body) {
-			r.Family, r.Path = f.lines.tag, f.path
+		before, above, _ := output.Body(committed)
+		after, _, _ := output.Body(f.body)
+		for _, r := range removedLines(before, after) {
+			r.Family, r.Path, r.Line = f.lines.tag, f.path, r.Line+above
 			d, report := f.lines.reader.Removed(r)
 			if !report {
 				continue

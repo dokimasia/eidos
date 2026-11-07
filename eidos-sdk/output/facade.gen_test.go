@@ -81,6 +81,16 @@ func TestFacade(t *testing.T) {
 		})
 	})
 
+	t.Run("Body", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("has the kernel function's signature", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, reflect.TypeOf(output.Body), reflect.TypeOf(core.Body), "the wrapper has the kernel function's signature")
+		})
+	})
+
 	t.Run("HasTrailerKey", func(t *testing.T) {
 		t.Parallel()
 

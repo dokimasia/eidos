@@ -400,6 +400,58 @@ func TestContract(t *testing.T) {
 		}
 	})
 
+	t.Run("Body", func(t *testing.T) {
+		t.Parallel()
+
+		block, err := contract(t, "acme", blockSyntax()).Stamp(fixtureFile())
+		assert.NoError(t, err, "the block language stamps")
+		plan, err := contract(t, "acme", goSyntax()).Stamp(plugin.RenderedFile{Body: []byte("package svc\n")})
+		assert.NoError(t, err, "a plan file stamps")
+		tests := []struct {
+			name       string
+			give       string
+			wantBody   string
+			wantAbove  int
+			wantFramed bool
+		}{
+			{
+				name: "returns the body of a stamped file and the lines above it", give: stamped,
+				wantBody: bodyText, wantAbove: 5, wantFramed: true,
+			},
+			{
+				name: "returns the body of a frame of the earlier layout", give: stampedBefore,
+				wantBody: bodyText, wantAbove: 5, wantFramed: true,
+			},
+			{
+				name: "returns the body of a block-commented frame", give: string(block),
+				wantBody: bodyText, wantAbove: 5, wantFramed: true,
+			},
+			{
+				name: "returns the body of a frame without a derivation line", give: string(plan),
+				wantBody: "package svc\n", wantAbove: 2, wantFramed: true,
+			},
+			{
+				name:       "returns the body of a file edited since its stamp",
+				give:       strings.Replace(stamped, "func Load() {}", "func Load() { x() }", 1),
+				wantBody:   strings.Replace(bodyText, "func Load() {}", "func Load() { x() }", 1),
+				wantAbove:  5,
+				wantFramed: true,
+			},
+			{name: "returns the bytes whole for a file without a frame", give: bodyText, wantBody: bodyText},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				body, above, framed := output.Body([]byte(tt.give))
+				expect.Equal(t, string(body), tt.wantBody, "the body is the text between the frame and the trailer")
+				expect.Equal(t, above, tt.wantAbove,
+					"the lines above the body are the marker, the derivation lines and the blank line")
+				assert.Equal(t, framed, tt.wantFramed, "Body reports whether the bytes have a frame")
+			})
+		}
+	})
+
 	t.Run("HasTrailerKey", func(t *testing.T) {
 		t.Parallel()
 
@@ -528,6 +580,9 @@ func TestContractAllocs(t *testing.T) {
 	var held bool
 	assert.MaxAllocs(t, func() { _, held = output.Read(out) }, readAllocs, "Read allocates the record it reads")
 	assert.True(t, held, "Read finds the frame")
+	assert.MaxAllocs(t, func() { _, _, held = output.Body(out) }, readAllocs,
+		"Body allocates the record of the frame")
+	assert.True(t, held, "Body finds the frame")
 	tail := tailOf(out)
 	assert.MaxAllocs(t, func() { held = output.HasTrailerKey(tail) }, 0, "HasTrailerKey allocates nothing")
 	assert.True(t, held, "HasTrailerKey finds the key")
@@ -631,6 +686,20 @@ func BenchmarkContract(b *testing.B) {
 		}
 		assert.True(b, held, "the stamped file has a frame")
 		assert.Length(b, got.Sources, 1, "with its source")
+	})
+
+	b.Run("Body", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(readAllocs)
+		defer c.End()
+		var (
+			body   []byte
+			framed bool
+		)
+		for c.Loop() {
+			body, _, framed = output.Body(stamped)
+		}
+		assert.True(b, framed, "the stamped file has a frame")
+		assert.Length(b, body, len(files[0].Body), "and its body")
 	})
 
 	b.Run("HasTrailerKey", func(b *testing.B) {

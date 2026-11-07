@@ -195,9 +195,21 @@ func TestWrite(t *testing.T) {
 		t.Run("writes a data file without the frame of the brand", func(t *testing.T) {
 			t.Parallel()
 
-			root := lockRoot(t, rowLine)
+			root := lockRoot(t, lineSetLock, rowLine)
 			files.HasContent(t, filepath.Join(root, filepath.FromSlash(lockPath)), "Row\n",
 				"the file contains the output of its template alone")
+		})
+
+		t.Run("writes a data file in the frame of the brand in the comment syntax of its family", func(t *testing.T) {
+			t.Parallel()
+
+			framing, err := output.NewContract(fixtureBrand, framedLock.Comment)
+			assert.NoError(t, err, "the comment syntax of the lock frames a file")
+			want, err := framing.Stamp(plugin.RenderedFile{Plugins: []plugin.ID{listerID}, Body: []byte("Row\n")})
+			assert.NoError(t, err, "the output of the template stamps")
+			root := lockRoot(t, framedLock, rowLine)
+			files.HasContent(t, filepath.Join(root, filepath.FromSlash(lockPath)), string(want),
+				"the file contains the output of its template in the frame of the brand")
 		})
 
 		t.Run("reports the files a commit refused part-way wrote", func(t *testing.T) {

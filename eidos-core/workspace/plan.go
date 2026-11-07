@@ -517,8 +517,8 @@ func (p *planRun) stageInto(
 
 // owned declares the recorded digest of each previous entry to each sink
 // that implements [output.Owner], once for a sink that sinks lists twice.
-// A sink then recognises a data file of the brand, which has no frame, by
-// its digest.
+// A sink then recognises a data file of the brand without a frame by its
+// digest.
 func owned(previous []manifest.Entry, sinks ...output.Sink) {
 	for i, s := range sinks {
 		o, owns := s.(output.Owner)

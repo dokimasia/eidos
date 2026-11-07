@@ -68,8 +68,11 @@ type compiledPlan struct {
 	routing layout.Config
 	outputs map[plugin.ID][]plugin.Output
 	// contract stamps the plan's rendered files, nil for a
-	// composition declaring no output.
+	// composition declaring no output. data has the contract of each
+	// family that states a comment syntax, by family, and stamps the file
+	// of such a data family.
 	contract *output.Contract
+	data     map[layout.Family]*output.Contract
 }
 
 // compiledCheck is one workspace check as Close runs it.
@@ -1480,10 +1483,13 @@ func unserved(pl Plan) []error {
 }
 
 // stampable builds each plan's output contract from the brand and the
-// backend's own comment syntax, and reports a syntax that cannot frame a
-// generated file. It runs only where a composition declares output,
-// because a run that writes nothing needs no layout, no render and no
-// frame.
+// backend's own comment syntax, and the contract of each family that
+// states a comment syntax from that syntax. The layout refuses a comment
+// syntax on a family without a name, so only a data family stamps its
+// file through such a contract. stampable reports a syntax that cannot
+// frame a generated file, in the order of the generators and their
+// families. It runs only where a composition declares output, because a
+// run that writes nothing needs no layout, no render and no frame.
 func stampable(plans []compiledPlan, brand output.Brand) []error {
 	var faults []error
 	for i := range plans {
@@ -1497,6 +1503,21 @@ func stampable(plans []compiledPlan, brand output.Brand) []error {
 			continue
 		}
 		pl.contract = contract
+		pl.data = map[layout.Family]*output.Contract{}
+		for _, p := range slices.Sorted(maps.Keys(pl.outputs)) {
+			for _, o := range pl.outputs[p] {
+				if o.Comment.IsZero() {
+					continue
+				}
+				framing, err := output.NewContract(brand, o.Comment)
+				if err != nil {
+					faults = append(faults,
+						fmt.Errorf("workspace: plan %q: family %q of %s: %w", pl.name, o.Tag, p, err))
+					continue
+				}
+				pl.data[layout.Family{Plugin: p, Tag: o.Tag}] = framing
+			}
+		}
 	}
 	return faults
 }

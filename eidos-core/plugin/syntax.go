@@ -6,7 +6,8 @@ package plugin
 // CommentSyntax is a language's comment forms, declared once per
 // satellite and shared by the kits: the frontend strips comments
 // with it, and the output contract writes the generated-file
-// header through it.
+// header through it. A data family states the comment forms of the
+// format of its file in [Output.Comment].
 type CommentSyntax struct {
 	// Line holds the line-comment openers, first one canonical.
 	Line []string
@@ -19,6 +20,13 @@ type CommentSyntax struct {
 	// a language without the convention keeps every such line as
 	// documentation, because prose spelling word:word is prose.
 	Directives bool
+}
+
+// IsZero reports whether s is the zero syntax: Line and Blocks are empty,
+// and Directives is false. A data family without a comment syntax has
+// the zero syntax. It allocates nothing.
+func (s CommentSyntax) IsZero() bool {
+	return len(s.Line) == 0 && len(s.Blocks) == 0 && !s.Directives
 }
 
 // CommentBlock is one block-comment form, gutter included, so a

@@ -86,8 +86,16 @@ type Output struct {
 	// family has the cardinality PerPlan and a template. The layout writes
 	// its one file under the directory of the family with the name as
 	// given. The template writes the whole file, and the run writes the
-	// bytes without a header, a frame or a format step.
+	// output of the template as the body of the file.
 	Name string
+	// Comment is the comment syntax of the file of a data family, such as
+	// CommentSyntax{Line: []string{"#"}}. The run stamps the file with the
+	// frame of the brand in that syntax, so a sink recognises the file by
+	// its frame in any clone. The zero syntax leaves the file without a
+	// frame, and a sink recognises it by the digest that the manifest
+	// records. A family of source files states none, because the run stamps
+	// its files in the comment syntax of the target.
+	Comment CommentSyntax
 }
 
 // RemovedLine is one line that the committed file of a line-set family

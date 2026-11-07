@@ -236,8 +236,8 @@ func TestClose(t *testing.T) {
 		t.Run("removes the data file of a plan the composition no longer declares", func(t *testing.T) {
 			t.Parallel()
 
-			root := lockRoot(t, rowLine)
-			_, err := built(t, lockBuilder(root, "relocks", "other", true)).
+			root := lockRoot(t, lineSetLock, rowLine)
+			_, err := built(t, lockBuilder(root, "relocks", "other", lineSetLock)).
 				Run(t.Context(), workspace.Input{Tree: os.DirFS(root)})
 			assert.NoError(t, err, "the run is clean")
 			files.Absent(

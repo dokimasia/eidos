@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -129,11 +130,12 @@ func renderedNames(names []plugin.NameEntry, rendered []plugin.File) []plugin.Na
 
 // render drives one plan's backend over the files its layout routed
 // and returns what the backend produced, stamped through the plan's
-// contract, at each file's routed path and in path order. A data file
-// keeps the bytes that the backend produced, without the stamp. It also
-// returns the routed files the backend rendered, at the same places.
-// others are the names of the plan's files that a warm run keeps, and nil
-// for a store that contains the whole plan.
+// contract, at each file's routed path and in path order. A data file of
+// a family with a comment syntax is stamped through the contract of its
+// family, and every other data file keeps the bytes that the backend
+// produced. It also returns the routed files the backend rendered, at the
+// same places. others are the names of the plan's files that a warm run
+// keeps, and nil for a store that contains the whole plan.
 func render(
 	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 	others plugin.Names,
@@ -157,8 +159,8 @@ func render(
 				pl.backend.Name(), f.Path)
 		}
 		body := f.Body
-		if !files[routed].Data {
-			stamped, err := pl.contract.Stamp(f)
+		if framing := contractOf(pl, &files[routed]); framing != nil {
+			stamped, err := framing.Stamp(f)
 			if err != nil {
 				return nil, nil, fmt.Errorf("stamp %s: %w", f.Path, err)
 			}
@@ -181,6 +183,19 @@ func render(
 		routedFiles = append(routedFiles, files[routed])
 	}
 	return out, routedFiles, nil
+}
+
+// contractOf returns the contract that stamps a routed file: the contract
+// of the plan for a source file, the contract of its family for a data
+// file of a family with a comment syntax, and nil for any other data
+// file. The family of a data file is the family of its first unit. It
+// allocates nothing.
+func contractOf(pl *compiledPlan, f *plugin.File) *output.Contract {
+	if !f.Data {
+		return pl.contract
+	}
+	first := f.Units[0]
+	return pl.data[layout.Family{Plugin: first.Plugin, Tag: first.Tag}]
 }
 
 // describeFile records what the manifest and the findings read off a
