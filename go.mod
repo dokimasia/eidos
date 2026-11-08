@@ -9,7 +9,7 @@ require (
 	go.dokimi.dev/assert v0.10.0
 	go.dokimi.dev/eidos/cli v0.3.8
 	go.dokimi.dev/eidos/core v0.15.0
-	go.dokimi.dev/eidos/lang/go v0.8.1
+	go.dokimi.dev/eidos/lang/go v0.8.2
 	go.dokimi.dev/eidos/lang/graphql v0.2.3
 	go.dokimi.dev/eidos/lang/java v0.2.14
 	go.dokimi.dev/eidos/lang/protobuf v0.3.4

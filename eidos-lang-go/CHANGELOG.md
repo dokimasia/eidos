@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.8.2
+
+### Patch Changes
+
+- 1765ac1: Fix `Rules.Importable` to refuse a named reference without a target and without a package.
+
 ## 0.8.1
 
 ### Patch Changes
