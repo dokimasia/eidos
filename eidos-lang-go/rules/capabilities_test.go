@@ -5,6 +5,7 @@ package rules_test
 
 import (
 	"bytes"
+	"io/fs"
 	"math/big"
 	"net/netip"
 	"net/url"
@@ -74,6 +75,19 @@ const (
 	webPath   = "example.com/shop/web"
 	corePath  = "example.com/shop/core"
 	clockPath = corePath + "/internal/clock"
+)
+
+// The import case of a dependency. The package wire of the standard library
+// declares Message, whose method Methods returns a pointer to a type that
+// wire does not export. The struct Request of the workspace has a field of
+// Message.
+const (
+	wirePath   = "wire"
+	wireFile   = "wire/wire.go"
+	wireSource = "package wire\n\n// Message is a message.\ntype Message interface {\n" +
+		"\t// Methods returns the fast paths of the message.\n\tMethods() *methods\n}\n\n" +
+		"// methods are the fast paths of a message.\ntype methods = struct{ size int }\n"
+	requestSource = "package fx\n\nimport \"wire\"\n\n// Request has a message.\ntype Request struct{ M wire.Message }\n"
 )
 
 // The capability cases read the sentinel that a base spells, the struct
@@ -489,7 +503,14 @@ func TestCapabilities(t *testing.T) {
 			give *node.TypeRef
 		}{
 			{name: "returns nil for a nil reference"},
+			{name: "returns nil for a reference without a spelling", give: &node.TypeRef{}},
 			{name: "returns nil for a predeclared type", give: &node.TypeRef{Spelling: "int"}},
+			{
+				name: "returns nil for a list of a predeclared type",
+				give: &node.TypeRef{
+					Form: symbol.FormList, Spelling: "[]int", Elems: []*node.TypeRef{{Spelling: "int"}},
+				},
+			},
 			{
 				name: "returns nil for an exported declaration of another package",
 				give: ref(corePath, "Row", symbol.KindStruct),
@@ -538,6 +559,13 @@ func TestCapabilities(t *testing.T) {
 				give: &node.TypeRef{Spelling: "core.rows", Package: corePath}, want: "rows is not exported",
 			},
 			{
+				name: "returns an error for a pointer to an unqualified name that resolves to no declaration",
+				give: &node.TypeRef{
+					Form: symbol.FormOptional, Spelling: "*methods", Elems: []*node.TypeRef{{Spelling: "methods"}},
+				},
+				want: "methods has no declaration",
+			},
+			{
 				name: "returns an error for the element of a list that the code cannot refer to",
 				give: &node.TypeRef{Form: symbol.FormList, Spelling: "[]clock.Clock", Elems: []*node.TypeRef{clock}},
 				want: "internal to " + corePath,
@@ -559,6 +587,21 @@ func TestCapabilities(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.want, "the error names the rule")
 			})
 		}
+
+		t.Run("returns an error for a result type that a dependency does not export", func(t *testing.T) {
+			t.Parallel()
+
+			stores := map[string]fs.FS{gofrontend.GoRootStore: fstest.MapFS{wireFile: {Data: []byte(wireSource)}}}
+			workspace := fstest.MapFS{fxFile: {Data: []byte(requestSource)}}
+			f := rulestest.LoadedWith(t, gofrontend.New(nil), workspace, stores)
+			sym, held := f.Graph.Lookup(id(wirePath, "Message", symbol.KindInterface))
+			assert.True(t, held, "the dependency round loads Message")
+			message, _ := sym.(*node.Interface)
+			assert.Length(t, message.Methods, 1, "Message has the method Methods")
+			err := capability[rules.ImportRules](t).Importable(web, message.Methods[0].Returns[0].Type)
+			assert.HasError(t, err, "Go code of another package cannot refer to the result of Methods")
+			assert.Contains(t, err.Error(), "methods has no declaration", "the message contains the name of the type")
+		})
 	})
 
 	t.Run("ImportableValue", func(t *testing.T) {

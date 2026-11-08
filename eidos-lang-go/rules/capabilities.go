@@ -4,6 +4,7 @@
 package rules
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -314,10 +315,13 @@ func (Rules) Tag(f *node.Field, key string) (string, bool) {
 // arguments, and the types of the members of an inline body. The referent of
 // a reference is the declaration of its Go target, and otherwise the
 // declaration of the package that it records under its spelling without the
-// qualifier. A type
-// parameter belongs to the declaration that declares it, and a predeclared
-// type and a structural form record no package, so the code refers to each
-// of them. Importable returns the error of the first reference that the
+// qualifier. A type parameter belongs to the declaration that declares it,
+// and a predeclared type and a structural form do not record a package, so
+// the code refers to each of them. The frontend leaves a reference to an
+// unexported type of a dependency without a target and without a package
+// where the type occurs only in a signature. Importable refuses a named
+// reference without a target and without a package unless Go predeclares
+// its name. Importable returns the error of the first reference that the
 // code cannot refer to, and nil for a nil reference.
 //
 // Importable allocates nothing for a reference that the code can refer to. A
@@ -334,6 +338,11 @@ func (Rules) Importable(pkg symbol.Identity, ref *node.TypeRef) error {
 		target, name := t.Package, golang.Unqualified(t.Spelling)
 		if t.Target.Lang == golang.Lang {
 			target, name = t.Target.Package, t.Target.Name
+		}
+		unresolved := t.Form == symbol.FormNamed && t.Target.IsZero() && t.Package == "" && name != ""
+		if unresolved && !golang.Predeclared(name) {
+			return fmt.Errorf("%s: %s has no declaration that the code in %s can refer to", golang.Lang, name,
+				pkg.Package)
 		}
 		if err := golang.CheckReference(pkg.Package, target, name); err != nil {
 			return err
