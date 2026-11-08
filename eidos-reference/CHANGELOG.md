@@ -1,5 +1,12 @@
 # go.dokimi.dev/eidos/reference
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [1765ac1]
+  - go.dokimi.dev/eidos/lang/go@0.8.2
+
 ## 0.2.1
 
 ### Patch Changes

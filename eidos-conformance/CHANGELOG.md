@@ -1,5 +1,12 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.19
+
+### Patch Changes
+
+- Updated dependencies [1765ac1]
+  - go.dokimi.dev/eidos/lang/go@0.8.2
+
 ## 0.3.18
 
 ### Patch Changes
