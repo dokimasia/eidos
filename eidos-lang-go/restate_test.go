@@ -80,6 +80,40 @@ func TestRestate(t *testing.T) {
 				elems: []string{rowSpelling}, want: "[4]rows.Row",
 			},
 			{
+				name:  "writes an array of a literal length of zero",
+				give:  &emit.TypeRef{Form: symbol.FormArray, Spelling: "[0]r.Row"},
+				elems: []string{rowSpelling}, want: "[0]rows.Row",
+			},
+			{
+				name:  "writes an array of its length for a spelling of another language",
+				give:  &emit.TypeRef{Form: symbol.FormArray, Spelling: "[r::Row; 4]", Length: 4},
+				elems: []string{rowSpelling}, want: "[4]rows.Row",
+			},
+			{
+				name: "writes an array of the spelling of the name of its length",
+				give: &emit.TypeRef{
+					Form: symbol.FormArray, Spelling: "[s.Salt]r.Row",
+					Elems: []*emit.TypeRef{{Spelling: "r.Row"}, {Spelling: "s.Salt"}},
+				},
+				elems: []string{rowSpelling, "sizes.Salt"}, want: "[sizes.Salt]rows.Row",
+			},
+			{
+				name: "writes the expression of a length with the spellings of its names",
+				give: &emit.TypeRef{
+					Form: symbol.FormArray, Spelling: "[salt*2 + s.Pad]r.Row",
+					Elems: []*emit.TypeRef{{Spelling: "r.Row"}, {Spelling: "salt"}, {Spelling: "s.Pad"}},
+				},
+				elems: []string{rowSpelling, "rows.Salt", "sizes.Pad"}, want: "[rows.Salt*2 + sizes.Pad]rows.Row",
+			},
+			{
+				name: "keeps the builtins of a length as the source wrote them",
+				give: &emit.TypeRef{
+					Form: symbol.FormArray, Spelling: "[len(s.Salt) * int(2)]r.Row",
+					Elems: []*emit.TypeRef{{Spelling: "r.Row"}, {Spelling: "s.Salt"}},
+				},
+				elems: []string{rowSpelling, "sizes.Salt"}, want: "[len(sizes.Salt) * int(2)]rows.Row",
+			},
+			{
 				name:  "writes a map of its key and its value",
 				give:  &emit.TypeRef{Form: symbol.FormMap, Spelling: "map[r.Key]r.Row"},
 				elems: []string{keySpelling, rowSpelling},
@@ -148,7 +182,52 @@ func TestRestate(t *testing.T) {
 				name:  "returns an error for an array whose length is an expression",
 				give:  &emit.TypeRef{Form: symbol.FormArray, Spelling: "[n]r.Row"},
 				elems: []string{rowSpelling},
-				want:  "golang: [n]r.Row has a length that is an expression, and the reference records a literal length alone",
+				want:  "golang: [n]r.Row has a length expression, and its reference records none of its names",
+			},
+			{
+				name: "returns an error for an array whose length lacks a name of its reference",
+				give: &emit.TypeRef{
+					Form: symbol.FormArray, Spelling: "[4]r.Row", Length: 4,
+					Elems: []*emit.TypeRef{{Spelling: "r.Row"}, {Spelling: "s.Salt"}},
+				},
+				elems: []string{rowSpelling, "sizes.Salt"},
+				want:  "golang: the length of [4]r.Row does not contain the names of its reference in their order",
+			},
+			{
+				name: "returns an error for an array with another count of spellings than of names",
+				give: &emit.TypeRef{
+					Form: symbol.FormArray, Spelling: "[s.Salt + s.Pad]r.Row",
+					Elems: []*emit.TypeRef{{Spelling: "r.Row"}, {Spelling: "s.Salt"}, {Spelling: "s.Pad"}},
+				},
+				elems: []string{rowSpelling, "sizes.Salt"},
+				want:  "golang: [s.Salt + s.Pad]r.Row has another count of spellings than of names of its length",
+			},
+			{
+				name: "returns an error for an array whose spelling does not parse",
+				give: &emit.TypeRef{
+					Form: symbol.FormArray, Spelling: "[s.Salt",
+					Elems: []*emit.TypeRef{{Spelling: "r.Row"}, {Spelling: "s.Salt"}},
+				},
+				elems: []string{rowSpelling, "sizes.Salt"},
+				want:  "golang: [s.Salt does not parse as an array type",
+			},
+			{
+				name:  "returns an error for an array spelled as a slice",
+				give:  &emit.TypeRef{Form: symbol.FormArray, Spelling: "[]r.Row"},
+				elems: []string{rowSpelling},
+				want:  "golang: []r.Row does not parse as an array type",
+			},
+			{
+				name:  "returns an error for an array spelled as another type",
+				give:  &emit.TypeRef{Form: symbol.FormArray, Spelling: "r.Row"},
+				elems: []string{rowSpelling},
+				want:  "golang: r.Row does not parse as an array type",
+			},
+			{
+				name:  "returns an error for an array without a spelling and a length",
+				give:  &emit.TypeRef{Form: symbol.FormArray},
+				elems: []string{rowSpelling},
+				want:  "golang: an array without a spelling has no length",
 			},
 			{
 				name:  "returns an error for a union",

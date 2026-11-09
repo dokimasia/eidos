@@ -6,6 +6,7 @@ package frontend
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"sort"
 	"strconv"
 
@@ -36,10 +37,6 @@ type lowered struct {
 	// until the enum promotion decides which declaration replaces each
 	// type.
 	underlyings []pendingUnderlying
-	// std reports whether the file is in the standard library. A file of
-	// the standard library imports the packages that it vendors from
-	// vendor/.
-	std bool
 	// kept has the names of the unexported types that the signature depth
 	// loads in the package of the file. It is nil at the full depth.
 	kept map[string]bool
@@ -47,6 +44,15 @@ type lowered struct {
 	// signature depth loads in the package of the file. It is nil at the
 	// full depth.
 	keptMethods map[string]bool
+	// pkgPath is the import path of the package of the file, and dotted
+	// reports a dot import of the file. An unqualified name of the length
+	// of an array records pkgPath as its package where dotted is false.
+	pkgPath string
+	// std reports whether the file is in the standard library. A file of
+	// the standard library imports the packages that it vendors from
+	// vendor/.
+	std    bool
+	dotted bool
 }
 
 // at returns the position of a token position of the file.
@@ -92,7 +98,9 @@ func (l *lowered) spelling(e ast.Expr) string {
 //   - An explicit instantiation has the bare name as its spelling and its
 //     arguments in Args, so a target writes its own brackets.
 //   - A pointer is Optional, and a slice is a List.
-//   - A sized array is an Array with its literal length.
+//   - A sized array is an Array with its literal length. The names of a
+//     length expression follow its element as its children, as
+//     [lowered.lengthNames] lists them.
 //   - A map is a Map, and a channel is a Stream. The spelling keeps the
 //     direction of the channel.
 //   - A function type is a Func of its parameters and then its results.
@@ -139,6 +147,7 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 		}
 		ref := l.structural(e, symbol.FormArray, t.Elt)
 		ref.Length = arrayLength(t.Len)
+		ref.Elems = append(ref.Elems, l.lengthNames(t.Len)...)
 		return ref
 	case *ast.Ellipsis:
 		return l.structural(e, symbol.FormList, t.Elt)
@@ -295,6 +304,47 @@ func (l *lowered) fieldTypes(fields *ast.FieldList) []*node.TypeRef {
 			out = append(out, l.typeRef(field.Type))
 		}
 	}
+	return out
+}
+
+// lengthNames returns the names that the length e of an array refers to,
+// as named references in the order of the source. A qualified identifier is
+// one name, with the import path that its qualifier binds as its package.
+// Any other identifier is a name with the package of the file, and with no
+// package in a file with a dot import, where the name can be a declaration
+// of the imported package. An identifier of the universe scope of Go, such
+// as len or iota, is no name, and neither is the field or the method that a
+// selector of a value selects, nor the key of an element of a composite
+// literal. A literal length has no names.
+func (l *lowered) lengthNames(e ast.Expr) []*node.TypeRef {
+	var out []*node.TypeRef
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.SelectorExpr:
+			if q, isIdent := x.X.(*ast.Ident); isIdent {
+				if path, bound := l.bindings.Import(q.Name); bound {
+					out = append(out, &node.TypeRef{Spelling: l.spelling(x), Package: path, Pos: l.at(x.Pos())})
+					return false
+				}
+			}
+			ast.Inspect(x.X, visit)
+			return false
+		case *ast.KeyValueExpr:
+			ast.Inspect(x.Value, visit)
+			return false
+		case *ast.Ident:
+			if types.Universe.Lookup(x.Name) == nil {
+				var pkg string
+				if !l.dotted {
+					pkg = l.pkgPath
+				}
+				out = append(out, &node.TypeRef{Spelling: x.Name, Package: pkg, Pos: l.at(x.Pos())})
+			}
+		}
+		return true
+	}
+	ast.Inspect(e, visit)
 	return out
 }
 

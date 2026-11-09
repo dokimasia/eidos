@@ -86,6 +86,44 @@ func TestExpr(t *testing.T) {
 				"an inline body has the type of its field as its child")
 		})
 
+		t.Run("lists the names of a length expression after the element of an array", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsedFile(t, nil, plugin.DepthFull, "package p\n\nimport \"example.com/sizes\"\n\n"+
+				"type H struct {\n\ta [sizes.SaltSize]byte\n\tb [saltSize * 2]byte\n\tc [4]byte\n"+
+				"\td [len(table.rows)]byte\n}\n")
+			home := gb.Packages()[0].ID.Package
+			fields := onlyFile(t, gb).Decls[0].(*node.Struct).Fields
+			assert.Equal(t, spellingsOf(fields[0].Type.Elems), []string{"byte", "sizes.SaltSize"},
+				"a qualified name of the length follows the element")
+			expect.Equal(t, fields[0].Type.Elems[1].Package, "example.com/sizes",
+				"the qualified name has the import that its qualifier binds")
+			assert.Equal(t, spellingsOf(fields[1].Type.Elems), []string{"byte", "saltSize"},
+				"an unqualified name of an expression follows the element")
+			expect.Equal(t, fields[1].Type.Elems[1].Package, home, "the unqualified name has the package of the file")
+			expect.Equal(t, spellingsOf(fields[2].Type.Elems), []string{"byte"}, "a literal length has no names")
+			expect.Equal(t, spellingsOf(fields[3].Type.Elems), []string{"byte", "table"},
+				"a length leaves out a predeclared function and the field that a selector of a value selects")
+		})
+
+		t.Run("leaves the package of an unqualified name of a length empty in a file with a dot import",
+			func(t *testing.T) {
+				t.Parallel()
+
+				ref := inlineOf(t, "import . \"example.com/sizes\"\n\n", "[SaltSize]byte")
+				assert.Equal(t, spellingsOf(ref.Elems), []string{"byte", "SaltSize"}, "the name follows the element")
+				expect.Equal(t, ref.Elems[1].Package, "", "the dot import can declare the name")
+			})
+
+		t.Run("lists the names of the values of a keyed composite literal in a length", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "import (\n\t\"unsafe\"\n\n\t\"example.com/sizes\"\n)\n\n",
+				"[unsafe.Sizeof(sizes.Pair{Left: sizes.One})]byte")
+			assert.Equal(t, spellingsOf(ref.Elems), []string{"byte", "unsafe.Sizeof", "sizes.Pair", "sizes.One"},
+				"the length lists the value of the element without the field that it sets")
+		})
+
 		tests := []struct {
 			name      string
 			give      string

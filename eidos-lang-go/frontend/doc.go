@@ -67,7 +67,8 @@
 // A type expression lowers to a reference with its verbatim
 // spelling and the structure Go's grammar states: a pointer as an
 // optional, a slice as a list, a sized array as an array with its
-// literal length in any integer form, a map, a channel as a stream,
+// literal length in any integer form and the names of a length
+// expression after its element, a map, a channel as a stream,
 // a function type with its parameters then results, and an inline
 // body as inline, each child a reference in turn. Arguments split out
 // for an explicit generic instantiation, and parentheses unwrap,
@@ -140,10 +141,10 @@
 // A signature-only parse keeps an unexported type that an exported type of
 // its package embeds or names as the target of an alias, because the
 // exported type promotes the members of that type. It also keeps each
-// unexported type that a kept type reaches the same way. testing.T embeds
-// testing.common, so the member walk of a struct that embeds *testing.T
-// lists the methods of testing.common. A kept type loads its exported
-// fields and methods.
+// unexported type that a kept type embeds or names the same way.
+// testing.T embeds testing.common, so the member walk of a struct that
+// embeds *testing.T lists the methods of testing.common. A kept type loads
+// its exported fields and methods.
 //
 // A signature-only parse also lowers each unexported method of an
 // interface that it loads, because a type implements the interface only

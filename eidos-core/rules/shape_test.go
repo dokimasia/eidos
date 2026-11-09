@@ -304,6 +304,19 @@ func TestShape(t *testing.T) {
 			assert.Empty(t, inline.Elems, "an inline body has no children")
 		})
 
+		t.Run("folds the element of an array alone beside the names of its length", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			arr := &node.TypeRef{
+				Spelling: "[sizes.Salt]int", Form: symbol.FormArray,
+				Elems: []*node.TypeRef{builtin(intSpelling), {Spelling: "sizes.Salt", Package: "example.com/sizes"}},
+			}
+			s := b.TypeOf(arr)
+			assert.Length(t, s.Elems, 1, "the shape of the array has its element alone")
+			expect.Equal(t, s.Elems[0].Form, symbol.FormScalar, "the element folds")
+		})
+
 		t.Run("returns the shape that the language gives an inline reference", func(t *testing.T) {
 			t.Parallel()
 

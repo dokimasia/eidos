@@ -237,6 +237,19 @@ func TestVocabulary(t *testing.T) {
 				"the second item binds the next free name")
 		})
 
+		t.Run("uses each name of the length of an array", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			arr := &emit.TypeRef{
+				Form: symbol.FormArray, Spelling: "[u8; SALT]",
+				Elems: []*emit.TypeRef{ref("u8"), imported(storeModule, "SALT")},
+			}
+			assert.Equal(t, must(t)(s.Spell(arr)), "[u8; SALT]", "the array as written")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: storeModule, Name: "SALT"}},
+				"the use of the name of the length")
+		})
+
 		t.Run("writes a path inside a used item behind its bound name", func(t *testing.T) {
 			t.Parallel()
 

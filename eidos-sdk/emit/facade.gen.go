@@ -527,8 +527,11 @@ type Alias = core.Alias
 //
 // Package is the package that the import of the reference names. It
 // is empty for a builtin, for a structural form and for a declaration
-// that the file uses without an import. The named children of a
-// structural form record their own package. Go records an import path,
+// that the file uses without an import. Each named child of a
+// structural form records its package. A name of the length of an
+// array records the package of its declaration also where the file uses
+// it without an import, because the resolution step gives a constant no
+// target. Go records an import path,
 // TypeScript a module specifier, and Java and Rust a slash-separated
 // package or module path. A backend writes such a path with the
 // separator of its language. Each is the form that a declaration
@@ -548,7 +551,10 @@ type Alias = core.Alias
 // Form and Elems record the structure that the frontend parsed, with
 // the children of each form in its fixed order:
 //
-//   - Optional, List, Array, Stream and Borrow: one child.
+//   - Optional, List, Stream and Borrow: one child.
+//   - Array: the element, then the names of a length that is an
+//     expression, in the order of the source, so a backend binds the
+//     imports of the names.
 //   - Map: the key, then the value.
 //   - Func: the parameters, then the returns, which begin at Split.
 //   - Tuple, Union and Intersection: the members. A Go union has its
@@ -567,7 +573,9 @@ type Alias = core.Alias
 // named types inside a composite through the children. A structural
 // reference has no target of its own, and its Named children have
 // targets. Length is a fixed array length that the source writes as a
-// literal. It is 0 when the length is an expression in the spelling.
+// literal. It is 0 when the length is an expression in the spelling, and
+// the names of the expression are the children of the array after its
+// element.
 //
 // Async marks a Stream whose elements arrive asynchronously, such as a
 // protobuf stream over a connection. A frontend sets it from the syntax

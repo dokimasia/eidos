@@ -169,19 +169,26 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 //     it;
 //   - an inline body without children that refers to another package,
 //     because the model does not record its imports;
+//   - an array without names of its length whose length refers to
+//     another package, for the same reason;
 //   - an inline body whose child the file writes otherwise, because the
 //     body keeps the spelling of its source;
 //   - a structural reference that its structure does not determine,
-//     such as an array with an expression as its length.
+//     such as an array whose length is an expression without names among
+//     its children.
 //
 // Spell allocates nothing for a builtin or a reference in its written
 // form. A qualified name allocates the name after its qualifier, and a
 // restated or instantiated reference allocates its text. A refusal
 // allocates its error.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
-	if inline := inlineImport(t); inline != "" {
+	switch spelling, length := unrecorded(t); {
+	case length:
+		return "", refuse("%s names a package inside the length of an array, and the model does not record "+
+			"the imports of the length", spelling)
+	case spelling != "":
 		return "", refuse("%s names a package inside an inline body, and the model does not record "+
-			"the imports of the body", inline)
+			"the imports of the body", spelling)
 	}
 	return spellref.SpellRestated(t, argsOpen, argsClose, Anonymous, s.qualify, restate)
 }
@@ -816,40 +823,63 @@ func qualifiesInside(spelling string) bool {
 	if err != nil {
 		return false
 	}
-	qualified := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		if _, is := n.(*ast.SelectorExpr); is {
-			qualified = true
-		}
-		return !qualified
-	})
-	return qualified
+	return selects(e)
 }
 
-// inlineImport returns the spelling of the first inline body without
-// children inside t that refers to a declaration of another package, and
-// the empty string where no such body is. An inline body with children
-// binds the imports of its children. inlineImport walks the children and
-// the arguments of t, and allocates what [qualifiesInside] allocates for
-// each inline body without children.
-func inlineImport(t *emit.TypeRef) string {
+// lengthQualifies reports whether the length of the spelling of an array
+// refers to a declaration of another package, which Go writes as a
+// selector. It reports false for a spelling that does not parse as an
+// array type, which [golang.Restate] refuses.
+func lengthQualifies(spelling string) bool {
+	e, err := parser.ParseExpr(spelling)
+	arr, isArray := e.(*ast.ArrayType)
+	if err != nil || !isArray || arr.Len == nil {
+		return false
+	}
+	return selects(arr.Len)
+}
+
+// selects reports whether the syntax tree n contains a selector.
+func selects(n ast.Node) bool {
+	selected := false
+	ast.Inspect(n, func(n ast.Node) bool {
+		if _, is := n.(*ast.SelectorExpr); is {
+			selected = true
+		}
+		return !selected
+	})
+	return selected
+}
+
+// unrecorded returns the spelling of the first reference inside t whose
+// spelling refers to a declaration of another package that its children do
+// not record: an inline body without children, or an array without names
+// of its length. length reports that the reference is such an array. It
+// returns the empty string where no such reference is. An inline body with
+// children binds the imports of its children, and an array binds the
+// imports of the names of its length. unrecorded walks the children and the
+// arguments of t, and allocates what [qualifiesInside] and
+// [lengthQualifies] allocate for each such reference.
+func unrecorded(t *emit.TypeRef) (spelling string, length bool) {
 	switch {
 	case t == nil:
-		return ""
+		return "", false
 	case t.Form == symbol.FormInline && len(t.Elems) == 0 && qualifiesInside(t.Spelling):
-		return t.Spelling
+		return t.Spelling, false
+	case t.Form == symbol.FormArray && len(t.Elems) <= 1 && lengthQualifies(t.Spelling):
+		return t.Spelling, true
 	}
 	for _, c := range t.Elems {
-		if inline := inlineImport(c); inline != "" {
-			return inline
+		if spelling, length := unrecorded(c); spelling != "" {
+			return spelling, length
 		}
 	}
 	for _, a := range t.Args {
-		if inline := inlineImport(a); inline != "" {
-			return inline
+		if spelling, length := unrecorded(a); spelling != "" {
+			return spelling, length
 		}
 	}
-	return ""
+	return "", false
 }
 
 // cased returns an error for a visibility v that the case of a name

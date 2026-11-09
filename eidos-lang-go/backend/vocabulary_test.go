@@ -556,6 +556,30 @@ func TestVocabulary(t *testing.T) {
 			assert.Contains(t, err.Error(), "expression", "naming the length")
 		})
 
+		brokenArrays := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "returns an error restating an array spelled as a slice",
+				give: composite(symbol.FormArray, "[]st.Row", aliased()),
+			},
+			{
+				name: "returns an error restating an array spelled as another type",
+				give: composite(symbol.FormArray, "st.Row", aliased()),
+			},
+		}
+		for _, tt := range brokenArrays {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.Spell(tt.give)
+				assert.HasError(t, err, "the spelling does not state the length of the array")
+				assert.Contains(t, err.Error(), "does not parse as an array type", "naming the spelling")
+			})
+		}
+
 		t.Run("returns an error restating a form Go does not write", func(t *testing.T) {
 			t.Parallel()
 
@@ -616,6 +640,61 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, spelled(t, s, body), "struct{ When time.Time }", "the body as written")
 			assert.Equal(t, set.Paths(), []string{timePkg}, "the import of the child")
 		})
+
+		t.Run("binds the import of each name of the length of an array", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			arr := composite(symbol.FormArray, "[store.Salt]byte", ref("byte"), imported(storeName, storePkg, "Salt"))
+			assert.Equal(t, spelled(t, s, arr), "[store.Salt]byte", "the array as written")
+			assert.Equal(t, set.Paths(), []string{storePkg}, "the import of the name of the length")
+		})
+
+		t.Run("writes the length of an array again with a name that the file qualifies", func(t *testing.T) {
+			t.Parallel()
+
+			s, set := speller()
+			set.SetHome(svcPkg)
+			salt := &emit.TypeRef{Spelling: "Salt", Package: storePkg}
+			assert.Equal(t, spelled(t, s, composite(symbol.FormArray, "[Salt]byte", ref("byte"), salt)),
+				"[store.Salt]byte", "the name of the length with its qualifier")
+		})
+
+		lengths := []struct {
+			name string
+			give *emit.TypeRef
+		}{
+			{
+				name: "returns an error for an array without names whose length names another package",
+				give: composite(symbol.FormArray, "[store.Salt]byte", ref("byte")),
+			},
+			{
+				name: "returns an error for a slice of an array without names whose length names another package",
+				give: composite(symbol.FormList, "[][store.Salt]byte",
+					composite(symbol.FormArray, "[store.Salt]byte", ref("byte"))),
+			},
+			{
+				name: "returns an error for a map value that is an array without names whose length names a package",
+				give: composite(symbol.FormMap, "map[string][store.Salt]byte", ref("string"),
+					composite(symbol.FormArray, "[store.Salt]byte", ref("byte"))),
+			},
+			{
+				name: "returns an error for an argument that is an array without names whose length names a package",
+				give: &emit.TypeRef{Spelling: "Pair", Args: []*emit.TypeRef{
+					ref("int"), composite(symbol.FormArray, "[store.Salt]byte", ref("byte")),
+				}},
+			},
+		}
+		for _, tt := range lengths {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, _ := speller()
+				_, err := s.Spell(tt.give)
+				assert.HasError(t, err, "the import of the length is not recorded")
+				assert.Contains(t, err.Error(), "length of an array", "naming the length")
+			})
+		}
 
 		t.Run("returns an error for an inline body whose child spells otherwise", func(t *testing.T) {
 			t.Parallel()
@@ -791,6 +870,14 @@ func TestVocabulary(t *testing.T) {
 			s, _ := speller()
 			assert.Equal(t, spelled(t, s, composite(symbol.FormInline, "struct{")), "struct{",
 				"the formatter reports the body")
+		})
+
+		t.Run("writes an array whose spelling does not parse as written", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := speller()
+			arr := composite(symbol.FormArray, "[store.Salt]byte]", ref("byte"))
+			assert.Equal(t, spelled(t, s, arr), "[store.Salt]byte]", "the formatter reports the array")
 		})
 
 		t.Run("writes any for an argument that states no type", func(t *testing.T) {

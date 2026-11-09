@@ -136,7 +136,9 @@ func IsWellKnown(id symbol.Identity) bool {
 
 // typeOf is the kernel's fold. A structural form folds into the same
 // form with its children folded, and the fold copies the asynchrony of a
-// stream. An inline reference takes the shape that the language's Builtin
+// stream. An array folds its element alone, because the names of its
+// length are no types of its values. An inline reference takes the shape
+// that the language's Builtin
 // gives it, such as the top type for Go's interface{}, and the inline form
 // where the Builtin returns Opaque. The fold of a named reference depends
 // on its target:
@@ -185,10 +187,14 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		}
 	}
 	if ref.Form.Structural() && ref.Form != symbol.FormNamed {
+		elems := ref.Elems
+		if ref.Form == symbol.FormArray {
+			elems = elems[:min(len(elems), 1)]
+		}
 		return b.children(TypeShape{
 			Form: ref.Form, Spelling: ref.Spelling, Length: ref.Length, Split: ref.Split,
 			Variance: ref.Variance, Async: ref.Async, Mutability: ref.Mutability,
-		}, ref.Elems)
+		}, elems)
 	}
 	if ref.Target.Kind == symbol.KindTypeParam {
 		// A type parameter's shape is its argument's, which a use of

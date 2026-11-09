@@ -254,6 +254,8 @@ func (f *goFrontend) lowerFile(
 		}
 	}
 	l.bindings = golang.NewBindings(file.Imports)
+	l.pkgPath = pkgPath
+	l.dotted = slices.ContainsFunc(file.Imports, func(imp *node.Import) bool { return imp.Wildcard })
 	gb.Scope(file, l.bindings)
 
 	// The build constraint of the file is its first annotation, and the tool
@@ -336,10 +338,10 @@ func (f *goFrontend) lowerFile(
 // import paths of the packages. An unexported type is kept where an
 // exported type of its package embeds it or names it as the target of an
 // alias, because the exported type promotes the members of such a type. So
-// is an unexported type that a kept type reaches the same way. A type that
-// only a field or a signature names is left out, because no code outside
-// its package can refer to it. The types of every file of a package count,
-// because an embed and its type can be in two files. A file that its
+// is an unexported type that a kept type embeds or names the same way. A
+// type that only a field or a signature names is left out, because no code
+// outside its package can refer to it. The types of every file of a package
+// count, because an embed and its type can be in two files. A file that its
 // constraint excludes does not declare a type. keptTypes returns nil where
 // it does not keep a type.
 func keptTypes(members []memberFile) map[string]map[string]bool {

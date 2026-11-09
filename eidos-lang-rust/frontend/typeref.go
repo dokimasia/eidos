@@ -120,8 +120,9 @@ func (l *lowering) structural(n treesitter.Node, form symbol.TypeForm, children 
 
 // array lowers an array type: an Array of its element, whose Length is the
 // integer literal of the type without its type suffix, and 0 for any other
-// length expression, which the spelling keeps. A slice has no length, and
-// is a List of its element.
+// length expression, which the spelling keeps. The names of such an
+// expression follow the element as its children, as [lowering.lengthNames]
+// lists them. A slice has no length, and is a List of its element.
 func (l *lowering) array(n treesitter.Node) *node.TypeRef {
 	length := n.Child(l.v.fieldLength)
 	if length.IsZero() {
@@ -134,8 +135,36 @@ func (l *lowering) array(n treesitter.Node) *node.TypeRef {
 	}
 	if v, err := strconv.ParseInt(digits, 0, strconv.IntSize); err == nil {
 		ref.Length = int(v)
+		return ref
 	}
+	ref.Elems = l.lengthNames(length, ref.Elems)
 	return ref
+}
+
+// lengthNames appends to out the names that the length expression n of an
+// array refers to, as named references in the order of the source, and
+// returns out. A path is one name, with the module of its declaration as its
+// package. A bare name has the module that its use binds, or the module of
+// the file, and no package in a module with a glob use, where the name can
+// be a declaration of the imported module. A field that an expression
+// selects is no name.
+func (l *lowering) lengthNames(n treesitter.Node, out []*node.TypeRef) []*node.TypeRef {
+	switch n.Kind() {
+	case l.v.scopedIdentifier:
+		spelling := n.Compact()
+		return append(out, &node.TypeRef{Spelling: spelling, Pos: n.Pos(), Package: l.scope.packageOf(spelling)})
+	case l.v.identifier:
+		spelling := n.Text()
+		pkg := l.scope.packageOf(spelling)
+		if pkg == "" && len(l.scope.globs) == 0 {
+			pkg = l.scope.module
+		}
+		return append(out, &node.TypeRef{Spelling: spelling, Pos: n.Pos(), Package: pkg})
+	}
+	for child := range n.NamedChildren() {
+		out = l.lengthNames(child, out)
+	}
+	return out
 }
 
 // funcRef lowers a function pointer type: the types of its parameters and

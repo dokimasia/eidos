@@ -527,6 +527,13 @@ func TestCapabilities(t *testing.T) {
 				name: "returns nil for an exported declaration that the reference names without a target",
 				give: &node.TypeRef{Spelling: "core.Row", Package: corePath},
 			},
+			{
+				name: "returns nil for an array whose length names an exported constant of another package",
+				give: &node.TypeRef{
+					Form: symbol.FormArray, Spelling: "[core.Size]byte",
+					Elems: []*node.TypeRef{{Spelling: "byte"}, {Spelling: "core.Size", Package: corePath}},
+				},
+			},
 		}
 		for _, tt := range admitted {
 			t.Run(tt.name, func(t *testing.T) {
@@ -564,6 +571,14 @@ func TestCapabilities(t *testing.T) {
 					Form: symbol.FormOptional, Spelling: "*methods", Elems: []*node.TypeRef{{Spelling: "methods"}},
 				},
 				want: "methods has no declaration",
+			},
+			{
+				name: "returns an error for an array whose length names an unexported constant of another package",
+				give: &node.TypeRef{
+					Form: symbol.FormArray, Spelling: "[size]byte",
+					Elems: []*node.TypeRef{{Spelling: "byte"}, {Spelling: "size", Package: corePath}},
+				},
+				want: "size is not exported",
 			},
 			{
 				name: "returns an error for the element of a list that the code cannot refer to",
@@ -997,7 +1012,7 @@ func TestCapabilities(t *testing.T) {
 			assert.Equal(t, problems[0].Form, symbol.FormList, "the slice the argument binds")
 		})
 
-		// The table of the standard library answers as Go answers, which
+		// The table of the standard library expects the comparability that
 		// reflect reads from the type that the compiler built.
 		std := []struct {
 			name     string
@@ -1370,17 +1385,17 @@ func hiddenLoaded(tb assert.TB) *fixture {
 }
 
 // hiddenTree returns the fixture of the structs whose lowering leaves out a
-// field: a struct with a blank field, and stand-ins of a struct of the
-// standard library that Go compares and of one that Go does not compare.
-// Each stand-in has a blank field, so its lowering leaves out a field as
+// field: a struct with a blank field, and substitutes for a struct of the
+// standard library that Go compares and for one that Go does not compare.
+// Each substitute has a blank field, so its lowering leaves out a field as
 // the signature depth does for the real one.
 func hiddenTree() fstest.MapFS {
 	return fstest.MapFS{
 		hiddenFile: {Data: []byte("package fx\n\n// Padded forbids == through a blank field.\n" +
 			"type Padded struct {\n\t_ [0]func()\n\tN int\n}\n")},
-		"time/time.go": {Data: []byte("package time\n\n// Time stands in for the time of the standard library.\n" +
+		"time/time.go": {Data: []byte("package time\n\n// Time replaces the time of the standard library.\n" +
 			"type Time struct {\n\t_    [0]func()\n\twall uint64\n}\n")},
-		"math/big/int.go": {Data: []byte("package big\n\n// Int stands in for the integer of the standard library.\n" +
+		"math/big/int.go": {Data: []byte("package big\n\n// Int replaces the integer of the standard library.\n" +
 			"type Int struct {\n\t_   int\n\tneg bool\n}\n")},
 	}
 }

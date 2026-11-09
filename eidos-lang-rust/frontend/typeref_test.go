@@ -155,6 +155,32 @@ func TestTypeRef(t *testing.T) {
 			assert.Equal(t, ref.Length, 0, "the spelling keeps the expression")
 		})
 
+		t.Run("lists the names of a length expression after the element of an array", func(t *testing.T) {
+			t.Parallel()
+
+			fields := structOf(t, "use crate::sizes::SALT;\n\npub struct H {\n    pub a: [u8; SALT],\n"+
+				"    pub b: [u8; crate::sizes::PAD * 2],\n    pub c: [u8; N],\n    pub d: [u8; 4],\n}\n", "H").Fields
+			sizes := crateName + "/sizes"
+			assert.Equal(t, spellingsOf(fields[0].Type.Elems), []string{"u8", "SALT"},
+				"a name of the length follows the element")
+			assert.Equal(t, fields[0].Type.Elems[1].Package, sizes, "the name has the module of its use")
+			assert.Equal(t, spellingsOf(fields[1].Type.Elems), []string{"u8", "crate::sizes::PAD"},
+				"a path of the length is one name")
+			assert.Equal(t, fields[1].Type.Elems[1].Package, sizes, "the path has its module")
+			assert.Equal(t, spellingsOf(fields[2].Type.Elems), []string{"u8", "N"},
+				"a bare name of the module follows the element")
+			assert.Equal(t, fields[2].Type.Elems[1].Package, crateName, "the bare name has the module of the file")
+			assert.Equal(t, spellingsOf(fields[3].Type.Elems), []string{"u8"}, "a literal length has no names")
+		})
+
+		t.Run("leaves the package of a bare name of a length empty in a module with a glob use", func(t *testing.T) {
+			t.Parallel()
+
+			ref := typeIn(t, "use crate::sizes::*;\n\n", "[u8; SALT]")
+			assert.Equal(t, spellingsOf(ref.Elems), []string{"u8", "SALT"}, "the name follows the element")
+			assert.Equal(t, ref.Elems[1].Package, "", "the glob can import the name")
+		})
+
 		t.Run("lowers an array length Go does not read with no Length", func(t *testing.T) {
 			t.Parallel()
 
