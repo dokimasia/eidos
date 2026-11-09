@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/sdk
 
+## 0.11.1
+
+### Patch Changes
+
+- 19b783f: Document the names of the length of an array in the facades of `node.TypeRef` and `emit.TypeRef`.
+- Updated dependencies [19b783f]
+  - go.dokimi.dev/eidos/core@0.16.0
+
 ## 0.11.0
 
 ### Minor Changes

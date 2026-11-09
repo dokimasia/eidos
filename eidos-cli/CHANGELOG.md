@@ -1,5 +1,13 @@
 # go.dokimi.dev/eidos/cli
 
+## 0.3.9
+
+### Patch Changes
+
+- Updated dependencies [19b783f]
+  - go.dokimi.dev/eidos/core@0.16.0
+  - go.dokimi.dev/eidos/declarative@0.1.16
+
 ## 0.3.8
 
 ### Patch Changes

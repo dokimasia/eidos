@@ -7,19 +7,19 @@ go 1.27.3
 
 require (
 	go.dokimi.dev/assert v0.10.0
-	go.dokimi.dev/eidos/cli v0.3.8
-	go.dokimi.dev/eidos/core v0.15.0
-	go.dokimi.dev/eidos/declarative v0.1.15
-	go.dokimi.dev/eidos/lang v0.4.6
-	go.dokimi.dev/eidos/lang/go v0.8.2
-	go.dokimi.dev/eidos/lang/graphql v0.2.3
-	go.dokimi.dev/eidos/lang/java v0.2.14
-	go.dokimi.dev/eidos/lang/protobuf v0.3.4
-	go.dokimi.dev/eidos/lang/python v0.2.3
-	go.dokimi.dev/eidos/lang/rust v0.3.3
-	go.dokimi.dev/eidos/lang/typescript v0.5.3
-	go.dokimi.dev/eidos/plugin/shape v0.5.2
-	go.dokimi.dev/eidos/sdk v0.11.0
+	go.dokimi.dev/eidos/cli v0.3.9
+	go.dokimi.dev/eidos/core v0.16.0
+	go.dokimi.dev/eidos/declarative v0.1.16
+	go.dokimi.dev/eidos/lang v0.4.7
+	go.dokimi.dev/eidos/lang/go v0.9.0
+	go.dokimi.dev/eidos/lang/graphql v0.2.4
+	go.dokimi.dev/eidos/lang/java v0.2.15
+	go.dokimi.dev/eidos/lang/protobuf v0.3.5
+	go.dokimi.dev/eidos/lang/python v0.2.4
+	go.dokimi.dev/eidos/lang/rust v0.4.0
+	go.dokimi.dev/eidos/lang/typescript v0.5.4
+	go.dokimi.dev/eidos/plugin/shape v0.5.3
+	go.dokimi.dev/eidos/sdk v0.11.1
 	go.stealthscale.io/cli v0.7.0
 )
 

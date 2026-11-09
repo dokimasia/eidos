@@ -1,5 +1,24 @@
 # go.dokimi.dev/eidos/conformance
 
+## 0.3.20
+
+### Patch Changes
+
+- Updated dependencies [19b783f]
+  - go.dokimi.dev/eidos/lang/go@0.9.0
+  - go.dokimi.dev/eidos/sdk@0.11.1
+  - go.dokimi.dev/eidos/core@0.16.0
+  - go.dokimi.dev/eidos/lang/rust@0.4.0
+  - go.dokimi.dev/eidos/lang@0.4.7
+  - go.dokimi.dev/eidos/lang/graphql@0.2.4
+  - go.dokimi.dev/eidos/lang/java@0.2.15
+  - go.dokimi.dev/eidos/lang/protobuf@0.3.5
+  - go.dokimi.dev/eidos/lang/python@0.2.4
+  - go.dokimi.dev/eidos/lang/typescript@0.5.4
+  - go.dokimi.dev/eidos/plugin/shape@0.5.3
+  - go.dokimi.dev/eidos/cli@0.3.9
+  - go.dokimi.dev/eidos/declarative@0.1.16
+
 ## 0.3.19
 
 ### Patch Changes
