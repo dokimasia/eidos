@@ -4,8 +4,9 @@
 # section github of .ergon.yaml and on demand. Each step of each language is a job of its own, so
 # the jobs run in parallel and fail independently. A job runs on the Linux runner of the section
 # github unless its setup states runners, sets up its toolchain before ergon once the repository
-# has the files of the toolchain, and keeps the tools of ergon in the cache of GitHub Actions as a
-# job of ci.yml does. A run that starts while another runs waits for it.
+# has the files of the toolchain, and keeps the tools of ergon and its caches in the cache of GitHub
+# Actions as a job of ci.yml does. A run that starts while another runs waits for it. A run of
+# workflow_dispatch with an input set to false starts the jobs of that input without their caches.
 #
 # The job prune-tools runs when a job of the repository keeps the tools of ergon in the cache. It
 # deletes each cache of the tools that a newer cache of the same job replaced, because a job
@@ -17,6 +18,11 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      history:
+        description: "When false, the job mutate-go starts without the history of dokimi-mutate-go."
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -234,10 +240,26 @@ jobs:
           key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock', 'go.work') }}"
           path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
           restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Restore the history of dokimi-mutate-go
+        id: dokimi-mutate-go-history
+        if: "hashFiles('**/go.mod') != '' && (github.event_name != 'workflow_dispatch' || inputs.history)"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "dokimi-mutate-go-history-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          path: "${{ runner.temp }}/dokimi-mutate-go-history"
+          restore-keys: "dokimi-mutate-go-history-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
       - name: Mutate Go
         if: "hashFiles('**/go.mod') != ''"
+        env:
+          DOKIMI_MUTATE_GO_HISTORY: "${{ runner.temp }}/dokimi-mutate-go-history"
         run: |
-          make mutate-go
+          make mutate-go GO_MUTATE_TIMEOUT=50m
+      - name: Save the history of dokimi-mutate-go
+        if: "hashFiles('**/go.mod') != '' && (always())"
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "dokimi-mutate-go-history-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          path: "${{ runner.temp }}/dokimi-mutate-go-history"
       - name: Prune the tools of ergon
         if: "hashFiles('**/go.mod') != '' && (steps.ergon-tools.outputs.cache-hit != 'true')"
         run: |

@@ -5,7 +5,8 @@
 # matrix of runners. A job that sets up a toolchain runs its steps once the repository has the
 # files of the toolchain, and sets the toolchain up before ergon. A job that runs tools keeps the
 # tools of ergon in the cache of GitHub Actions, and removes the tools that the options do not name
-# before the cache saves them. version.yml opens the version pull request after the run of a push
+# before the cache saves them. A job keeps its own caches, such as the cache of a linter, in the
+# cache of GitHub Actions too. version.yml opens the version pull request after the run of a push
 # to main passes, and release.yml publishes a commit only when a run of the gate passed on its
 # content. A new run of a pull request cancels its earlier run, and every other run has a
 # concurrency group of its own.
@@ -261,6 +262,19 @@ jobs:
           key: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('.ergon.yaml', '.ergon/init.lock', 'go.work') }}"
           path: "${{ runner.os == 'Windows' && '~/AppData/Local/ergon/tools' || runner.os == 'macOS' && '~/Library/Caches/ergon/tools' || '~/.cache/ergon/tools' }}"
           restore-keys: "ergon-tools-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-"
+      - name: Count the intervals of the cache of golangci-lint
+        id: golangci-lint-interval
+        if: "hashFiles('**/go.mod') != ''"
+        run: |
+          echo "interval=$(( $(date -u +%s) / 604800 ))" >> "$GITHUB_OUTPUT"
+      - name: Keep the cache of golangci-lint
+        id: golangci-lint
+        if: "hashFiles('**/go.mod') != ''"
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: "golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ steps.golangci-lint-interval.outputs.interval }}-${{ hashFiles('**/go.sum', 'go.work', '.golangci.yml', '.ergon.yaml', '.ergon/init.lock') }}"
+          path: "${{ runner.os == 'Windows' && '~/AppData/Local/golangci-lint' || runner.os == 'macOS' && '~/Library/Caches/golangci-lint' || '~/.cache/golangci-lint' }}"
+          restore-keys: "golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ steps.golangci-lint-interval.outputs.interval }}-"
       - name: Check Go
         if: "hashFiles('**/go.mod') != ''"
         run: |
