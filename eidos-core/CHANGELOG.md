@@ -1,5 +1,11 @@
 # go.dokimi.dev/eidos/core
 
+## 0.16.0
+
+### Minor Changes
+
+- 19b783f: Fold the element of an array alone, beside the names of its length.
+
 ## 0.15.0
 
 ### Minor Changes

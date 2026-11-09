@@ -1,5 +1,21 @@
 # go.dokimi.dev/eidos/lang/go
 
+## 0.9.0
+
+### Minor Changes
+
+- 19b783f: Import the package of each name of the length of an array in a generated Go file.
+- 19b783f: **Breaking:** Record the names of the length of an array as the children of its reference after its element.
+- 19b783f: Refuse an array without names whose length refers to another package in the Go speller.
+- 19b783f: Write the length of an array again with the spellings of its names in `golang.Restate`.
+
+### Patch Changes
+
+- Updated dependencies [19b783f]
+  - go.dokimi.dev/eidos/sdk@0.11.1
+  - go.dokimi.dev/eidos/core@0.16.0
+  - go.dokimi.dev/eidos/lang@0.4.7
+
 ## 0.8.2
 
 ### Patch Changes

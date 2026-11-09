@@ -1,5 +1,18 @@
 # go.dokimi.dev/eidos/lang/rust
 
+## 0.4.0
+
+### Minor Changes
+
+- 19b783f: **Breaking:** Record the names of the length of an array as the children of its reference after its element.
+
+### Patch Changes
+
+- Updated dependencies [19b783f]
+  - go.dokimi.dev/eidos/sdk@0.11.1
+  - go.dokimi.dev/eidos/core@0.16.0
+  - go.dokimi.dev/eidos/lang@0.4.7
+
 ## 0.3.3
 
 ### Patch Changes

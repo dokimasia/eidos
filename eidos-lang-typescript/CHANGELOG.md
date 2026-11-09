@@ -1,5 +1,14 @@
 # go.dokimi.dev/eidos/lang/typescript
 
+## 0.5.4
+
+### Patch Changes
+
+- Updated dependencies [19b783f]
+  - go.dokimi.dev/eidos/sdk@0.11.1
+  - go.dokimi.dev/eidos/core@0.16.0
+  - go.dokimi.dev/eidos/lang@0.4.7
+
 ## 0.5.3
 
 ### Patch Changes
