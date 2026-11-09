@@ -144,3 +144,4 @@ way.
 | [0123](0123-the-rules-state-the-error-value-that-an-error-value-wraps.md) | The rules state the error value that an error value wraps | Accepted |
 | [0124](0124-a-run-does-not-report-ambiguity-in-a-dependency.md) | A run does not report the ambiguous references of a dependency | Accepted |
 | [0125](0125-a-data-family-frames-its-file-in-its-comment-syntax.md) | A data family frames its file in the comment syntax that it states | Accepted |
+| [0126](0126-the-names-of-the-length-of-an-array-are-its-children.md) | The names of the length of an array are children of its reference | Accepted |

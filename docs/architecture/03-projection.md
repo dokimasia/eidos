@@ -160,7 +160,8 @@ because every set type in these ecosystems is a library type, so it
 projects as `Reference`. Only a language with a set literal would
 force the shape, and no language in scope has one. A fixed-length
 array is a form of its own, `Array`, because its length is part of
-the type.
+the type. The fold folds the element of an array alone, so only the
+reference records the names of a length expression.
 
 **Optional** is explicit, so Go pointers, TypeScript `undefined`,
 Kotlin `T?` and Python `None` all project without any one language's

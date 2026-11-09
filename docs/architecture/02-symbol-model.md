@@ -327,7 +327,9 @@ a read that the scope refused.
   the form the frontend parsed from one closed enum, and its
   children in that form's fixed order, so the resolution step
   visits the named types inside a composite and the projections
-  parse nothing. An inline struct, interface or object body records
+  parse nothing. An array whose length is an expression records the
+  names of its length as its children after its element, so a backend
+  binds their imports. An inline struct, interface or object body records
   its members as the reference's `Fields` and `Methods`, and the types
   that it states as its children. The members are
   the nodes a declaration's members are, without identities: the
@@ -337,7 +339,10 @@ a read that the scope refused.
   specifier, a package or module path, and for protobuf the path of
   the imported file.
   `Package` is empty for a builtin, for a structural form and for a
-  declaration the file uses without an import. A backend imports
+  declaration the file uses without an import. A name of the length of
+  an array records the package of its declaration also where the file
+  uses it without an import, because the resolution step gives a
+  constant no target. A backend imports
   a type the workspace never loaded through `Package`, because such
   a reference has no target.
 - **A reference is an identity, never a pointer.** A type reference

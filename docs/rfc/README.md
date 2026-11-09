@@ -108,3 +108,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0089](0089-the-constraint-elements-of-an-interface.md) | The constraint elements of an interface | Accepted |
 | [0090](0090-the-declared-name-of-the-package-of-a-reference.md) | The declared name of the package of a reference | Accepted |
 | [0091](0091-the-frame-of-a-data-file.md) | The frame of a data file | Accepted |
+| [0092](0092-the-names-of-the-length-of-an-array.md) | The names of the length of an array | Accepted |
