@@ -108,8 +108,10 @@ github:
         uses: actions/download-artifact
         commit: 9000827ccba6bdab643e8b6fd33ac0654aef8333
         release: v8.0.2
-      # The action that restores the tool directory of ergon before the steps of each job of ci.yml
-      # that runs tools, and saves it after a run that succeeds.
+      # The action that restores the tool directory of ergon and the caches of a job of ci.yml or
+      # nightly.yml before the steps of the job, and saves them after a run that succeeds. Its
+      # actions restore and save keep a cache that the job saves after every run, also after a run
+      # that fails.
       cache:
         uses: actions/cache
         commit: 55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -182,7 +184,7 @@ go:
     # The comparison of two runs of bench-go in benchstat-go.
     benchstat: golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e
     # The mutation engine of mutate-go.
-    dokimi-mutate-go: go.dokimi.dev/mutate/cmd/dokimi-mutate-go@v0.1.0
+    dokimi-mutate-go: go.dokimi.dev/mutate/cmd/dokimi-mutate-go@v0.3.0
     # The release of GoReleaser, which builds, packs and signs the commands of binaries in the job
     # pack of release.yml.
     goreleaser:
@@ -235,11 +237,13 @@ go:
       version: 0.17.0
   # The package patterns that each target of Go passes in every module of go.work.
   paths: [./...]
-  # The steps that check-go runs, in order: lint, test, race, fuzz, bench, mutate, generate or
-  # audit.
+  # The steps that check-go runs, in order: lint, test, race, longtest, fuzz, bench, mutate,
+  # generate or audit.
   check: [lint, test, race, audit]
-  # The steps that nightly.yml runs on its schedule, fuzz, bench or mutate, each in a job of its own
-  # on Linux, mapped to the limit of that job in minutes.
+  # The steps that nightly.yml runs on its schedule, longtest, fuzz, bench or mutate, each in a job
+  # of its own on Linux, mapped to the limit of that job in minutes. The job of longtest or mutate
+  # ends its run 10 minutes before its limit, through GO_LONGTEST_TIMEOUT or GO_MUTATE_TIMEOUT, so
+  # its limit is more than 10 minutes.
   nightly:
     bench: 45
     fuzz: 120
@@ -260,6 +264,11 @@ go:
     # passed. ergon tool run builds them into golangci-lint with the plugins, and .golangci.yml
     # enables both.
     analyzers: go.dokimi.dev/lint/golangci@v0.2.0
+    # The days after which the job check-go of ci.yml starts a new cache of golangci-lint, as the
+    # input of the same name of golangci-lint-action. The job keeps the cache while check names
+    # lint, under a key of the go.sum of each module, go.work, .golangci.yml, .ergon.yaml and the
+    # lock. 0 turns the cache off.
+    cache-invalidation-interval: 7
   # test-go runs go test with args.
   test:
     args: [-count=1]
@@ -267,6 +276,11 @@ go:
   # detector multiplies the memory of a test.
   race:
     args: [-count=1, -p=1]
+  # longtest-go runs go test with args in every module, for the long tests that test-go and race-go
+  # skip when their args include -short. Each test binary panics after GO_LONGTEST_TIMEOUT, 0 for no
+  # limit. The job longtest-go of nightly.yml sets it to the limit of the job minus 10 minutes.
+  longtest:
+    args: [-count=1]
   # fuzz-go fuzzes each fuzz target whose name matches the regular expression match, for time each,
   # with args. -fuzzminimizetime bounds the minimization of a new input, which go test runs for 60s
   # by default.
