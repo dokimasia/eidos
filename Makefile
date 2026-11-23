@@ -83,6 +83,7 @@ DOKIMI_MUTATE_GO := $(ERGON) tool run go.dokimi-mutate-go --
 GO_PATHS ?= ./...
 GO_TEST_ARGS ?= -count=1
 GO_RACE_ARGS ?= -count=1 -p=1
+GO_LONGTEST_ARGS ?= -count=1
 GO_FUZZ_MATCH ?= .
 GO_FUZZ_TIME ?= 30s
 GO_FUZZ_ARGS ?= -fuzzminimizetime=5s
@@ -102,6 +103,10 @@ GO_AUDIT_ARGS ?=
 GO_BENCH_OLD ?=
 GO_BENCH_NEW ?=
 
+# The limit of each test binary of longtest-go, after which the binary panics with the stacks of its
+# goroutines. 0 turns the limit off. The job longtest-go of nightly.yml sets it.
+GO_LONGTEST_TIMEOUT ?= 0
+
 # go-packages writes the import path of each package of the patterns $(1) in the module of the
 # directory in the shell variable dir, one on each line. It writes nothing for no pattern, and a
 # pattern that matches no package of the module adds none.
@@ -111,7 +116,7 @@ go-packages = $(if $(strip $(1)),$(GO) -C "$$dir" list -e -f '{{if not .Error}}{
 GO_GENERATE = $(GO) list -m -f '{{.Dir}}' | while IFS= read -r dir; do echo "generate $$dir"; \
 	(cd "$$dir" && $(GO_GENERATE_COMMANDS)) || exit 1; done
 
-.PHONY: fmt-go lint-go test-go race-go fuzz-go bench-go benchstat-go mutate-go generate-go verify-generate-go audit-go check-go
+.PHONY: fmt-go lint-go test-go race-go longtest-go fuzz-go bench-go benchstat-go mutate-go generate-go verify-generate-go audit-go check-go
 fmt: fmt-go
 lint: lint-go
 test: test-go
@@ -132,6 +137,10 @@ test-go: ## Run the Go tests of every module
 race-go: ## Run the Go tests of every module under the race detector
 	@$(GO) list -m -f '{{.Dir}}' | { status=0; while IFS= read -r dir; do echo "go test -race $$dir"; \
 		$(GO) -C "$$dir" test -race $(GO_RACE_ARGS) $(GO_PATHS) || status=1; done; exit $$status; }
+longtest-go: ## Run the long Go tests of every module, with GO_LONGTEST_TIMEOUT for each test binary
+	@$(GO) list -m -f '{{.Dir}}' | { status=0; while IFS= read -r dir; do echo "go test $$dir"; \
+		$(GO) -C "$$dir" test -timeout $(GO_LONGTEST_TIMEOUT) $(GO_LONGTEST_ARGS) $(GO_PATHS) || status=1; done; \
+		exit $$status; }
 fuzz-go: ## Fuzz each fuzz target of every module whose name matches GO_FUZZ_MATCH, for GO_FUZZ_TIME each
 	@$(GO) list -m -f '{{.Dir}}' | while IFS= read -r dir; do \
 		list="$$($(GO) -C "$$dir" test -list '$(GO_FUZZ_MATCH)' $(GO_PATHS))" || { printf '%s\n' "$$list"; exit 1; }; \
